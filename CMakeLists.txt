@@ -204,6 +204,11 @@ juce_add_plugin(
     COPY_PLUGIN_AFTER_BUILD FALSE
 )
 
+# Keep the public/plugin product name (including the apostrophe) while using
+# filesystem-safe Windows build artifact names. MSBuild can misparse JUCE's
+# generated ATL condition when an output library path contains an apostrophe.
+set_target_properties(KyotosDream PROPERTIES OUTPUT_NAME "KyotosDream")
+
 juce_generate_juce_header(KyotosDream)
 
 target_sources(
@@ -263,6 +268,9 @@ juce_add_plugin(
 
     COPY_PLUGIN_AFTER_BUILD FALSE
 )
+
+# Same workaround for the FX target.
+set_target_properties(KyotosDreamFX PROPERTIES OUTPUT_NAME "KyotosDreamFX")
 
 juce_generate_juce_header(KyotosDreamFX)
 
