@@ -1,6 +1,7 @@
 #pragma once
 #include "PluginProcessor.h"
 #include "Themes.h"
+#include <vector>
 
 struct CanvasWidget : public juce::Component
 {
@@ -18,32 +19,46 @@ struct CanvasWidget : public juce::Component
     juce::Slider slider;
     juce::Label caption;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
+    std::function<void()> onSelect;
+    bool selected = false;
 };
 
 class FxBrowser : public juce::Component, private juce::ListBoxModel
 {
 public:
+    struct CustomItem { juce::String id, name, author; bool remote = false; };
+
     FxBrowser(KyotoAudioProcessor& p);
     void paint(juce::Graphics& g) override;
     void resized() override;
     void setTheme(const kt::ThemePalette& t);
+    void setCustomItems(const juce::Array<CustomItem>& items);
+    void showCustom(bool custom);
+    bool isShowingCustom() const { return customMode; }
     int getSelectedFx() const { return selected; }
+    void setSelectedFx(int index);
     std::function<void(int)> onSelect;
+    std::function<void(const CustomItem&)> onCustomSelect;
 
 private:
     int getNumRows() override;
-    void paintListBoxItem(int row, juce::Graphics& g, int w, int h, bool selected) override;
+    void paintListBoxItem(int row, juce::Graphics& g, int w, int h, bool selectedRow) override;
     void listBoxItemClicked(int row, const juce::MouseEvent&) override;
     void selectedRowsChanged(int) override;
+    void rebuildFilter();
 
     KyotoAudioProcessor& proc;
     juce::ListBox list;
     juce::TextEditor search;
+    juce::TextButton builtInTab { "BUILT-IN" }, customTab { "CUSTOM" };
     juce::String filter;
     juce::Array<int> filtered;
+    juce::Array<int> customFiltered;
+    juce::Array<CustomItem> customItems;
     int selected = 0;
+    int selectedCustom = -1;
+    bool customMode = false;
     kt::ThemePalette theme = kt::kThemes[0];
-    void rebuildFilter();
 };
 
 class KyotoAudioProcessorEditor : public juce::AudioProcessorEditor, private juce::Timer
@@ -56,12 +71,20 @@ public:
     void mouseDown(const juce::MouseEvent&) override;
 
 private:
+    struct EditorSnapshot
+    {
+        juce::MemoryBlock processorState;
+        juce::String fxStackJson;
+        int selectedFx = -1;
+    };
+
     void timerCallback() override;
     void showTab(int tab);
     void rebuildCanvas();
     void addSeriesStep();
     void reflowSeries();
     juce::Rectangle<int> cellFor(int index, const juce::String& kind) const;
+    bool findAutoCell(int index, const juce::String& kind, juce::Rectangle<int>& result) const;
     void saveLocal();
     void publish();
     void login();
@@ -76,12 +99,24 @@ private:
     void loadWav();
     void saveEffect();
     void publishEffect();
+    void shareEffectToChat();
+    void shareEffectToThread();
     void addSpecialChainStep(int type, const juce::String& name);
     void refreshEffectBox();
     void updateFxControls();
     void selectFxStep(int index);
     void writeFxStepFromControls();
     void randomizeFxControls();
+    void removeSelectedChainStep();
+    void removeSelectedFxStep();
+    void undoLast();
+    void captureSnapshot();
+    void restoreSnapshot(const EditorSnapshot& snapshot);
+    juce::String serializeFxStack() const;
+    void restoreFxStack(const juce::String& json);
+    void renderEffectLinks(const juce::String& text);
+    void clearEffectLinks();
+    juce::String effectShareText() const;
     juce::File sessionFile() const;
     juce::File moduleDir() const;
     juce::File effectDir() const;
@@ -93,6 +128,7 @@ private:
     bool isAdmin = false;
     float animPhase = 0.f;
     juce::String token, account;
+    juce::String lastPublishedEffectId;
     kt::ThemePalette theme = kt::kThemes[0];
 
     juce::TextButton shareBtn { "DREAMSHARE" }, chainBtn { "CHAIN" }, fxBtn { "FX BUILDER" }, logoutBtn { "LOG OUT" };
@@ -106,15 +142,17 @@ private:
     juce::ComboBox themeBox;
     juce::Viewport catalogView;
     juce::Component catalogHolder;
+    juce::OwnedArray<juce::TextButton> feedEffectButtons;
 
     juce::TextEditor nameBox, effectNameBox;
-    juce::ComboBox gridStyleBox, localBox, kindBox, effectBox;
-    juce::TextButton addBtn { "ADD NEXT" }, saveBtn { "SAVE" }, upBtn { "UPLOAD" }, wavBtn { "LOAD WAV" }, chainBreakBtn { "BREAK" }, chainMixBtn { "MIX" };
-    juce::TextButton fxAddBtn { "STACK FX" }, fxSaveBtn { "SAVE EFFECT" }, fxUpBtn { "UPLOAD EFFECT" };
+    juce::ComboBox gridStyleBox, presetBox, kindBox, effectBox;
+    juce::TextButton addBtn { "ADD" }, saveBtn { "SAVE" }, upBtn { "PUBLISH" }, wavBtn { "WAV" }, chainBreakBtn { "BREAK" }, chainMixBtn { "MIX" }, chainRemoveBtn { "REMOVE" }, chainUndoBtn { "UNDO" };
+    juce::TextButton fxAddBtn { "ADD FX" }, fxSaveBtn { "SAVE" }, fxUpBtn { "PUBLISH" }, fxShareChatBtn { "CHAT" }, fxShareThreadBtn { "THREAD" }, fxRemoveBtn { "REMOVE" }, fxUndoBtn { "UNDO" };
     juce::Slider fxAmount, fxTone, fxMotion, fxMix, fxShape;
     juce::Label fxAmountLabel, fxToneLabel, fxMotionLabel, fxMixLabel, fxShapeLabel, stackLabel;
-    juce::TextButton fxBreakBtn { "CHAIN BREAK" }, fxMixBtn { "MASTER MIX" }, fxRandomBtn { "RANDOMIZE" }, fxClearBtn { "CLEAR" };
+    juce::TextButton fxBreakBtn { "BREAK" }, fxMixBtn { "MASTER MIX" }, fxRandomBtn { "RANDOM" }, fxClearBtn { "CLEAR" };
     int selectedFxStep = -1;
+    int selectedChainWidget = -1;
     juce::Component panel;
     std::unique_ptr<FxBrowser> fxBrowser;
     juce::OwnedArray<CanvasWidget> widgets;
@@ -123,6 +161,7 @@ private:
     struct CatalogItem { juce::String id, name, face, author; };
     juce::String selectedCatalogId;
     juce::Array<CatalogItem> catalog;
+    std::vector<EditorSnapshot> undoStack;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(KyotoAudioProcessorEditor)
 };
