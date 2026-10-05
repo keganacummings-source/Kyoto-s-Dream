@@ -1,0 +1,5 @@
+#include "UpdateService.h"
+namespace kyoto {
+UpdateInfo UpdateService::check(const juce::String&current){UpdateInfo i;auto in=juce::URL(manifestUrl).createInputStream(juce::URL::InputStreamOptions().withConnectionTimeoutMs(8000));if(!in)return i;auto v=juce::JSON::parse(in->readEntireStreamAsString());if(auto*d=v.getDynamicObject()){i.version=d->getProperty("version").toString();i.url=d->getProperty("package").toString();i.notes=d->getProperty("notes").toString();i.available=i.version.isNotEmpty()&&i.version!=current;}return i;}
+juce::File UpdateService::download(const juce::String&url){auto dir=juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("KyotosDream");dir.createDirectory();auto file=dir.getChildFile("update.zip");if(auto in=juce::URL(url).createInputStream(juce::URL::InputStreamOptions().withConnectionTimeoutMs(30000))){file.replaceWithData(nullptr,0);file.create();juce::FileOutputStream out(file);if(out.openedOk()){out.writeFromInputStream(*in,-1);out.flush();return file;}}return {};}
+}
