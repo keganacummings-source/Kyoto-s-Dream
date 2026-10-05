@@ -263,6 +263,11 @@ void KyotosDreamProcessor::removeFxSlot(size_t index){ if(index<expertFxChain.si
 void KyotosDreamProcessor::setFxChainSlot(size_t index,const kyoto::FxSlot& f){ if(index>=expertFxChain.size()) return; expertFxChain[index]=f; }
 
 
+juce::AudioProcessorEditor* KyotosDreamProcessor::createEditor()
+{
+    return new KyotosDreamEditor(*this);
+}
+
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new KyotosDreamProcessor();
