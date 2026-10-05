@@ -412,6 +412,7 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     : AudioProcessorEditor(p), proc(p)
 {
     kLookAndFeel.setTheme(theme);
+    socialRail.setHostTheme(theme);
     setLookAndFeel(&kLookAndFeel);
     setSize(1180, 760);
     setResizable(true, true);
@@ -420,7 +421,7 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     for (auto* b : { &shareBtn, &chainBtn, &fxBtn, &logoutBtn, &loginBtn, &sendBtn, &feedBtn,
                      &addBtn, &saveBtn, &upBtn, &wavBtn, &chainBreakBtn, &chainMixBtn, &chainRemoveBtn, &chainUndoBtn,
                      &fxAddBtn, &fxSaveBtn, &fxUpBtn, &fxShareChatBtn, &fxShareThreadBtn, &fxRemoveBtn, &fxUndoBtn,
-                     &fxBreakBtn, &fxMixBtn, &fxRandomBtn, &fxClearBtn, &pluginViewBtn, &pluginBackBtn, &newMachineBtn, &randomMachineBtn, &chatRefreshBtn, &threadsBtn, &socialBtn, &dmBtn, &adminDeleteBtn, &utilityGoBtn })
+                     &fxBreakBtn, &fxMixBtn, &fxRandomBtn, &fxClearBtn, &pluginViewBtn, &pluginBackBtn, &newMachineBtn, &randomMachineBtn, &chatRefreshBtn, &threadsBtn, &socialBtn, &dmBtn, &adminDeleteBtn, &utilityGoBtn, &catalogModeBtn, &threadsModeBtn, &railChatBtn, &railOnlineBtn })
     {
         addAndMakeVisible(b);
         b->setClickingTogglesState(false);
@@ -459,6 +460,12 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
             "wav_request", "react_heart", "chat_delete", "chat_clear", "presence",
             "create_thread", "comment"
         };
+        if (centerMode == 1 && railMode == 0)
+        {
+            if (selectedThreadId.isNotEmpty()) utilityBox.setText(selectedThreadId, juce::dontSendNotification);
+            chatUtility("comment");
+            return;
+        }
         const int index = utilityActionBox.getSelectedId() - 1;
         if (index >= 0 && index < 16) chatUtility(actions[index]);
     };
@@ -533,8 +540,10 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     addAndMakeVisible(utilityBox);
     addAndMakeVisible(utilityActionBox); addAndMakeVisible(utilityGoBtn);
     addAndMakeVisible(chatRefreshBtn); addAndMakeVisible(threadsBtn); addAndMakeVisible(socialBtn); addAndMakeVisible(dmBtn); addAndMakeVisible(adminDeleteBtn);
+    addAndMakeVisible(catalogModeBtn); addAndMakeVisible(threadsModeBtn); addAndMakeVisible(railChatBtn); addAndMakeVisible(railOnlineBtn);
     addAndMakeVisible(themeBox);
     addAndMakeVisible(catalogView);
+    addAndMakeVisible(chatView);
     addAndMakeVisible(nameBox);
     addAndMakeVisible(effectNameBox);
     addAndMakeVisible(presetBox);
@@ -590,6 +599,16 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     addAndMakeVisible(*fxBrowser);
     updateFxControls();
     catalogView.setViewedComponent(&catalogHolder, false);
+    chatView.setViewedComponent(&socialRail, false);
+    chatView.setScrollBarsShown(true, false);
+    catalogModeBtn.onClick = [this] { setCenterMode(0); };
+    threadsModeBtn.onClick = [this] { setCenterMode(1); refreshFeed(); };
+    railChatBtn.onClick = [this] { setRailMode(0); refreshFeed(); };
+    railOnlineBtn.onClick = [this] { setRailMode(1); refreshFeed(); chatUtility("social_list"); };
+    catalogModeBtn.setClickingTogglesState(true);
+    threadsModeBtn.setClickingTogglesState(true);
+    railChatBtn.setClickingTogglesState(true);
+    railOnlineBtn.setClickingTogglesState(true);
 
     auto session = juce::JSON::parse(sessionFile().loadFileAsString());
     if (auto* o = session.getDynamicObject())
@@ -695,11 +714,207 @@ void KyotoAudioProcessorEditor::timerCallback()
 {
     animPhase += 0.035f;
     if (animPhase > juce::MathConstants<float>::twoPi) animPhase -= juce::MathConstants<float>::twoPi;
+    socialRail.setPhase(animPhase);
+    socialRail.setHostTheme(theme);
     repaint();
     for (auto* w : widgets)
         if (w->kind == CanvasWidget::Kind::Wave || w->kind == CanvasWidget::Kind::Stack)
             w->repaint();
 }
+
+
+namespace {
+void drawThemeField(juce::Graphics& g, const kt::ThemePalette& t, juce::Rectangle<float> b, float phase)
+{
+    const juce::String id = t.id;
+    auto accent = kt::c(t.accent);
+    auto alt = kt::c(t.accent2);
+    auto ink = kt::c(t.text);
+    const int seed = id.hashCode() & 0x7fffffff;
+    const int kind = seed % 9;
+    const int count = 6 + (seed % 5);
+    g.setColour(accent.withAlpha(0.14f));
+    if (id == "terminal" || id == "mono" || id == "carbon" || id == "ink")
+    {
+        for (int i = 0; i < 8; ++i)
+        {
+            const float y = b.getY() + std::fmod(i * 46.f + phase * 22.f, b.getHeight());
+            g.drawLine(b.getX(), y, b.getRight(), y, 1.f);
+        }
+        g.setFont(kt::font(t, 9.f));
+        g.drawText(id.toUpperCase() + "  " + juce::String((int)(phase * 40) % 99), b.getRight() - 120, b.getY() + 8, 108, 14, juce::Justification::right);
+        return;
+    }
+    if (id == "arcade" || id == "neon" || id == "candy")
+    {
+        for (int i = 0; i < 10; ++i)
+        {
+            const float x = b.getX() + std::fmod(i * 90.f + phase * 36.f, b.getWidth());
+            g.fillRect(x, b.getY() + 10 + (i % 3) * 18.f, 28.f, 3.f);
+            g.setColour(alt.withAlpha(0.2f));
+            g.drawEllipse(x, b.getBottom() - 40 - std::sin(phase + i) * 8.f, 16, 16, 1.4f);
+            g.setColour(accent.withAlpha(0.16f));
+        }
+        return;
+    }
+    if (id == "sakura" || id == "rose" || id == "orchid" || id == "lilac" || id == "plum" || id == "wine")
+    {
+        for (int i = 0; i < count; ++i)
+        {
+            const float x = b.getX() + std::fmod(i * 78.f + phase * 14.f, b.getWidth());
+            const float y = b.getY() + 20 + std::fmod(i * 33.f + phase * 10.f, b.getHeight() * 0.45f);
+            g.fillEllipse(x, y, 7, 7);
+            g.drawEllipse(x - 4, y - 4, 15, 15, 1.f);
+        }
+        return;
+    }
+    if (id == "ocean" || id == "lagoon" || id == "arctic" || id == "ice" || id == "fog" || id == "cobalt")
+    {
+        for (int i = 0; i < 4; ++i)
+        {
+            juce::Path wave;
+            const float y = b.getY() + 24 + i * 16.f;
+            wave.startNewSubPath(b.getX(), y);
+            for (float x = 0; x < b.getWidth(); x += 12.f)
+                wave.lineTo(b.getX() + x, y + std::sin(x * 0.03f + phase + i) * (6.f + i));
+            g.strokePath(wave, juce::PathStrokeType(1.3f));
+        }
+        return;
+    }
+    if (id == "forest" || id == "pine" || id == "moss" || id == "mint")
+    {
+        for (int i = 0; i < count; ++i)
+        {
+            const float x = b.getX() + 20 + (i * 67 + seed % 20) % (int) juce::jmax(40.f, b.getWidth() - 30);
+            const float h = 16.f + std::sin(phase + i) * 6.f;
+            g.drawLine(x, b.getBottom() - 8, x, b.getBottom() - 8 - h, 1.4f);
+            g.drawEllipse(x - 5, b.getBottom() - 12 - h, 10, 10, 1.f);
+        }
+        return;
+    }
+    if (id == "solar" || id == "amber" || id == "honey" || id == "sunset" || id == "ember" || id == "copper" || id == "rust")
+    {
+        const float cx = b.getRight() - 70, cy = b.getY() + 36;
+        g.drawEllipse(cx - 12, cy - 12, 24, 24, 1.6f);
+        for (int i = 0; i < 8; ++i)
+        {
+            const float a = phase * 0.6f + i * 0.785f;
+            g.drawLine(cx, cy, cx + std::cos(a) * 28.f, cy + std::sin(a) * 28.f, 1.3f);
+        }
+        return;
+    }
+    if (id == "bloodmoon" || id == "void" || id == "abyss" || id == "midnight" || id == "ghost" || id == "ultraviolet" || id == "vapor")
+    {
+        const float cx = b.getX() + 48 + std::sin(phase) * 10.f, cy = b.getY() + 30;
+        g.drawEllipse(cx, cy, 22, 22, 1.5f);
+        g.fillEllipse(cx + 8, cy + 2, 16, 16);
+        for (int i = 0; i < 5; ++i)
+            g.fillEllipse(b.getRight() - 40 - i * 18.f, b.getY() + 12 + std::sin(phase + i) * 4.f, 2.5f, 2.5f);
+        return;
+    }
+    if (id == "graphite" || id == "steel" || id == "default")
+    {
+        for (int i = 0; i < 5; ++i)
+            g.drawRoundedRectangle(b.getX() + 16 + i * 34.f, b.getY() + 14, 22, 22, 4.f, 1.f);
+        return;
+    }
+    // trippah / goonr and any remaining preset still get a signature orbit
+    const float cx = b.getX() + 36, cy = b.getY() + 28;
+    for (int i = 0; i < 3; ++i)
+        g.drawEllipse(cx - 8 - i * 7, cy - 8 - i * 7 + std::sin(phase + i) * 2.f, 18 + i * 14.f, 18 + i * 14.f, 1.2f);
+    juce::ignoreUnused(kind, ink);
+}
+}
+
+void SocialRail::paint(juce::Graphics& g)
+{
+    g.fillAll(kt::c(host.bg).withAlpha(0.2f));
+    if (mode == 0)
+    {
+        if (bubbles.isEmpty())
+        {
+            g.setColour(kt::c(host.muted));
+            g.setFont(kt::font(host, 11.f));
+            g.drawText("Live chat stays on this rail.", 12, 16, getWidth() - 24, 20, juce::Justification::left);
+            return;
+        }
+        int y = 8;
+        for (const auto& m : bubbles)
+        {
+            const auto pal = kt::themeById(m.themeId.isEmpty() ? "trippah" : m.themeId);
+            auto card = juce::Rectangle<float>(8.f, (float) y, (float) getWidth() - 16.f, 66.f);
+            g.setColour(kt::c(pal.panel));
+            g.fillRoundedRectangle(card, 9.f);
+            g.setColour(kt::c(pal.accent).withAlpha(0.9f));
+            g.fillRoundedRectangle(card.getX(), card.getY(), 3.5f, card.getHeight(), 2.f);
+            g.setColour(kt::c(pal.accent));
+            g.drawRoundedRectangle(card, 9.f, 1.f);
+            g.setFont(kt::font(pal, 11.f, true));
+            g.drawText(m.user, card.getX() + 12, card.getY() + 6, card.getWidth() - 20, 16, juce::Justification::left);
+            g.setColour(kt::c(pal.text));
+            g.setFont(kt::font(pal, 10.f));
+            g.drawFittedText(m.text, juce::Rectangle<int>((int) card.getX() + 12, (int) card.getY() + 24, (int) card.getWidth() - 20, 36), juce::Justification::topLeft, 2);
+            y += 74;
+        }
+    }
+    else
+    {
+        if (people.isEmpty())
+        {
+            g.setColour(kt::c(host.muted));
+            g.setFont(kt::font(host, 11.f));
+            g.drawText("No friends online yet.", 12, 16, getWidth() - 24, 20, juce::Justification::left);
+            return;
+        }
+        int y = 8;
+        for (const auto& person : people)
+        {
+            const auto pal = kt::themeById(person.themeId.isEmpty() ? host.id : person.themeId);
+            auto card = juce::Rectangle<float>(8.f, (float) y, (float) getWidth() - 16.f, 40.f);
+            g.setColour(kt::c(pal.panel));
+            g.fillRoundedRectangle(card, 8.f);
+            g.setColour(person.online ? kt::c(pal.accent) : kt::c(pal.muted));
+            g.fillEllipse(card.getX() + 10, card.getY() + 14, 10, 10);
+            g.setColour(kt::c(pal.accent));
+            g.setFont(kt::font(pal, 11.f, true));
+            g.drawText(person.name, card.getX() + 28, card.getY() + 4, card.getWidth() - 36, 16, juce::Justification::left);
+            g.setColour(kt::c(pal.muted));
+            g.setFont(kt::font(pal, 9.f));
+            g.drawText(person.detail, card.getX() + 28, card.getY() + 20, card.getWidth() - 36, 14, juce::Justification::left);
+            y += 48;
+        }
+    }
+}
+
+struct BoardCard : public juce::Component
+{
+    juce::String title, meta, body, themeId;
+    std::function<void()> onOpen;
+    void paint(juce::Graphics& g) override
+    {
+        const auto pal = kt::themeById(themeId.isEmpty() ? "trippah" : themeId);
+        auto r = getLocalBounds().toFloat().reduced(1.f);
+        g.setColour(kt::c(pal.panel));
+        g.fillRoundedRectangle(r, 10.f);
+        g.setColour(kt::c(pal.accent).withAlpha(0.9f));
+        g.fillRoundedRectangle(r.getX(), r.getY(), 4.f, r.getHeight(), 2.f);
+        g.setColour(kt::c(pal.accent).withAlpha(0.55f));
+        g.drawRoundedRectangle(r, 10.f, 1.f);
+        g.setColour(kt::c(pal.accent));
+        g.setFont(kt::font(pal, 12.f, true));
+        g.drawText(title, 14, 8, getWidth() - 22, 18, juce::Justification::left);
+        g.setColour(kt::c(pal.muted));
+        g.setFont(kt::font(pal, 9.f));
+        g.drawText(meta, 14, 28, getWidth() - 22, 14, juce::Justification::left);
+        g.setColour(kt::c(pal.text));
+        g.setFont(kt::font(pal, 10.f));
+        g.drawFittedText(body, juce::Rectangle<int>(14, 46, getWidth() - 24, getHeight() - 54), juce::Justification::topLeft, 2);
+    }
+    void mouseUp(const juce::MouseEvent& e) override
+    {
+        if (onOpen && ! e.mouseWasDraggedSinceMouseDown()) onOpen();
+    }
+};
 
 void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
 {
@@ -723,11 +938,12 @@ void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
         }
         return;
     }
-    for (int i=0;i<5;i++)
+    drawThemeField(g, theme, getLocalBounds().toFloat().reduced(10.f), animPhase);
+    for (int i=0;i<4;i++)
     {
-        const float px = 80.f + std::fmod((float)i*247.f + animPhase*18.f, (float)juce::jmax(100,getWidth()-150));
-        const float py = 120.f + std::fmod((float)i*119.f + std::sin(animPhase+i)*14.f, (float)juce::jmax(140,getHeight()-190));
-        drawThemeSprite(g, theme, theme.id, px, py, 0.42f + 0.08f*(i%3), animPhase + i);
+        const float px = 70.f + std::fmod((float)i*210.f + animPhase*16.f, (float)juce::jmax(100,getWidth()-180));
+        const float py = 150.f + std::fmod((float)i*97.f + std::sin(animPhase+i)*12.f, (float)juce::jmax(140,getHeight()-210));
+        drawThemeSprite(g, theme, theme.id, px, py, 0.34f, animPhase + i);
     }
 
     g.setColour(kt::c(theme.panel).withAlpha(0.98f));
@@ -764,7 +980,7 @@ void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
         g.drawText("DREAMSHARE HOME", hero.getX()+18, hero.getY()+13, 280, 25, juce::Justification::left);
         g.setColour(kt::c(theme.text));
         g.setFont(kt::font(theme, 10.5f, false));
-        g.drawText("Build. play. share. Keep your room, themes, presets and community tools in one surface.", hero.getX()+18, hero.getY()+43, hero.getWidth()-250, 18, juce::Justification::left);
+        g.drawText("Catalog in the center. Threads behind the catalog tab. Chat stays on the side rail.", hero.getX()+18, hero.getY()+43, hero.getWidth()-250, 18, juce::Justification::left);
         g.setColour(kt::c(theme.accent));
         g.setFont(kt::font(theme, 9.f, true));
         g.drawText("LIVE  ·  " + (account.isEmpty() ? juce::String("SIGNED IN") : account.toUpperCase()), hero.getRight()-210, hero.getY()+20, 192, 16, juce::Justification::right);
@@ -775,15 +991,15 @@ void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
         g.setColour(kt::c(theme.border).withAlpha(0.55f));
         g.drawLine(shell.getX()+12.f, hero.getBottom()+10.f, shell.getRight()-12.f, hero.getBottom()+10.f, 1.f);
 
-        auto chatCard = logBox.getBounds().toFloat().expanded(1.f);
+        auto chatCard = chatView.getBounds().toFloat().expanded(1.f);
         auto catalogCard = catalogView.getBounds().toFloat().expanded(1.f);
         g.setColour(kt::c(theme.accent).withAlpha(0.055f));
         g.fillRoundedRectangle(chatCard, 10.f);
         g.fillRoundedRectangle(catalogCard, 10.f);
         g.setColour(kt::c(theme.accent));
         g.setFont(kt::font(theme, 9.f, true));
-        g.drawText("LIVE ROOM", chatCard.getX()+12, chatCard.getY()+7, 110, 15, juce::Justification::left);
-        g.drawText("CATALOG", catalogCard.getX()+12, catalogCard.getY()+7, 100, 15, juce::Justification::left);
+        g.drawText(railMode == 0 ? "SIDE CHAT" : "FRIENDS / ONLINE", chatCard.getX()+12, chatCard.getY()+6, 160, 15, juce::Justification::left);
+        g.drawText(centerMode == 0 ? "CATALOG BROWSER" : "THREADS", catalogCard.getX()+12, catalogCard.getY()+6, 180, 15, juce::Justification::left);
     }
 
     if (tab == 1)
@@ -844,11 +1060,16 @@ void KyotoAudioProcessorEditor::showTab(int next)
     const bool chain = tab == 1;
     const bool fx = tab == 2;
 
-    logBox.setVisible(share && loggedIn);
-    utilityBox.setVisible(share && loggedIn); utilityActionBox.setVisible(share && loggedIn); utilityGoBtn.setVisible(share && loggedIn);
-    chatRefreshBtn.setVisible(share && loggedIn); threadsBtn.setVisible(share && loggedIn); socialBtn.setVisible(share && loggedIn); dmBtn.setVisible(share && loggedIn);
-    adminDeleteBtn.setVisible(share && loggedIn && isAdmin); msgBox.setVisible(share && loggedIn); sendBtn.setVisible(share && loggedIn); feedBtn.setVisible(share && loggedIn); themeBox.setVisible(share && loggedIn);
+    logBox.setVisible(false);
+    utilityBox.setVisible(share && loggedIn && (railMode == 1 || centerMode == 1));
+    utilityActionBox.setVisible(share && loggedIn && railMode == 1);
+    utilityGoBtn.setVisible(share && loggedIn && (railMode == 1 || centerMode == 1));
+    chatRefreshBtn.setVisible(false); threadsBtn.setVisible(false); socialBtn.setVisible(false); dmBtn.setVisible(false);
+    catalogModeBtn.setVisible(share && loggedIn); threadsModeBtn.setVisible(share && loggedIn);
+    railChatBtn.setVisible(share && loggedIn); railOnlineBtn.setVisible(share && loggedIn);
+    adminDeleteBtn.setVisible(share && loggedIn && isAdmin); msgBox.setVisible(share && loggedIn && railMode == 0); sendBtn.setVisible(share && loggedIn && railMode == 0); feedBtn.setVisible(share && loggedIn); themeBox.setVisible(share && loggedIn);
     catalogView.setVisible(share && loggedIn);
+    chatView.setVisible(share && loggedIn);
     for (auto* b : feedEffectButtons) b->setVisible(share && loggedIn);
 
     panel.setVisible(chain);
@@ -863,6 +1084,8 @@ void KyotoAudioProcessorEditor::showTab(int next)
     fxBreakBtn.setVisible(fx); fxMixBtn.setVisible(fx); fxRandomBtn.setVisible(fx); fxClearBtn.setVisible(fx); stackLabel.setVisible(fx);
 
     shareBtn.setToggleState(share, juce::dontSendNotification); chainBtn.setToggleState(chain, juce::dontSendNotification); fxBtn.setToggleState(fx, juce::dontSendNotification);
+    catalogModeBtn.setToggleState(centerMode == 0, juce::dontSendNotification); threadsModeBtn.setToggleState(centerMode == 1, juce::dontSendNotification);
+    railChatBtn.setToggleState(railMode == 0, juce::dontSendNotification); railOnlineBtn.setToggleState(railMode == 1, juce::dontSendNotification);
     pluginViewBtn.setVisible(!pluginView && loggedIn); pluginBackBtn.setVisible(pluginView); newMachineBtn.setVisible(chain && !pluginView); randomMachineBtn.setVisible(chain && !pluginView);
     resized();
     if (chain) rebuildCanvas();
@@ -909,23 +1132,49 @@ void KyotoAudioProcessorEditor::resized()
     if (tab == 0)
     {
         area.removeFromTop(88); // dashboard hero
-        auto top = area.removeFromTop(42);
-        themeBox.setBounds(top.removeFromLeft(154)); top.removeFromLeft(8);
-        feedBtn.setBounds(top.removeFromLeft(76)); top.removeFromLeft(6);
-        chatRefreshBtn.setBounds(top.removeFromLeft(64)); top.removeFromLeft(5);
-        threadsBtn.setBounds(top.removeFromLeft(74)); top.removeFromLeft(5);
-        socialBtn.setBounds(top.removeFromLeft(74)); top.removeFromLeft(5);
-        dmBtn.setBounds(top.removeFromLeft(54));
-        if (isAdmin && top.getWidth() > 78) { top.removeFromLeft(6); adminDeleteBtn.setBounds(top.removeFromLeft(76)); }
-        auto bottom = area.removeFromBottom(44);
-        msgBox.setBounds(bottom.removeFromLeft(juce::jmax(160, bottom.getWidth()-104))); bottom.removeFromLeft(8); sendBtn.setBounds(bottom);
-        auto util = area.removeFromBottom(32);
-        utilityBox.setBounds(util.removeFromLeft(juce::jmax(180, util.getWidth()-188))); util.removeFromLeft(8);
-        utilityActionBox.setBounds(util.removeFromLeft(136)); util.removeFromLeft(8); utilityGoBtn.setBounds(util);
-        auto main = area;
-        const int split = juce::jlimit(420, juce::jmax(420, main.getWidth()-300), (int)(main.getWidth()*0.66f));
-        logBox.setBounds(main.getX(), main.getY(), split, main.getHeight());
-        catalogView.setBounds(main.getX()+split+12, main.getY(), main.getWidth()-split-12, main.getHeight());
+        auto top = area.removeFromTop(36);
+        themeBox.setBounds(top.removeFromLeft(150)); top.removeFromLeft(8);
+        catalogModeBtn.setBounds(top.removeFromLeft(92)); top.removeFromLeft(6);
+        threadsModeBtn.setBounds(top.removeFromLeft(92)); top.removeFromLeft(6);
+        feedBtn.setBounds(top.removeFromLeft(84));
+        if (isAdmin && top.getWidth() > 84) { top.removeFromLeft(6); adminDeleteBtn.setBounds(top.removeFromLeft(78)); }
+        const int railW = juce::jlimit(236, 286, getWidth() / 5);
+        auto rail = area.removeFromRight(railW);
+        area.removeFromRight(10);
+        if (centerMode == 1)
+        {
+            auto reply = area.removeFromBottom(34);
+            utilityBox.setBounds(reply.removeFromLeft(juce::jmax(160, reply.getWidth() - 92)));
+            reply.removeFromLeft(8);
+            utilityGoBtn.setBounds(reply);
+            utilityGoBtn.setButtonText("REPLY");
+        }
+        catalogView.setBounds(area.reduced(0, 6));
+        auto railHead = rail.removeFromTop(28);
+        railChatBtn.setBounds(railHead.removeFromLeft((railHead.getWidth() - 6) / 2));
+        railHead.removeFromLeft(6);
+        railOnlineBtn.setBounds(railHead);
+        rail.removeFromTop(6);
+        if (railMode == 0)
+        {
+            auto composer = rail.removeFromBottom(34);
+            msgBox.setBounds(composer.removeFromLeft(juce::jmax(120, composer.getWidth() - 72)));
+            composer.removeFromLeft(6);
+            sendBtn.setBounds(composer);
+        }
+        else
+        {
+            auto util = rail.removeFromBottom(34);
+            utilityBox.setBounds(util.removeFromLeft(juce::jmax(80, util.getWidth() - 148)));
+            util.removeFromLeft(4);
+            utilityActionBox.setBounds(util.removeFromLeft(92));
+            util.removeFromLeft(4);
+            utilityGoBtn.setBounds(util);
+            utilityGoBtn.setButtonText("GO");
+        }
+        chatView.setBounds(rail.reduced(0, 4));
+        socialRail.setBounds(0, 0, juce::jmax(200, chatView.getWidth() - 8), socialRail.contentHeight());
+        chatView.setViewedComponent(&socialRail, false);
         const int catalogW = juce::jmax(220, catalogView.getWidth()-18);
         const int cols = catalogW >= 500 ? 2 : 1;
         const int gap = 8;
@@ -940,8 +1189,8 @@ void KyotoAudioProcessorEditor::resized()
         }
         for (int i=0;i<feedEffectButtons.size();++i)
         {
-            const int bw = juce::jmin(300, logBox.getWidth()-24);
-            feedEffectButtons[i]->setBounds(logBox.getX()+12, logBox.getBottom()-36*(i+1)-8, bw, 30);
+            const int bw = juce::jmin(240, chatView.getWidth()-16);
+            feedEffectButtons[i]->setBounds(chatView.getX()+8, chatView.getY()+8+36*i, bw, 30);
         }
     }
     else if (tab == 1)
@@ -1299,7 +1548,7 @@ void KyotoAudioProcessorEditor::chatUtility(const juce::String& selectedAction)
         else if (action == "chat_delete") { auto* o=new juce::DynamicObject(); o->setProperty("id",target); r=kt::postAction("chat_delete",juce::var(o),tokenCopy); }
         else if (action == "chat_clear") r=kt::postAction("chat_clear",juce::var(new juce::DynamicObject()),tokenCopy);
         else if (action == "create_thread") { auto* o=new juce::DynamicObject(); o->setProperty("text",message); r=kt::postAction("create_thread",juce::var(o),tokenCopy); }
-        else if (action == "comment") { auto* o=new juce::DynamicObject(); o->setProperty("threadId",target); o->setProperty("text",message); r=kt::postAction("comment",juce::var(o),tokenCopy); }
+        else if (action == "comment") { auto* o=new juce::DynamicObject(); o->setProperty("threadId", target.isEmpty()? message : target); o->setProperty("text", message.isEmpty()? target : message); r=kt::postAction("comment",juce::var(o),tokenCopy); }
         else r=kt::postAction(action,juce::var(new juce::DynamicObject()),tokenCopy);
         juce::MessageManager::callAsync([safe, r, action] {
             if (safe == nullptr) return;
@@ -1312,6 +1561,34 @@ void KyotoAudioProcessorEditor::chatUtility(const juce::String& selectedAction)
             }
             else out = r.raw.isEmpty() ? r.body : r.raw;
             safe->logBox.setText(out.isEmpty() ? r.body : out); safe->renderEffectLinks(out.isEmpty() ? r.body : out);
+            if (action == "social_list" || action == "dm_list")
+            {
+                juce::Array<SocialRail::Person> people;
+                auto* obj = r.parsed.getDynamicObject();
+                if (obj != nullptr)
+                {
+                    for (auto key : { "friendsDetailed", "friends", "online", "users", "messages" })
+                        if (auto* arr = obj->getProperty(key).getArray())
+                            for (auto& item : *arr)
+                            {
+                                SocialRail::Person person;
+                                if (auto* o = item.getDynamicObject())
+                                {
+                                    person.name = o->getProperty("name").toString();
+                                    if (person.name.isEmpty()) person.name = o->getProperty("user").toString();
+                                    if (person.name.isEmpty()) person.name = o->getProperty("from").toString();
+                                    person.themeId = o->getProperty("theme").toString();
+                                    person.detail = o->getProperty("text").toString();
+                                }
+                                else person.name = item.toString();
+                                person.online = key == juce::String("online");
+                                if (person.detail.isEmpty()) person.detail = key;
+                                if (person.name.isNotEmpty()) people.add(person);
+                            }
+                }
+                if (! people.isEmpty()) safe->socialRail.setPeople(people);
+            }
+            if (action == "create_thread" || action == "comment") { safe->setCenterMode(1); safe->refreshFeed(); }
             safe->status.setText("DreamShare utility complete", juce::dontSendNotification);
             if (action == "chat_list") safe->refreshFeed();
         });
@@ -1356,6 +1633,62 @@ void KyotoAudioProcessorEditor::renderEffectLinks(const juce::String& text)
     resized();
 }
 
+
+void KyotoAudioProcessorEditor::setCenterMode(int mode)
+{
+    centerMode = mode == 1 ? 1 : 0;
+    catalogModeBtn.setToggleState(centerMode == 0, juce::dontSendNotification);
+    threadsModeBtn.setToggleState(centerMode == 1, juce::dontSendNotification);
+    catalogView.setViewedComponent(centerMode == 0 ? static_cast<juce::Component*>(&catalogHolder) : static_cast<juce::Component*>(&threadHolder), false);
+    if (centerMode == 1) rebuildThreadBoard();
+    showTab(tab);
+}
+
+void KyotoAudioProcessorEditor::setRailMode(int mode)
+{
+    railMode = mode == 1 ? 1 : 0;
+    railChatBtn.setToggleState(railMode == 0, juce::dontSendNotification);
+    railOnlineBtn.setToggleState(railMode == 1, juce::dontSendNotification);
+    socialRail.setMode(railMode);
+    showTab(tab);
+}
+
+void KyotoAudioProcessorEditor::rebuildCenter()
+{
+    const int catalogW = juce::jmax(220, catalogView.getWidth() - 18);
+    const int cols = catalogW >= 640 ? 3 : (catalogW >= 420 ? 2 : 1);
+    const int gap = 8;
+    const int cardW = juce::jmax(160, (catalogW - gap * (cols + 1)) / cols);
+    const int cardH = 96;
+    auto* holder = centerMode == 0 ? &catalogHolder : &threadHolder;
+    holder->setSize(catalogW, juce::jmax(catalogView.getHeight(), ((holder->getNumChildComponents() + cols - 1) / juce::jmax(1, cols)) * (cardH + gap) + gap));
+    for (int i = 0; i < holder->getNumChildComponents(); ++i)
+    {
+        const int col = i % cols, row = i / cols;
+        holder->getChildComponent(i)->setBounds(gap + col * (cardW + gap), gap + row * (cardH + gap), cardW, cardH);
+    }
+}
+
+void KyotoAudioProcessorEditor::rebuildThreadBoard()
+{
+    threadHolder.removeAllChildren();
+    int i = 0;
+    for (const auto& t : threads)
+    {
+        auto* card = new BoardCard();
+        card->title = t.title.isEmpty() ? "Thread" : t.title;
+        card->meta = t.user + "  ·  " + juce::String(t.comments) + " replies  ·  " + t.themeId;
+        card->body = t.text;
+        card->themeId = t.themeId;
+        const auto id = t.id;
+        card->onOpen = [this, id] { selectedThreadId = id; utilityBox.setText(id, juce::dontSendNotification); status.setText("Reply target " + id, juce::dontSendNotification); };
+        threadHolder.addAndMakeVisible(card);
+        ++i;
+    }
+    juce::ignoreUnused(i);
+    rebuildCenter();
+}
+
 void KyotoAudioProcessorEditor::refreshFeed()
 {
     if (token.isEmpty()) return;
@@ -1366,9 +1699,53 @@ void KyotoAudioProcessorEditor::refreshFeed()
             if (safe == nullptr) return;
             if (!r.ok) { safe->clearEffectLinks(); safe->status.setText(r.error.isEmpty()?"DreamShare feed failed":r.error, juce::dontSendNotification); safe->logBox.setText(r.raw); return; }
             juce::String log;
+            juce::Array<SocialRail::Bubble> bubbles;
             if (auto* arr = r.parsed.getDynamicObject() ? r.parsed.getDynamicObject()->getProperty("chat").getArray() : nullptr)
-                for (auto& item : *arr) if (auto* m=item.getDynamicObject()) log << m->getProperty("user").toString() << ": " << m->getProperty("text").toString() << "\n";
-            safe->logBox.setText(log.isEmpty()?r.body:log); safe->renderEffectLinks(log); safe->status.setText("DreamShare live", juce::dontSendNotification);
+                for (auto& item : *arr) if (auto* m=item.getDynamicObject())
+                {
+                    SocialRail::Bubble b;
+                    b.id = m->getProperty("id").toString();
+                    b.user = m->getProperty("user").toString();
+                    b.text = m->getProperty("text").toString();
+                    b.themeId = m->getProperty("theme").toString();
+                    if (b.themeId.isEmpty()) b.themeId = "trippah";
+                    bubbles.add(b);
+                    log << b.user << ": " << b.text << "\n";
+                }
+            safe->socialRail.setBubbles(bubbles);
+            safe->threads.clear();
+            if (auto* arr = r.parsed.getDynamicObject() ? r.parsed.getDynamicObject()->getProperty("threads").getArray() : nullptr)
+                for (auto& item : *arr) if (auto* t=item.getDynamicObject())
+                {
+                    KyotoAudioProcessorEditor::ThreadItem th;
+                    th.id = t->getProperty("id").toString();
+                    th.user = t->getProperty("user").toString();
+                    th.title = t->getProperty("title").toString();
+                    th.text = t->getProperty("text").toString();
+                    th.themeId = t->getProperty("theme").toString();
+                    if (auto* comments = t->getProperty("comments").getArray()) th.comments = comments->size();
+                    safe->threads.add(th);
+                }
+            if (safe->railMode == 1)
+            {
+                juce::Array<SocialRail::Person> people;
+                auto* root = r.parsed.getDynamicObject();
+                auto* arr = root ? root->getProperty("onlineUsers").getArray() : nullptr;
+                if (arr == nullptr && root) arr = root->getProperty("online").getArray();
+                if (arr != nullptr)
+                    for (auto& item : *arr)
+                    {
+                        SocialRail::Person person;
+                        if (auto* o = item.getDynamicObject()) { person.name = o->getProperty("name").toString(); person.themeId = o->getProperty("theme").toString(); }
+                        else person.name = item.toString();
+                        person.detail = "online";
+                        person.online = true;
+                        if (person.name.isNotEmpty()) people.add(person);
+                    }
+                safe->socialRail.setPeople(people);
+            }
+            safe->rebuildThreadBoard();
+            safe->logBox.setText(log.isEmpty()?r.body:log); safe->renderEffectLinks(log); safe->status.setText(safe->centerMode==0?"Catalog browser":"Threads", juce::dontSendNotification);
         });
     }).detach();
 }
@@ -1389,8 +1766,8 @@ void KyotoAudioProcessorEditor::refreshCatalog()
             {
                 auto* m=item.getDynamicObject(); if(!m) continue;
                 CatalogItem c{m->getProperty("id").toString(),m->getProperty("name").toString(),m->getProperty("face").toString(),m->getProperty("author").toString()}; safe->catalog.add(c);
-                auto* card=new juce::TextButton(c.name+"\n"+c.face+"  ·  "+c.author); card->setBounds((i%2)*250,(i/2)*104,238,94);
-                card->onClick=[safe,id=c.id,name=c.name]{ if(safe!=nullptr){safe->selectedCatalogId=id;safe->loadCatalogId(id,name);} }; safe->catalogHolder.addAndMakeVisible(card); ++i;
+                auto* card=new BoardCard(); card->title=c.name; card->meta=c.face+"  ·  "+c.author; card->body="Open in the builder"; card->themeId=safe->theme.id;
+                card->onOpen=[safe,id=c.id,name=c.name]{ if(safe!=nullptr){safe->selectedCatalogId=id;safe->loadCatalogId(id,name);} }; safe->catalogHolder.addAndMakeVisible(card); ++i;
             }
             safe->catalogHolder.setSize(juce::jmax(220, safe->catalogView.getWidth()-18), juce::jmax(220, ((i+1)/2)*92)); safe->catalogView.setViewedComponent(&safe->catalogHolder,false); safe->resized(); safe->refreshEffectBox();
         });
@@ -1522,11 +1899,12 @@ void KyotoAudioProcessorEditor::applyTheme(const juce::String& id)
     }
     for (auto* w : widgets) w->setTheme(theme);
     kLookAndFeel.setTheme(theme);
+    socialRail.setHostTheme(theme);
     kLookAndFeel.setColour(juce::PopupMenu::backgroundColourId, kt::c(theme.panel));
     kLookAndFeel.setColour(juce::PopupMenu::textColourId, kt::c(theme.text));
     kLookAndFeel.setColour(juce::PopupMenu::highlightedBackgroundColourId, kt::c(theme.accent).withAlpha(0.32f));
     kLookAndFeel.setColour(juce::PopupMenu::highlightedTextColourId, kt::c(theme.text));
-    for (auto* b : { &shareBtn, &chainBtn, &fxBtn, &logoutBtn, &feedBtn, &chatRefreshBtn, &threadsBtn, &socialBtn, &dmBtn, &adminDeleteBtn, &sendBtn, &utilityGoBtn, &addBtn, &chainBreakBtn, &chainMixBtn, &chainRemoveBtn, &chainUndoBtn, &saveBtn, &upBtn, &wavBtn, &fxAddBtn, &fxBreakBtn, &fxMixBtn, &fxRandomBtn, &fxClearBtn, &fxSaveBtn, &fxUpBtn, &fxShareChatBtn, &fxShareThreadBtn, &fxRemoveBtn, &fxUndoBtn, &pluginViewBtn, &pluginBackBtn, &newMachineBtn, &randomMachineBtn })
+    for (auto* b : { &shareBtn, &chainBtn, &fxBtn, &logoutBtn, &feedBtn, &chatRefreshBtn, &threadsBtn, &socialBtn, &dmBtn, &adminDeleteBtn, &sendBtn, &utilityGoBtn, &addBtn, &chainBreakBtn, &chainMixBtn, &chainRemoveBtn, &chainUndoBtn, &saveBtn, &upBtn, &wavBtn, &fxAddBtn, &fxBreakBtn, &fxMixBtn, &fxRandomBtn, &fxClearBtn, &fxSaveBtn, &fxUpBtn, &fxShareChatBtn, &fxShareThreadBtn, &fxRemoveBtn, &fxUndoBtn, &pluginViewBtn, &pluginBackBtn, &newMachineBtn, &randomMachineBtn, &catalogModeBtn, &threadsModeBtn, &railChatBtn, &railOnlineBtn })
     {
         b->setColour(juce::TextButton::buttonColourId, kt::c(theme.panel).brighter(0.08f));
         b->setColour(juce::TextButton::buttonOnColourId, kt::c(theme.accent).withAlpha(0.30f));

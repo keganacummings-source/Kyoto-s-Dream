@@ -66,6 +66,31 @@ private:
     kt::ThemePalette theme = kt::kThemes[0];
 };
 
+
+class SocialRail : public juce::Component
+{
+public:
+    struct Bubble { juce::String id, user, text, themeId; };
+    struct Person { juce::String name, detail, themeId; bool online = false; };
+
+    void setBubbles(const juce::Array<Bubble>& next) { bubbles = next; syncSize(); }
+    void setPeople(const juce::Array<Person>& next) { people = next; syncSize(); }
+    void setMode(int next) { mode = next; syncSize(); }
+    void setPhase(float next) { phase = next; repaint(); }
+    void setHostTheme(const kt::ThemePalette& t) { host = t; repaint(); }
+    int contentHeight() const { return juce::jmax(140, mode == 0 ? bubbles.size() * 74 + 18 : people.size() * 48 + 18); }
+
+    void paint(juce::Graphics& g) override;
+
+private:
+    void syncSize() { setSize(juce::jmax(220, getWidth()), contentHeight()); repaint(); }
+    juce::Array<Bubble> bubbles;
+    juce::Array<Person> people;
+    kt::ThemePalette host = kt::kThemes[0];
+    int mode = 0;
+    float phase = 0.f;
+};
+
 class KyotoAudioProcessorEditor : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
@@ -106,6 +131,10 @@ private:
     void publishEffect();
     void shareEffectToChat();
     void shareEffectToThread();
+    void setCenterMode(int mode);
+    void setRailMode(int mode);
+    void rebuildCenter();
+    void rebuildThreadBoard();
     void addSpecialChainStep(int type, const juce::String& name);
     void refreshEffectBox();
     void updateFxControls();
@@ -145,6 +174,7 @@ private:
     juce::TextButton shareBtn { "DREAMSHARE" }, chainBtn { "CHAIN" }, fxBtn { "FX BUILDER" }, logoutBtn { "LOG OUT" };
     juce::TextButton pluginViewBtn { "PLUGIN VIEW" }, pluginBackBtn { "← BACK" }, newMachineBtn { "NEW MACHINE" }, randomMachineBtn { "RANDOMIZE MACHINE" };
     juce::TextButton chatRefreshBtn { "CHAT" }, threadsBtn { "THREADS" }, socialBtn { "FRIENDS" }, dmBtn { "DM" }, adminDeleteBtn { "REMOVE" }, utilityGoBtn { "GO" };
+    juce::TextButton catalogModeBtn { "CATALOG" }, threadsModeBtn { "THREADS" }, railChatBtn { "CHAT" }, railOnlineBtn { "ONLINE" };
     juce::TextEditor utilityBox;
     juce::ComboBox utilityActionBox;
     juce::Label status, whoLabel;
@@ -154,6 +184,14 @@ private:
     juce::ComboBox themeBox;
     juce::Viewport catalogView;
     juce::Component catalogHolder;
+    juce::Component threadHolder;
+    juce::Viewport chatView;
+    SocialRail socialRail;
+    int centerMode = 0;
+    int railMode = 0;
+    juce::String selectedThreadId;
+    struct ThreadItem { juce::String id, user, title, text, themeId; int comments = 0; };
+    juce::Array<ThreadItem> threads;
     juce::OwnedArray<juce::TextButton> feedEffectButtons;
 
     juce::TextEditor nameBox, effectNameBox;

@@ -323,7 +323,8 @@ function removeName(arr, name) {
 }
 function addDm(db, from, to, message) {
   const a = socialUser(db, from), b = socialUser(db, to);
-  const m = Object.assign({ id: socialMessageId(), from: cleanName(from), to: cleanName(to), at: Date.now() }, message || {});
+  const fromRec = db.users && db.users[cleanName(from).toLowerCase()];
+  const m = Object.assign({ id: socialMessageId(), from: cleanName(from), to: cleanName(to), at: Date.now(), theme: (fromRec && fromRec.theme) || 'trippah' }, message || {});
   a.dms.push(m); b.dms.push(m);
   a.dms = a.dms.slice(-200); b.dms = b.dms.slice(-200);
   return m;
@@ -378,7 +379,7 @@ async function loginAccount(env, body) {
   db.sessions[token] = { user: rec.name, role: rec.role || 'user', theme: themeId, exp: now + SESSION_MS };
   await writeAccounts(env, db);
   // Login is also a presence heartbeat so the API's live-user count is immediately accurate.
-  const online = await touchOnline(env, rec.name);
+  const online = await touchOnline(env, rec.name, themeId);
   const themePack = resolveTheme(themeId);
   // Shape matches DreamShare (token + role + user + theme) and the web UI
   return {
@@ -396,6 +397,7 @@ async function loginAccount(env, body) {
     themeApi: THEME_API_VERSION,
     vstPatch: VST_PATCH_VERSION,
     online: online,
+            onlineUsers: await readPresence(env),
     onlineCount: online.length
   };
 }
@@ -507,8 +509,9 @@ function threadToPost(t) {
     audioUpload: vaultOf(t).audioUpload,
     audioParts: vaultOf(t).audioParts,
     audioBytes: vaultOf(t).audioBytes,
-    comments: t.comments || [],
-    reactions: (t.reactions && typeof t.reactions === 'object') ? t.reactions : {}
+    comments: (t.comments || []).map(function (c) { return Object.assign({}, c, { theme: c && c.theme ? c.theme : (t.theme || 'trippah') }); }),
+    reactions: (t.reactions && typeof t.reactions === 'object') ? t.reactions : {},
+    theme: t.theme || 'trippah'
   };
 }
 
@@ -797,7 +800,9 @@ async function writeKv(env, feed) {
 
 
 const ONLINE_TTL = 55000;
-async function readOnline(env) {
+function presenceAt(v) { return (v && typeof v === 'object') ? Number(v.at || 0) : Number(v || 0); }
+function presenceTheme(v) { return (v && typeof v === 'object' && v.theme) ? String(v.theme) : 'trippah'; }
+async function readPresence(env) {
   const now = Date.now();
   let map = {};
   try {
@@ -806,9 +811,15 @@ async function readOnline(env) {
       if (raw) map = JSON.parse(raw);
     }
   } catch (_) {}
-  return Object.keys(map || {}).filter(function (k) { return now - (map[k] || 0) < ONLINE_TTL; });
+  return Object.keys(map || {}).filter(function (k) { return now - presenceAt(map[k]) < ONLINE_TTL; }).map(function (k) {
+    return { name: k, theme: presenceTheme(map[k]), online: true };
+  });
 }
-async function touchOnline(env, user) {
+async function readOnline(env) {
+  const people = await readPresence(env);
+  return people.map(function (p) { return p.name; });
+}
+async function touchOnline(env, user, theme) {
   const now = Date.now();
   let map = {};
   try {
@@ -817,8 +828,8 @@ async function touchOnline(env, user) {
       if (raw) map = JSON.parse(raw);
     }
   } catch (_) { map = {}; }
-  map[user] = now;
-  Object.keys(map).forEach(function (k) { if (now - map[k] > ONLINE_TTL) delete map[k]; });
+  map[user] = { at: now, theme: String(theme || 'trippah').toLowerCase() };
+  Object.keys(map).forEach(function (k) { if (now - presenceAt(map[k]) > ONLINE_TTL) delete map[k]; });
   try {
     if (env && env.DREAMSHARE_KV) await env.DREAMSHARE_KV.put('presence-v1', JSON.stringify(map));
   } catch (_) {}
@@ -1245,6 +1256,7 @@ export default {
             chat: chat,
             threads: threads.slice(0, 40),
             online: online,
+            onlineUsers: await readPresence(env),
             onlineCount: online.length,
             themeApi: THEME_API_VERSION,
             vstPatch: VST_PATCH_VERSION,
@@ -1279,6 +1291,7 @@ export default {
           roles: feed.roles || {},
           customRoles: cleanCustomRoles(feed.customRoles),
           online: online,
+            onlineUsers: await readPresence(env),
           onlineCount: online.length,
           activeUsers: online.length,
           supers: SUPER_ADMINS,
@@ -1466,7 +1479,13 @@ export default {
       // ---- Private social layer: friends, DMs and approval-based WAV requests ----
       if (action === 'social_list' || action === 'friends_list') {
         const db = await readAccounts(env), me = socialUser(db, user);
-        return json({ ok:true, storage:STORAGE, user:user, friends:me.friends, incoming:me.incoming.slice(-50),
+        function themed(names) {
+          return (names || []).map(function (n) {
+            const rec = db.users && db.users[String(n || '').toLowerCase()];
+            return { name: n, theme: (rec && rec.theme) || 'trippah', online: false };
+          });
+        }
+        return json({ ok:true, storage:STORAGE, user:user, friends:me.friends, friendsDetailed:themed(me.friends), incoming:me.incoming.slice(-50),
           outgoing:me.outgoing.slice(-50), wavRequests:me.wavRequests.slice(-50), directory:socialDirectory(db) });
       }
       if (action === 'friend_request') {
@@ -1646,6 +1665,7 @@ export default {
             text: text || title,
             at: body.at || Date.now(),
             comments: [],
+            theme: String((sess && sess.theme) || 'trippah').toLowerCase(),
             hasAudio: !!(body.hasAudio || audioChunks.length || audioUrl || vault.audioParts),
             audioId: body.audioId || (audioChunks.length || vault.audioParts ? ('a' + id) : null),
             audioUrl: audioUrl,
@@ -1672,7 +1692,7 @@ export default {
           if (!thread) return json({ ok: false, error: 'thread not found' }, 404);
           if (!Array.isArray(thread.comments)) thread.comments = [];
           const cid = String(body.commentId || ('c' + Date.now() + Math.floor(Math.random() * 999))).replace(/[^A-Za-z0-9_\-]/g, '').slice(0, 48);
-          const comment = { id: cid, user: user, text: text, at: body.at || Date.now() };
+          const comment = { id: cid, user: user, text: text, at: body.at || Date.now(), theme: String((sess && sess.theme) || 'trippah').toLowerCase() };
           thread.comments.push(comment);
           if (thread.comments.length > 80) thread.comments = thread.comments.slice(-80);
           feed.updated = Date.now();
@@ -1764,6 +1784,7 @@ export default {
             user: user,
             text: text,
             at: body.at || Date.now(),
+            theme: String((sess && sess.theme) || body.theme || 'trippah').toLowerCase(),
             reactions: {}
           };
           feed.chat.push(msg);
@@ -1841,11 +1862,12 @@ export default {
         }
 
         if (action === 'presence' || action === 'heartbeat') {
-          const online = await touchOnline(env, user);
+          const online = await touchOnline(env, user, sess && sess.theme);
           return json({
             ok: true,
             storage: STORAGE,
             online: online,
+            onlineUsers: await readPresence(env),
             onlineCount: online.length,
             activeUsers: online.length,
             user: user,
