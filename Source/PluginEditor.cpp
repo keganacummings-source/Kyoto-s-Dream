@@ -384,7 +384,7 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     newMachineBtn.onClick = [this] {
         juce::PopupMenu menu;
         menu.addItem(1, "4 : 5  ·  PORTRAIT"); menu.addItem(2, "1 : 1  ·  SQUARE"); menu.addItem(3, "5 : 4  ·  LANDSCAPE"); menu.addItem(4, "FREEFORM");
-        const int choice = menu.showMenu(juce::PopupMenu::Options().withTargetComponent(&newMachineBtn));
+        const int choice = menu.showAt(&newMachineBtn);
         if (choice >= 1 && choice <= 4) startNewMachine(choice - 1);
     };
     randomMachineBtn.onClick = [this] { randomizeMachine(); };
