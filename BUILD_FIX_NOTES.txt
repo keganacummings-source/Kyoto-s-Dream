@@ -1,19 +1,16 @@
-KYOTRIPPAH BUILD FIX — 2026-10-05
+KYOTRIPPAH BUILD FIX — 2026-10-05 (CI reopen)
 
-CI logs reviewed:
-- Windows and macOS both failed in Source/PluginEditor.cpp.
-- Root cause 1: KyotoLookAndFeel::drawButtonBackground referenced isMouseDown, but the parameter is named isButtonDown.
-- Root cause 2: JUCE 8 DynamicObject::getProperty() accepts only the property name; the redesign introduced calls using a second default-value argument.
-- Root cause 3: JUCE 8 requires PopupMenu::showMenu(...) / showMenuAsync(...); the editor used a removed/nonexistent PopupMenu::show() call.
+CI log (macOS, PluginEditor.cpp) failed on two errors. Windows job failed in the same editor translation unit.
 
-Fixes:
-1. Replaced isMouseDown with isButtonDown.
-2. Added propertyOr(...) helper for DynamicObject properties with fallbacks.
-3. Replaced all CI-reported DynamicObject getProperty(name, default) calls with propertyOr(...).
-4. Replaced the machine playground PopupMenu::show() call with PopupMenu::showMenu(...) using the JUCE 8 Options API.
-5. Left ValueTree getProperty usage unchanged where its API is valid.
-6. Re-scanned PluginEditor.cpp; remaining two-argument getProperty calls are ValueTree::getProperty uses, which are valid.
+1. Source/PluginEditor.cpp:731 — no member named accent2 in kt::ThemePalette.
+   ThemePalette only has accent / pegHot. drawThemeField now uses pegHot as the second accent.
+2. Source/PluginEditor.cpp:1584 — ambiguous operator== between const char* (range-for key from a string-literal list) and juce::String.
+   Compared juce::String(key) == "online" instead.
 
-The supplied CI log showed no additional C++ errors after these failures; the job exited because PluginEditor.cpp did not compile.
+UI cleanup (same editor):
+- Nav wordmark no longer draws a second line into the SHARE button.
+- Login is a centered card with the fields sitting on that card, not a full-bleed empty panel.
+- Home hero subtitle is clipped so it does not run under the LIVE badge.
+- Background sprites reduced from 4 to 2 and drawn smaller so they stay behind the panels.
 
-A full local JUCE build could not be reproduced in this environment because this source project obtains JUCE 8.0.6 through CMake FetchContent and the build environment here does not have that dependency cached.
+Worker copies were not changed. JUCE is fetched by CMake and was not available for a local compile here.

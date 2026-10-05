@@ -728,7 +728,7 @@ void drawThemeField(juce::Graphics& g, const kt::ThemePalette& t, juce::Rectangl
 {
     const juce::String id = t.id;
     auto accent = kt::c(t.accent);
-    auto alt = kt::c(t.accent2);
+    auto alt = kt::c(t.pegHot); // second accent; ThemePalette has no accent2 field
     auto ink = kt::c(t.text);
     const int seed = id.hashCode() & 0x7fffffff;
     const int kind = seed % 9;
@@ -939,27 +939,28 @@ void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
         return;
     }
     drawThemeField(g, theme, getLocalBounds().toFloat().reduced(10.f), animPhase);
-    for (int i=0;i<4;i++)
+    for (int i=0;i<2;i++)
     {
-        const float px = 70.f + std::fmod((float)i*210.f + animPhase*16.f, (float)juce::jmax(100,getWidth()-180));
-        const float py = 150.f + std::fmod((float)i*97.f + std::sin(animPhase+i)*12.f, (float)juce::jmax(140,getHeight()-210));
-        drawThemeSprite(g, theme, theme.id, px, py, 0.34f, animPhase + i);
+        const float px = 90.f + std::fmod((float)i*280.f + animPhase*10.f, (float)juce::jmax(120,getWidth()-220));
+        const float py = 168.f + std::fmod((float)i*140.f + std::sin(animPhase+i)*8.f, (float)juce::jmax(160,getHeight()-240));
+        drawThemeSprite(g, theme, theme.id, px, py, 0.22f, animPhase + i);
     }
 
     g.setColour(kt::c(theme.panel).withAlpha(0.98f));
     g.fillRoundedRectangle(8.f, 8.f, (float)getWidth()-16.f, 42.f, 11.f);
     g.setColour(kt::c(theme.border)); g.drawRoundedRectangle(8.5f, 8.5f, (float)getWidth()-17.f, 41.f, 11.f, 1.f);
     g.setColour(kt::c(theme.accent)); g.setFont(kt::font(theme, 15.f, true));
-    g.drawText("DREAMSHARE", 20, 13, 150, 18, juce::Justification::left);
-    g.setColour(kt::c(theme.muted)); g.setFont(kt::font(theme, 8.5f));
-    g.drawText("KYOTRIPPAH  ·  BUILD / PLAY / SHARE", 20, 31, 180, 10, juce::Justification::left);
+    g.drawText("DREAMSHARE", 20, 16, 150, 20, juce::Justification::left);
 
     if (!loggedIn)
     {
-        auto card = getLocalBounds().withTrimmedTop(66).reduced(24).toFloat();
-        g.setColour(kt::c(theme.panel).withAlpha(0.96f)); g.fillRoundedRectangle(card, 16.f); g.setColour(kt::c(theme.border)); g.drawRoundedRectangle(card, 16.f, 1.f);
-        g.setColour(kt::c(theme.accent)); g.setFont(kt::font(theme, 18.f, true)); g.drawText("ENTER THE ROOM", card.getX()+26, card.getY()+24, 220, 26, juce::Justification::left);
-        g.setColour(kt::c(theme.muted)); g.setFont(kt::font(theme, 11.f)); g.drawText("Your saved presets and shared effects stay with your DreamShare account.", card.getX()+26, card.getY()+56, card.getWidth()-52, 22, juce::Justification::left);
+        auto card = getLocalBounds().withSizeKeepingCentre(420, 280).toFloat();
+        g.setColour(kt::c(theme.panel).withAlpha(0.97f)); g.fillRoundedRectangle(card, 16.f);
+        g.setColour(kt::c(theme.accent).withAlpha(0.85f)); g.fillRoundedRectangle(card.getX(), card.getY(), 4.f, card.getHeight(), 2.f);
+        g.setColour(kt::c(theme.border)); g.drawRoundedRectangle(card, 16.f, 1.f);
+        g.setColour(kt::c(theme.accent)); g.setFont(kt::font(theme, 20.f, true)); g.drawText("ENTER THE ROOM", card.getX()+28, card.getY()+22, card.getWidth()-56, 28, juce::Justification::left);
+        g.setColour(kt::c(theme.muted)); g.setFont(kt::font(theme, 12.f));
+        g.drawFittedText("Saved presets and shared effects stay with your DreamShare account.", juce::Rectangle<int>((int)card.getX()+28, (int)card.getY()+54, (int)card.getWidth()-56, 36), juce::Justification::topLeft, 2);
         return;
     }
 
@@ -980,7 +981,7 @@ void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
         g.drawText("DREAMSHARE HOME", hero.getX()+18, hero.getY()+13, 280, 25, juce::Justification::left);
         g.setColour(kt::c(theme.text));
         g.setFont(kt::font(theme, 10.5f, false));
-        g.drawText("Catalog in the center. Threads behind the catalog tab. Chat stays on the side rail.", hero.getX()+18, hero.getY()+43, hero.getWidth()-250, 18, juce::Justification::left);
+        g.drawFittedText("Catalog in the center. Threads on their own tab. Chat stays on the side rail.", juce::Rectangle<float>(hero.getX()+18, hero.getY()+42, juce::jmax(120.f, hero.getWidth()-250.f), 28.f).toNearestInt(), juce::Justification::topLeft, 2);
         g.setColour(kt::c(theme.accent));
         g.setFont(kt::font(theme, 9.f, true));
         g.drawText("LIVE  ·  " + (account.isEmpty() ? juce::String("SIGNED IN") : account.toUpperCase()), hero.getRight()-210, hero.getY()+20, 192, 16, juce::Justification::right);
@@ -1124,8 +1125,8 @@ void KyotoAudioProcessorEditor::resized()
     auto area = getLocalBounds().withTrimmedTop(52).reduced(12);
     if (! loggedIn)
     {
-        auto box = area.withSizeKeepingCentre(340, 166);
-        userBox.setBounds(box.removeFromTop(34)); box.removeFromTop(8); passBox.setBounds(box.removeFromTop(34)); box.removeFromTop(12); loginBtn.setBounds(box.removeFromTop(34).withSizeKeepingCentre(150, 34));
+        auto box = getLocalBounds().withSizeKeepingCentre(360, 118).translated(0, 28);
+        userBox.setBounds(box.removeFromTop(34)); box.removeFromTop(8); passBox.setBounds(box.removeFromTop(34)); box.removeFromTop(10); loginBtn.setBounds(box.removeFromTop(34));
         return;
     }
 
@@ -1581,7 +1582,7 @@ void KyotoAudioProcessorEditor::chatUtility(const juce::String& selectedAction)
                                     person.detail = o->getProperty("text").toString();
                                 }
                                 else person.name = item.toString();
-                                person.online = key == juce::String("online");
+                                person.online = juce::String(key) == "online";
                                 if (person.detail.isEmpty()) person.detail = key;
                                 if (person.name.isNotEmpty()) people.add(person);
                             }
