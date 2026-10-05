@@ -1054,42 +1054,54 @@ async function handleKyotoModule(action, body, sess, env) {
   const kv = env.DREAMSHARE_KV;
   if (!kv) return { ok: false, error: "DREAMSHARE_KV missing", code: "no-kv" };
 
-  // module_list / community catalog for Kyoto VST
   if (action === "module_list" || action === "community" || action === "catalog") {
     const face = String(body.face || body.filter || "").toLowerCase();
     let list = JSON.parse((await kv.get("module-index")) || "[]");
-    if (face === "kyoto" || face === "fx") list = list.filter((m) => m.face === face);
-    // Also merge public community instruments index if present
+    if (face) list = list.filter((m) => String(m.face || "").toLowerCase() === face);
     try {
       const ci = await communityIndex(env);
       for (const p of (ci || []).slice(0, 80)) {
-        if (!list.some(x => x.id === p.id)) {
-          list.push({ id: p.id, name: p.name, face: "kyoto", author: p.author, at: p.updated || p.created || 0, community: true });
-        }
+        if (!list.some(x => x.id === p.id)) list.push({ id:p.id, name:p.name, face:"kyoto", author:p.author, at:p.updated||p.created||0, community:true });
       }
     } catch (_) {}
-    list = list.sort((a,b) => (b.at || 0) - (a.at || 0)).slice(0, 100);
-    return { ok: true, modules: list, community: list, storage: STORAGE, kyotoApi: KYOTO_API_VERSION };
+    list = list.sort((a,b) => (b.at||0) - (a.at||0)).slice(0, 100);
+    return { ok:true, modules:list, community:list, storage:STORAGE, kyotoApi:KYOTO_API_VERSION };
   }
 
   if (action === "module_get" || action === "community_get") {
     const id = String(body.id || body.community || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48);
-    if (!id) return { ok: false, error: "missing id" };
-    let raw = await kv.get("module:" + id);
+    if (!id) return { ok:false, error:"missing id" };
+    const raw = await kv.get("module:" + id);
     if (!raw) {
-      // fall back to community-instrument key
       const ci = await kv.get("community-instrument:" + id, "json");
-      if (ci) return { ok: true, module: ci, instrument: ci };
-      return { ok: false, error: "not found" };
+      if (ci) return { ok:true, module:ci, instrument:ci };
+      return { ok:false, error:"not found" };
     }
-    return { ok: true, module: JSON.parse(raw) };
+    return { ok:true, module:JSON.parse(raw) };
   }
 
-  // module_publish + community_publish (same durable path)
+  if (action === "module_delete" || action === "catalog_delete" || action === "module_remove") {
+    if (!isSuper(sess.user) || sess.role !== "super")
+      return { ok:false, error:"admin only" };
+    const id = String(body.id || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48);
+    if (!id) return { ok:false, error:"missing id" };
+    const raw = await kv.get("module:" + id);
+    if (!raw) return { ok:false, error:"not found" };
+    const doc = JSON.parse(raw);
+    await kv.delete("module:" + id);
+    const index = JSON.parse((await kv.get("module-index")) || "[]").filter(m => m && m.id !== id);
+    await kv.put("module-index", JSON.stringify(index.slice(-200)));
+    const ownerKey = "user-modules:" + String(doc.author || "").toLowerCase();
+    if (ownerKey !== "user-modules:") {
+      const owned = JSON.parse((await kv.get(ownerKey)) || "[]").filter(x => x !== id);
+      await kv.put(ownerKey, JSON.stringify(owned.slice(-100)));
+    }
+    return { ok:true, deleted:id };
+  }
+
   if (action === "module_publish" || action === "community_publish") {
     let mod = body.module;
     if (!mod && body.state) {
-      // community_publish style: name + state object
       mod = typeof body.state === "string" ? JSON.parse(body.state) : body.state;
       if (mod && typeof mod === "object") {
         mod.name = mod.name || body.name;
@@ -1097,66 +1109,35 @@ async function handleKyotoModule(action, body, sess, env) {
         mod.format = mod.format || KYOTO_MODULE_FORMAT;
       }
     }
-    if (typeof mod === "string") {
-      try { mod = JSON.parse(mod); } catch (_) { return { ok: false, error: "bad module json" }; }
-    }
-    if (!mod || typeof mod !== "object") return { ok: false, error: "module required" };
-    if (mod.format && mod.format !== KYOTO_MODULE_FORMAT && mod.format !== "kyoteppah-module-1") {
-      return { ok: false, error: "bad module format" };
-    }
+    if (typeof mod === "string") { try { mod = JSON.parse(mod); } catch (_) { return {ok:false,error:"bad module json"}; } }
+    if (!mod || typeof mod !== "object") return {ok:false,error:"module required"};
+    const format = mod.format || KYOTO_MODULE_FORMAT;
+    const okFormat = format === "kyoteppah-module-1" || format === "kyoteppah-effect-1";
     const face = String(mod.face || body.face || "kyoto").toLowerCase();
-    if (face !== "kyoto" && face !== "fx") return { ok: false, error: "bad face" };
-
-    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    const theme = String(mod.theme || body.theme || "trippah").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 32) || "trippah";
+    const okFace = ["kyoto","fx","chain","effect"].includes(face);
+    if (!okFormat || !okFace) return {ok:false,error:"bad module"};
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+    const theme = String(mod.theme || body.theme || "trippah").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0,32) || "trippah";
     const doc = {
-      format: KYOTO_MODULE_FORMAT,
-      id,
-      name: String(mod.name || body.name || "untitled").replace(/[<>]/g, "").trim().slice(0, 48) || "untitled",
-      face: face,
-      author: sess.user,
-      theme: theme,
-      grid: Number(mod.grid) || 0,
-      free: !!mod.free,
-      slots: Array.isArray(mod.slots) ? mod.slots.slice(0, 12) : [],
-      widgets: Array.isArray(mod.widgets) ? mod.widgets.slice(0, 80) : [],
-      instrument: face === "kyoto" ? (mod.instrument || null) : null,
-      description: String(body.description || mod.description || "").replace(/[<>]/g, "").trim().slice(0, 280),
-      at: Date.now(),
-      updated: Date.now(),
-      downloads: 0
+      format, id,
+      name:String(mod.name || body.name || "untitled").replace(/[<>]/g,"").trim().slice(0,48)||"untitled",
+      face, author:sess.user, theme, grid:Number(mod.grid)||0, free:!!mod.free,
+      steps:Array.isArray(mod.steps)?mod.steps.slice(0,12):[],
+      slots:Array.isArray(mod.slots)?mod.slots.slice(0,12):[],
+      widgets:Array.isArray(mod.widgets)?mod.widgets.slice(0,80):[],
+      instrument:face === "kyoto" ? (mod.instrument || null) : null,
+      description:String(body.description||mod.description||"").replace(/[<>]/g,"").trim().slice(0,280),
+      at:Date.now()
     };
-    const encoded = JSON.stringify(doc);
-    if (encoded.length > 180000) return { ok: false, error: "too large", code: "too-large" };
-
-    await kv.put("module:" + id, encoded);
-    // dual-write community-instrument key so GET ?community=id works
-    await kv.put("community-instrument:" + id, encoded);
-
-    const index = JSON.parse((await kv.get("module-index")) || "[]");
-    index.push({ id, name: doc.name, face: doc.face, author: doc.author, theme: doc.theme, at: doc.at });
+    if (JSON.stringify(doc).length > 180000) return {ok:false,error:"too large"};
+    await kv.put("module:"+id, JSON.stringify(doc));
+    const index=JSON.parse((await kv.get("module-index"))||"[]");
+    index.push({id,name:doc.name,face:doc.face,author:doc.author,at:doc.at});
     await kv.put("module-index", JSON.stringify(index.slice(-200)));
-
-    // public community list (for web + VST catalog)
-    try {
-      const list = await communityIndex(env);
-      list.unshift({ id, name: doc.name, author: doc.author, description: doc.description, created: doc.at, updated: doc.at, downloads: 0, face: doc.face, theme: doc.theme });
-      await communitySaveIndex(env, list.slice(0, COMMUNITY_MAX));
-    } catch (_) {}
-
-    const ownedKey = "user-modules:" + String(sess.user || "").toLowerCase();
-    const owned = JSON.parse((await kv.get(ownedKey)) || "[]");
-    owned.push(id);
+    const ownedKey="user-modules:"+String(sess.user||"").toLowerCase();
+    const owned=JSON.parse((await kv.get(ownedKey))||"[]"); owned.push(id);
     await kv.put(ownedKey, JSON.stringify(owned.slice(-100)));
-
-    return {
-      ok: true,
-      id,
-      module: { id, name: doc.name, face: doc.face, author: doc.author, theme: doc.theme, at: doc.at },
-      instrument: { id, name: doc.name, author: doc.author, description: doc.description, created: doc.at, updated: doc.at, downloads: 0 },
-      storage: STORAGE,
-      kyotoApi: KYOTO_API_VERSION
-    };
+    return {ok:true,id,module:doc};
   }
   return null;
 }
@@ -1432,6 +1413,14 @@ export default {
           return json({ ok: false, error: String(err && err.message || err) }, 502);
         }
       }
+      if (action === 'module_delete' || action === 'catalog_delete' || action === 'module_remove') {
+        try {
+          const r = await handleKyotoModule(action, body, sess, env);
+          if (r) return json(r);
+        } catch (err) {
+          return json({ ok:false, error:String(err && err.message || err) }, 502);
+        }
+      }
       if (action === 'community' || action === 'catalog' || action === 'module_list') {
         try {
           const r = await handleKyotoModule('module_list', body, sess, env);
@@ -1439,6 +1428,11 @@ export default {
         } catch (err) {
           return json({ ok: false, error: String(err && err.message || err) }, 502);
         }
+      }
+
+      if (action === 'list_threads' || action === 'threads') {
+        const threads = Array.isArray(feed.threads) ? feed.threads.slice(-80).reverse() : [];
+        return json({ ok:true, storage:STORAGE, threads:threads, count:threads.length });
       }
 
       // ---- Instrument presets (account-backed; safe to use from web instruments or VST WebView) ----

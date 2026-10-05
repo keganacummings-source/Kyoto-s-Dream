@@ -33,6 +33,7 @@ DreamResult postAction(const juce::String& action, juce::var body, const juce::S
         r.error = o->getProperty("error").toString();
         r.token = o->getProperty("token").toString();
         r.user = o->getProperty("user").toString();
+        r.role = o->getProperty("role").toString();
         if (o->hasProperty("chat"))
             r.body = juce::JSON::toString(o->getProperty("chat"));
         else if (o->hasProperty("modules"))
@@ -94,5 +95,40 @@ DreamResult publishModule(const juce::String& token, const juce::String& name, c
     o->setProperty("name", name);
     o->setProperty("module", juce::JSON::parse(jsonBody));
     return postAction("module_publish", juce::var(o), token);
+}
+
+DreamResult deleteModule(const juce::String& token, const juce::String& id)
+{
+    auto* o = new juce::DynamicObject(); o->setProperty("id", id);
+    return postAction("module_delete", juce::var(o), token);
+}
+
+DreamResult getSocial(const juce::String& token)
+{
+    return postAction("social_list", juce::var(new juce::DynamicObject()), token);
+}
+
+DreamResult getDM(const juce::String& token, const juce::String& peer)
+{
+    auto* o = new juce::DynamicObject(); o->setProperty("peer", peer);
+    return postAction("dm_list", juce::var(o), token);
+}
+
+DreamResult sendDM(const juce::String& token, const juce::String& peer, const juce::String& text)
+{
+    auto* o = new juce::DynamicObject(); o->setProperty("to", peer); o->setProperty("text", text);
+    return postAction("dm_send", juce::var(o), token);
+}
+
+DreamResult friendRequest(const juce::String& token, const juce::String& action, const juce::String& target)
+{
+    auto* o = new juce::DynamicObject(); o->setProperty("target", target);
+    return postAction(action, juce::var(o), token);
+}
+
+DreamResult react(const juce::String& token, const juce::String& kind, const juce::String& id, const juce::String& emoji)
+{
+    auto* o = new juce::DynamicObject(); o->setProperty("kind", kind); o->setProperty("id", id); o->setProperty("emoji", emoji);
+    return postAction("react", juce::var(o), token);
 }
 }

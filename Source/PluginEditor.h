@@ -67,7 +67,9 @@ private:
     void logout();
     void sendChat();
     void refreshFeed();
+    void chatUtility(const juce::String& action);
     void refreshCatalog();
+    void deleteCatalogId(const juce::String& id);
     void loadCatalogId(const juce::String& id, const juce::String& name);
     void applyTheme(const juce::String& id);
     void loadWav();
@@ -82,10 +84,15 @@ private:
     KyotoAudioProcessor& proc;
     int tab = 0;
     bool loggedIn = false;
+    bool isAdmin = false;
+    float animPhase = 0.f;
     juce::String token, account;
     kt::ThemePalette theme = kt::kThemes[0];
 
     juce::TextButton shareBtn { "DREAMSHARE" }, chainBtn { "CHAIN" }, fxBtn { "FX BUILDER" }, logoutBtn { "LOG OUT" };
+    juce::TextButton chatRefreshBtn { "CHAT" }, threadsBtn { "THREADS" }, socialBtn { "FRIENDS" }, dmBtn { "DM" }, adminDeleteBtn { "REMOVE" }, utilityGoBtn { "GO" };
+    juce::TextEditor utilityBox;
+    juce::ComboBox utilityActionBox;
     juce::Label status, whoLabel;
 
     juce::TextEditor userBox, passBox, msgBox, logBox;
@@ -106,6 +113,7 @@ private:
     juce::ValueTree fxStack { "fxstack" };
 
     struct CatalogItem { juce::String id, name, face, author; };
+    juce::String selectedCatalogId;
     juce::Array<CatalogItem> catalog;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(KyotoAudioProcessorEditor)
