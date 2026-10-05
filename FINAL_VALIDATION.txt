@@ -20,7 +20,11 @@ Validation performed:
 - C++ delimiter/brace/parenthesis balance passed for all Source files.
 - New method declaration/definition checks passed.
 - Machine payload serialization sanity check passed.
-- Searched for the previously reported JUCE DynamicObject two-argument getProperty misuse; none remain.
+- Searched for the previously reported JUCE DynamicObject two-argument getProperty misuse; remaining two-argument calls are ValueTree::getProperty uses, which are valid.
+- Replaced the JUCE 8-incompatible PopupMenu::show() call with PopupMenu::showMenu(PopupMenu::Options().withTargetComponent(...)).
+
+Latest CI blocker addressed:
+- The supplied CI log showed PluginEditor.cpp failing at the machine playground menu because PopupMenu::show() was not a JUCE 8 member; both KYOTO and KYOTRIPPAHFX reported the same failure.
 
 Build limitation:
 - CMake configure was attempted. JUCE 8.0.6 could not be downloaded because this environment
