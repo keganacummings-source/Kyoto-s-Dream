@@ -22,7 +22,7 @@ KyotoSpxritProcessor::KyotoSpxritProcessor()
         if(resources.existsAsFile()) themeManager.loadFromFile(resources);
     }
     activeTheme=themeManager.get("trippah");
-    for(int i=0;i<dm::DspEngine::effectCount;i++){auto s=juce::String(i);enabled[i]=state.getRawParameterValue("fx"+s);amount[i]=state.getRawParameterValue("amt"+s);tone[i]=state.getRawParameterValue("tone"+s);motion[i]=state.getRawParameterValue("motion"+s);mix[i]=state.getRawParameterValue("mix"+s);shape[i]=state.getRawParameterValue("shape"+s);}
+    for(int i=0;i<kyoto::kNumEffects;i++){auto s=juce::String(i);enabled[i]=state.getRawParameterValue("fx"+s);amount[i]=state.getRawParameterValue("amt"+s);tone[i]=state.getRawParameterValue("tone"+s);motion[i]=state.getRawParameterValue("motion"+s);mix[i]=state.getRawParameterValue("mix"+s);shape[i]=state.getRawParameterValue("shape"+s);}
     for(int i=0;i<fxSlots;i++)fxSelect[i]=state.getRawParameterValue("slot"+juce::String(i));
 }
 const juce::String KyotoSpxritProcessor::getName() const {
@@ -34,7 +34,7 @@ const juce::String KyotoSpxritProcessor::getName() const {
 }
 juce::AudioProcessorValueTreeState::ParameterLayout KyotoSpxritProcessor::createParams(){
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> p;
-    for(int i=0;i<dm::DspEngine::effectCount;i++){auto s=juce::String(i);p.push_back(std::make_unique<juce::AudioParameterBool>("fx"+s,"FX "+s,false));p.push_back(std::make_unique<juce::AudioParameterFloat>("amt"+s,"Amount",0,1,0.5f));p.push_back(std::make_unique<juce::AudioParameterFloat>("tone"+s,"Tone",0,1,0.5f));p.push_back(std::make_unique<juce::AudioParameterFloat>("motion"+s,"Motion",0,1,0.5f));p.push_back(std::make_unique<juce::AudioParameterFloat>("mix"+s,"Mix",0,1,0.65f));p.push_back(std::make_unique<juce::AudioParameterFloat>("shape"+s,"Shape",0,1,0.5f));}
+    for(int i=0;i<kyoto::kNumEffects;i++){auto s=juce::String(i);p.push_back(std::make_unique<juce::AudioParameterBool>("fx"+s,"FX "+s,false));p.push_back(std::make_unique<juce::AudioParameterFloat>("amt"+s,"Amount",0,1,0.5f));p.push_back(std::make_unique<juce::AudioParameterFloat>("tone"+s,"Tone",0,1,0.5f));p.push_back(std::make_unique<juce::AudioParameterFloat>("motion"+s,"Motion",0,1,0.5f));p.push_back(std::make_unique<juce::AudioParameterFloat>("mix"+s,"Mix",0,1,0.65f));p.push_back(std::make_unique<juce::AudioParameterFloat>("shape"+s,"Shape",0,1,0.5f));}
     for(int i=0;i<fxSlots;i++)p.push_back(std::make_unique<juce::AudioParameterInt>("slot"+juce::String(i),"FX Slot "+juce::String(i+1),0,199,i));
     p.push_back(std::make_unique<juce::AudioParameterInt>("osc1","Oscillator 1",0,5,0));p.push_back(std::make_unique<juce::AudioParameterInt>("osc2","Oscillator 2",0,5,3));p.push_back(std::make_unique<juce::AudioParameterInt>("osc3","Oscillator 3",0,5,1));
     p.push_back(std::make_unique<juce::AudioParameterFloat>("oscMix1","Osc Mix 1",0,1,.8f));p.push_back(std::make_unique<juce::AudioParameterFloat>("oscMix2","Osc Mix 2",0,1,.35f));p.push_back(std::make_unique<juce::AudioParameterFloat>("oscMix3","Osc Mix 3",0,1,.2f));
@@ -42,36 +42,121 @@ juce::AudioProcessorValueTreeState::ParameterLayout KyotoSpxritProcessor::create
     p.push_back(std::make_unique<juce::AudioParameterFloat>("cutoff","Cutoff",0.01f,0.99f,0.72f));p.push_back(std::make_unique<juce::AudioParameterFloat>("resonance","Resonance",0,1,0.15f));p.push_back(std::make_unique<juce::AudioParameterFloat>("attack","Attack",0.001f,2.0f,0.01f));p.push_back(std::make_unique<juce::AudioParameterFloat>("decay","Decay",0.001f,2.0f,0.18f));p.push_back(std::make_unique<juce::AudioParameterFloat>("sustain","Sustain",0,1,0.72f));p.push_back(std::make_unique<juce::AudioParameterFloat>("release","Release",0.001f,4.0f,0.25f));p.push_back(std::make_unique<juce::AudioParameterFloat>("noise","Noise",0,1,0));p.push_back(std::make_unique<juce::AudioParameterFloat>("drive","Drive",0,1,0));p.push_back(std::make_unique<juce::AudioParameterFloat>("lfoRate","LFO Rate",0.05f,20,4));p.push_back(std::make_unique<juce::AudioParameterFloat>("lfoDepth","LFO Depth",0,1,0));p.push_back(std::make_unique<juce::AudioParameterBool>("arp","Arpeggiator",false));p.push_back(std::make_unique<juce::AudioParameterFloat>("arpRate","Arp Rate",1,32,8));
     return {p.begin(),p.end()};
 }
-void KyotoSpxritProcessor::prepareToPlay(double sr,int bs){synth.prepare(sr,bs);fx.prepare(sr);}
-void KyotoSpxritProcessor::releaseResources(){synth.reset();fx.reset();}
-bool KyotoSpxritProcessor::isBusesLayoutSupported(const BusesLayout&l)const{
+void KyotoSpxritProcessor::prepareToPlay(double sr, int bs)
+{
+    synth.prepare(sr, bs);
+    fx.prepare(sr);
+    publishExpertSnapshot();
+}
+
+void KyotoSpxritProcessor::releaseResources()
+{
+    synth.reset();
+    fx.reset();
+}
+
+bool KyotoSpxritProcessor::isBusesLayoutSupported(const BusesLayout& l) const
+{
 #if defined(KYOTO_IS_FX)
-    auto in=l.getMainInputChannelSet(); auto out=l.getMainOutputChannelSet(); return (in==juce::AudioChannelSet::mono()||in==juce::AudioChannelSet::stereo())&&(out==juce::AudioChannelSet::mono()||out==juce::AudioChannelSet::stereo());
+    auto in=l.getMainInputChannelSet();
+    auto out=l.getMainOutputChannelSet();
+    return (in==juce::AudioChannelSet::mono()||in==juce::AudioChannelSet::stereo()) &&
+           (out==juce::AudioChannelSet::mono()||out==juce::AudioChannelSet::stereo());
 #else
-    return l.getMainOutputChannelSet()==juce::AudioChannelSet::mono()||l.getMainOutputChannelSet()==juce::AudioChannelSet::stereo();
+    return l.getMainOutputChannelSet()==juce::AudioChannelSet::mono() ||
+           l.getMainOutputChannelSet()==juce::AudioChannelSet::stereo();
 #endif
 }
-void KyotoSpxritProcessor::processBlock(juce::AudioBuffer<float>&b,juce::MidiBuffer&m){
+
+void KyotoSpxritProcessor::processBlock(juce::AudioBuffer<float>& b, juce::MidiBuffer& m)
+{
     juce::ScopedNoDenormals noDenormals;
+
 #if !defined(KYOTO_IS_FX)
-    b.clear(); synth.render(b,m);
+    b.clear();
+    synth.render(b, m);
 #endif
-    std::array<bool,200> en{};std::array<float,200>a{},t{},mo{},mi{},sh{};std::array<int,200> order{};
-    for(int i=0;i<200;i++){en[i]=false;a[i]=amount[i]->load();t[i]=tone[i]->load();mo[i]=motion[i]->load();mi[i]=mix[i]->load();sh[i]=shape[i]->load();order[i]=i;}
-    if(expertMode && !expertFxChain.empty()) {
-        // Expert mode is an unlimited chain. Each entry is processed in order,
-        // so users can intentionally stack the same effect more than once.
-        for(const auto& slot:expertFxChain){
-            const int idx=juce::jlimit(0,199,slot.effect); en[idx]=true; a[idx]=slot.amount; t[idx]=slot.tone; mo[idx]=slot.motion; mi[idx]=slot.mix; sh[idx]=slot.shape; order[0]=idx;
-            fx.process(b.getWritePointer(0),b.getNumChannels()>1?b.getWritePointer(1):nullptr,b.getNumChannels(),b.getNumSamples(),en,a,t,mo,mi,sh,&order);
-            en[idx]=false;
+
+    auto* left = b.getNumChannels() > 0 ? b.getWritePointer(0) : nullptr;
+    auto* right = b.getNumChannels() > 1 ? b.getWritePointer(1) : nullptr;
+    if (left == nullptr || b.getNumSamples() <= 0)
+        return;
+
+    if (expertMode)
+    {
+        // The editor/state thread publishes immutable chain snapshots. The
+        // audio thread only reads the currently published snapshot, so vector
+        // mutation can never race the DSP engine.
+        int snapshot = activeExpertSnapshot.load(std::memory_order_acquire);
+        expertSnapshotReaders[(size_t) snapshot].fetch_add(1, std::memory_order_acquire);
+        if (snapshot != activeExpertSnapshot.load(std::memory_order_acquire))
+        {
+            expertSnapshotReaders[(size_t) snapshot].fetch_sub(1, std::memory_order_release);
+            snapshot = activeExpertSnapshot.load(std::memory_order_acquire);
+            expertSnapshotReaders[(size_t) snapshot].fetch_add(1, std::memory_order_acquire);
         }
+
+        const auto& snap = expertSnapshots[(size_t) snapshot];
+        if (snap.count > 0)
+            fx.process(left, right, b.getNumSamples(), snap.slots.data(), snap.count);
+
+        expertSnapshotReaders[(size_t) snapshot].fetch_sub(1, std::memory_order_release);
         return;
     }
-    int pos=0;std::array<bool,200>seen{};for(int s=0;s<fxSlots;s++){int idx=juce::jlimit(0,199,(int)std::round(fxSelect[s]->load()));if(!seen[idx]){seen[idx]=true;order[pos++]=idx;en[idx]=true;}}
-    for(int i=0;i<200;i++)if(!seen[i])order[pos++]=i;
-    fx.process(b.getWritePointer(0),b.getNumChannels()>1?b.getWritePointer(1):nullptr,b.getNumChannels(),b.getNumSamples(),en,a,t,mo,mi,sh,&order);
+
+    // Normal mode is deliberately a fixed eight-slot chain. Each slot has its
+    // own DSP state, so selecting the same effect twice intentionally stacks it.
+    std::array<kyoto::FxSlotParams, fxSlots> slots{};
+    for (int slot = 0; slot < fxSlots; ++slot)
+    {
+        const int idx = fxIndex(slot);
+        slots[(size_t) slot].effect = idx;
+        slots[(size_t) slot].on = true;
+        slots[(size_t) slot].amount = amount[(size_t) idx]->load(std::memory_order_relaxed);
+        slots[(size_t) slot].tone = tone[(size_t) idx]->load(std::memory_order_relaxed);
+        slots[(size_t) slot].motion = motion[(size_t) idx]->load(std::memory_order_relaxed);
+        slots[(size_t) slot].mix = mix[(size_t) idx]->load(std::memory_order_relaxed);
+        slots[(size_t) slot].shape = shape[(size_t) idx]->load(std::memory_order_relaxed);
+    }
+    fx.process(left, right, b.getNumSamples(), slots.data(), fxSlots);
 }
+
+void KyotoSpxritProcessor::publishExpertSnapshot()
+{
+    int active = activeExpertSnapshot.load(std::memory_order_acquire);
+    int target = -1;
+
+    for (int i = 0; i < expertSnapshotBuffers; ++i)
+    {
+        if (i == active)
+            continue;
+        if (expertSnapshotReaders[(size_t) i].load(std::memory_order_acquire) == 0)
+        {
+            target = i;
+            break;
+        }
+    }
+
+    if (target < 0)
+        return;
+
+    auto& snap = expertSnapshots[(size_t) target];
+    snap.count = std::min<int>((int) expertFxChain.size(), kyoto::kMaxFxSlots);
+    for (int i = 0; i < snap.count; ++i)
+    {
+        const auto& f = expertFxChain[(size_t) i];
+        auto& d = snap.slots[(size_t) i];
+        d.effect = juce::jlimit(0, kyoto::kNumEffects - 1, f.effect);
+        d.on = true;
+        d.amount = juce::jlimit(0.0f, 1.0f, f.amount);
+        d.tone = juce::jlimit(0.0f, 1.0f, f.tone);
+        d.motion = juce::jlimit(0.0f, 1.0f, f.motion);
+        d.mix = juce::jlimit(0.0f, 1.0f, f.mix);
+        d.shape = juce::jlimit(0.0f, 1.0f, f.shape);
+    }
+    activeExpertSnapshot.store(target, std::memory_order_release);
+}
+
 void KyotoSpxritProcessor::getStateInformation(juce::MemoryBlock&dest){
     auto root=state.copyState();
     root.setProperty("modules",modules.joinIntoString("|"),nullptr);
@@ -103,6 +188,29 @@ void KyotoSpxritProcessor::setStateInformation(const void* data, int sizeInBytes
     auto root = juce::ValueTree::fromXml(*xml);
     if (!root.isValid() || root.getType() != state.state.getType())
         return;
+
+    // 0.2.2 and earlier accidentally reused the FX parameter IDs mix1..mix3
+    // for the three oscillator mix controls. New builds use oscMix1..oscMix3.
+    // Migrate the final occurrence of each duplicated legacy ID before JUCE
+    // restores APVTS state, preserving old sessions without reintroducing the
+    // duplicate-ID crash condition.
+    for (int n = 1; n <= 3; ++n)
+    {
+        const auto legacy = juce::String("mix") + juce::String(n);
+        const auto replacement = juce::String("oscMix") + juce::String(n);
+        bool hasReplacement = false;
+        int legacyCount = 0;
+        int lastLegacy = -1;
+        for (int i = 0; i < root.getNumChildren(); ++i)
+        {
+            const auto child = root.getChild(i);
+            const auto id = child.getProperty("id").toString();
+            if (id == replacement) hasReplacement = true;
+            if (id == legacy) { ++legacyCount; lastLegacy = i; }
+        }
+        if (!hasReplacement && legacyCount > 1 && lastLegacy >= 0)
+            root.getChild(lastLegacy).setProperty("id", replacement, nullptr);
+    }
 
     state.replaceState(root);
 
@@ -170,6 +278,8 @@ void KyotoSpxritProcessor::setStateInformation(const void* data, int sizeInBytes
                         v, themeManager.get(dreamTheme)));
         }
     }
+
+    publishExpertSnapshot();
 
     activeTheme = themeManager.get(dreamTheme);
     for (auto& t : userThemes)
@@ -239,6 +349,7 @@ void KyotoSpxritProcessor::setInstrumentPreset(const kyoto::InstrumentPreset& p)
     }
 
     expertFxChain = p.expertFxChain;
+    publishExpertSnapshot();
 
     if (!p.uiLayout.isVoid())
         builderLayout = kyoto::layoutFromVar(p.uiLayout);
@@ -278,6 +389,7 @@ void KyotoSpxritProcessor::setInstrumentPreset(const kyoto::InstrumentPreset& p)
             f.amount = p.fxAmount[i];
             expertFxChain.push_back(f);
         }
+        publishExpertSnapshot();
     }
 
     synth.setPreset(p);
@@ -335,10 +447,10 @@ void KyotoSpxritProcessor::setUiVariant(kyoto::UiVariant v){uiMode=v;}
 void KyotoSpxritProcessor::addCustomTheme(const kyoto::ThemePalette&t){userThemes.push_back(t);dreamTheme=t.id;activeTheme=t;}
 
 std::vector<kyoto::FxSlot> KyotoSpxritProcessor::fxChain() const { return expertFxChain; }
-void KyotoSpxritProcessor::setFxChain(const std::vector<kyoto::FxSlot>& c){ expertFxChain=c; }
-void KyotoSpxritProcessor::addFxSlot(int effect){ kyoto::FxSlot f; f.effect=juce::jlimit(0,199,effect); expertFxChain.push_back(f); }
-void KyotoSpxritProcessor::removeFxSlot(size_t index){ if(index<expertFxChain.size()) expertFxChain.erase(expertFxChain.begin()+static_cast<std::ptrdiff_t>(index)); }
-void KyotoSpxritProcessor::setFxChainSlot(size_t index,const kyoto::FxSlot& f){ if(index>=expertFxChain.size()) return; expertFxChain[index]=f; }
+void KyotoSpxritProcessor::setFxChain(const std::vector<kyoto::FxSlot>& c){ expertFxChain=c; publishExpertSnapshot(); }
+void KyotoSpxritProcessor::addFxSlot(int effect){ kyoto::FxSlot f; f.effect=juce::jlimit(0,199,effect); expertFxChain.push_back(f); publishExpertSnapshot(); }
+void KyotoSpxritProcessor::removeFxSlot(size_t index){ if(index<expertFxChain.size()) { expertFxChain.erase(expertFxChain.begin()+static_cast<std::ptrdiff_t>(index)); publishExpertSnapshot(); } }
+void KyotoSpxritProcessor::setFxChainSlot(size_t index,const kyoto::FxSlot& f){ if(index>=expertFxChain.size()) return; expertFxChain[index]=f; publishExpertSnapshot(); }
 
 
 juce::AudioProcessorEditor* KyotoSpxritProcessor::createEditor()

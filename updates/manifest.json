@@ -1,7 +1,7 @@
 {
-  "version": "0.2.2",
+  "version": "0.2.3",
   "package": "",
   "modules": "modules.json",
-  "themes": "../Resources/themes.json",
+  "themes": "../Resources/themes/themes.json",
   "notes": "KyotoSpxrit dual VST3 build: native instrument + FX, 42 themes, Normal/Expert controls, custom themes and Community Instruments."
 }

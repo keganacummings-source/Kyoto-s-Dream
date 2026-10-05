@@ -1,6 +1,6 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
-#include "DspEngine.h"
+#include "FxChain.h"
 #include "FeatureNames.h"
 #include "InstrumentEngine.h"
 #include "DreamAPI.h"
@@ -54,7 +54,8 @@ public:
     const std::vector<kyoto::ThemePalette>& customThemes() const { return userThemes; }
 
     static constexpr int fxSlots=8;
-    static constexpr const char* version="0.2.2";
+    static constexpr int expertSnapshotBuffers=3;
+    static constexpr const char* version="0.2.3";
 private:
     static constexpr bool isFxBuild =
     #if defined(KYOTO_IS_FX)
@@ -62,10 +63,18 @@ private:
     #else
         false;
     #endif
-    dm::DspEngine fx; kyoto::InstrumentEngine synth; kyoto::DreamAPI dreamApi; kyoto::ThemeManager themeManager;
+    kyoto::FxChain fx; kyoto::InstrumentEngine synth; kyoto::DreamAPI dreamApi; kyoto::ThemeManager themeManager;
+    struct ExpertSnapshot {
+        std::array<kyoto::FxSlotParams, kyoto::kMaxFxSlots> slots{};
+        int count = 0;
+    };
+    std::array<ExpertSnapshot, expertSnapshotBuffers> expertSnapshots{};
+    std::atomic<int> activeExpertSnapshot{0};
+    std::array<std::atomic<int>, expertSnapshotBuffers> expertSnapshotReaders{};
+    void publishExpertSnapshot();
     kyoto::ThemePalette activeTheme; kyoto::BuilderLayout builderLayout=kyoto::defaultLayout(); kyoto::UiVariant uiMode=kyoto::UiVariant::Classic; bool expertMode=false; std::vector<kyoto::ThemePalette> userThemes;
     std::map<std::string,kyoto::InstrumentPreset> modulePresets;
-    std::array<std::atomic<float>*,dm::DspEngine::effectCount> enabled{}; std::array<std::atomic<float>*,dm::DspEngine::effectCount> amount{},tone{},motion{},mix{},shape{};
+    std::array<std::atomic<float>*,kyoto::kNumEffects> enabled{}; std::array<std::atomic<float>*,kyoto::kNumEffects> amount{},tone{},motion{},mix{},shape{};
     std::array<std::atomic<float>*,fxSlots> fxSelect{};
     std::vector<kyoto::FxSlot> expertFxChain;
     juce::StringArray modules; juce::String currentModule=""; juce::String dreamToken,dreamUser,dreamRole,dreamTheme;

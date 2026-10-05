@@ -9,7 +9,7 @@ KyotoSpxrit is a native, modular VST3 platform for **FL Studio and Ableton on Wi
 - Shared native DSP, state format, UI, DreamAPI client, themes and community instrument format.
 - 42 legacy Dream themes imported from the existing site.
 - 30 legacy Dream instrument HTML files and DreamSynth audio retained as source/reference material.
-- 200 Master/INXOMNIA effect identities; Normal mode exposes 8 FX slots, while Expert mode supports an unlimited ordered FX chain.
+- 200 Master/INXOMNIA effect identities; Normal mode exposes 8 FX slots, while Expert mode supports a long ordered FX chain (128 realtime slots).
 - DreamShare Home screen with login, thread feed, WAV posting and image posting.
 - Community Instruments: publish saved instruments, browse public instruments and load them directly into the native engine.
 - Normal mode by default for simple controls; Expert mode exposes precision controls and removes the FX-chain slot limit.
@@ -27,7 +27,7 @@ DreamAPI is only used for account/community/online services. The realtime audio 
 
 ## Theme system
 
-The old site's 42 theme packs are embedded in `Resources/themes.json` and the original HTML theme files remain under `Resources/themes/` for reference. Native KyotoSpxrit renders their palettes/scenes through one shared UI renderer rather than maintaining 42 independent layouts.
+The old site's 42 theme packs are embedded in `Resources/themes/themes.json` and the original HTML theme files remain under `Resources/themes/` for reference. Native KyotoSpxrit renders their palettes/scenes through one shared UI renderer rather than maintaining 42 independent layouts.
 
 Users can also create a custom theme from the THEMES screen. The BUILD screen extends the theme builder into the actual module UI: add dials, sliders, wave/screen displays, and text, choose one of 10 grid styles, and drag elements into place. Controls use fixed designed dimensions with no resize handles. Every saved module stores this UI layout and custom theme with the module state.
 
@@ -41,7 +41,7 @@ Users can also create a custom theme from the THEMES screen. The BUILD screen ex
 **Expert**:
 - Three oscillator mix/detune controls.
 - Full envelope/filter/LFO controls.
-- Unlimited ordered FX chain; use **+ ADD FX** and keep adding rows.
+- Long ordered FX chain; use **+ ADD FX** and keep adding rows. The native realtime engine safely supports 128 slots per instance.
 - Scrollable FX area for long chains.
 - Per-effect Amount/Tone/Motion/Mix/Shape controls.
 - All 200 Master/INXOMNIA effects remain selectable and effects can be repeated in the chain.

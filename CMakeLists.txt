@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(KyotoSpxrit VERSION 0.2.2 LANGUAGES C CXX)
+project(KyotoSpxrit VERSION 0.2.3 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -33,7 +33,7 @@ set(KYOTO_SOURCES
     Source/DreamAPI.cpp
     Source/UpdateService.cpp
     Source/ModuleRegistry.cpp
-    Source/DspEngine.cpp
+    Source/FxChain.cpp
     Source/ThemeManager.cpp
     Source/PresetCodec.cpp
     Source/BuilderModel.h
@@ -256,7 +256,7 @@ juce_add_plugin(
 
     FORMATS VST3
 
-    PRODUCT_NAME "KyotoSpxrit FX"
+    PRODUCT_NAME "KyotoSpxritFX"
 
     VST3_CATEGORIES Fx
 
