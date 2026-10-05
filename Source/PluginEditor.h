@@ -3,11 +3,12 @@
 #include "Themes.h"
 #include "MachineDesign.h"
 #include "WaveDisplay.h"
+#include "PluginShells.h"
 #include <vector>
 
 struct CanvasWidget : public juce::Component
 {
-    enum class Kind { Dial, Slider, Key, Wave, Stack };
+    enum class Kind { Dial, Slider, Key, Wave, Stack, Board, Cosmetic };
 
     CanvasWidget(KyotoAudioProcessor& p, juce::ValueTree n);
     void paint(juce::Graphics& g) override;
@@ -112,6 +113,12 @@ private:
     void showTab(int tab);
     void rebuildCanvas();
     void addSeriesStep();
+    void armPlacement();
+    void placeInSlot(int slot);
+    void ensureMotherboard();
+    void applyShell(int index);
+    bool slotOccupied(int slot) const;
+    juce::Point<float> slotAnchor(int slot) const;
     void reflowSeries();
     juce::Rectangle<int> cellFor(int index, const juce::String& kind) const;
     bool findAutoCell(int index, const juce::String& kind, juce::Rectangle<int>& result) const;
@@ -171,8 +178,9 @@ private:
     juce::String lastPublishedEffectId;
     kt::ThemePalette theme = kt::kThemes[0];
 
-    juce::TextButton shareBtn { "DREAMSHARE" }, chainBtn { "CHAIN" }, fxBtn { "FX BUILDER" }, logoutBtn { "LOG OUT" };
+    juce::TextButton shareBtn { "DREAMSHARE" }, chainBtn { "PLUGIN BUILDER" }, fxBtn { "FX BUILDER" }, logoutBtn { "LOG OUT" };
     juce::TextButton pluginViewBtn { "PLUGIN VIEW" }, pluginBackBtn { "← BACK" }, newMachineBtn { "NEW MACHINE" }, randomMachineBtn { "RANDOMIZE MACHINE" };
+    juce::ComboBox shellBox;
     juce::TextButton chatRefreshBtn { "CHAT" }, threadsBtn { "THREADS" }, socialBtn { "FRIENDS" }, dmBtn { "DM" }, adminDeleteBtn { "REMOVE" }, utilityGoBtn { "GO" };
     juce::TextButton catalogModeBtn { "CATALOG" }, threadsModeBtn { "THREADS" }, railChatBtn { "CHAT" }, railOnlineBtn { "ONLINE" };
     juce::TextEditor utilityBox;
@@ -196,14 +204,21 @@ private:
 
     juce::TextEditor nameBox, effectNameBox;
     juce::ComboBox gridStyleBox, presetBox, kindBox, effectBox;
-    juce::TextButton addBtn { "ADD" }, saveBtn { "SAVE" }, upBtn { "PUBLISH" }, wavBtn { "WAV" }, chainBreakBtn { "BREAK" }, chainMixBtn { "MIX" }, chainRemoveBtn { "REMOVE" }, chainUndoBtn { "UNDO" };
+    juce::TextButton addBtn { "PLACE" }, saveBtn { "SAVE" }, upBtn { "PUBLISH" }, wavBtn { "WAV" }, chainBreakBtn { "BREAK" }, chainMixBtn { "MIX" }, chainRemoveBtn { "REMOVE" }, chainUndoBtn { "UNDO" };
     juce::TextButton fxAddBtn { "ADD FX" }, fxSaveBtn { "SAVE" }, fxUpBtn { "PUBLISH" }, fxShareChatBtn { "CHAT" }, fxShareThreadBtn { "THREAD" }, fxRemoveBtn { "REMOVE" }, fxUndoBtn { "UNDO" };
     juce::Slider fxAmount, fxTone, fxMotion, fxMix, fxShape;
     juce::Label fxAmountLabel, fxToneLabel, fxMotionLabel, fxMixLabel, fxShapeLabel, stackLabel;
     juce::TextButton fxBreakBtn { "BREAK" }, fxMixBtn { "MASTER MIX" }, fxRandomBtn { "RANDOM" }, fxClearBtn { "CLEAR" };
     int selectedFxStep = -1;
     int selectedChainWidget = -1;
-    juce::Component panel;
+    bool placing = false;
+    juce::String armedStyle { "dial" };
+    int shellIndex = 0;
+    int pendingFx = 0;
+    bool pendingSpecial = false;
+    int pendingSpecialType = 0;
+    juce::String pendingLabel;
+    pb::BuilderCanvas panel;
     std::unique_ptr<FxBrowser> fxBrowser;
     std::unique_ptr<WaveDisplay> waveDisplay;
     juce::OwnedArray<CanvasWidget> widgets;

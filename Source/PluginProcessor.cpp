@@ -341,6 +341,20 @@ void KyotoAudioProcessor::processChain(float& left, float& right, float original
 
     left = dryL + (left - dryL) * chainMix;
     right = dryR + (right - dryR) * chainMix;
+    const float hw = hardwareAmt.load(std::memory_order_relaxed);
+    if (hw > 0.001f)
+    {
+        // Shell / cosmetic colour. Kept small so the chosen hardware is felt, not a second plugin.
+        const float drive = 1.f + hw * 1.6f;
+        left += (std::tanh(left * drive) - left) * hw;
+        right += (std::tanh(right * drive) - right) * hw;
+    }
+}
+
+void KyotoAudioProcessor::setHardwareColour(int fxType, float amount)
+{
+    hardwareFx.store(fxType, std::memory_order_relaxed);
+    hardwareAmt.store(juce::jlimit(0.f, 0.22f, amount), std::memory_order_relaxed);
 }
 
 void KyotoAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)

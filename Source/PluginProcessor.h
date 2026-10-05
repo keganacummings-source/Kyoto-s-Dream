@@ -40,6 +40,7 @@ public:
     bool isFx() const;
     int slotCount() const { return isFx() ? 32 : 16; }
 
+    void setHardwareColour(int fxType, float amount);
     void noteOn(int note, float vel);
     void noteOff(int note);
     void loadSample(juce::AudioBuffer<float> buffer, double fileRate);
@@ -117,6 +118,8 @@ private:
     std::atomic<int> samplePos { -1 };
     juce::CriticalSection sampleLock;
     juce::Random noiseRng;
+    std::atomic<int> hardwareFx { -1 };
+    std::atomic<float> hardwareAmt { 0.f };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(KyotoAudioProcessor)
 };
