@@ -1,37 +1,58 @@
-# KYOTRIPPAH
+# KyotoSpxrit (Revised Visual Build)
 
-Two VST3 plugins. One editor idea.
+Native VST3 instrument (**KYOTO**) and FX (**KYOTRIPPAH FX**) for FL Studio / Ableton.
 
-- **KYOTO** goes on an FL Studio channel. It is the instrument. Oscillator, sub, noise, filter, envelope, then up to 8 effects.
-- **KYOTRIPPAH FX** goes on a mixer track or the master. It is the effect. No notes. Up to 12 effects. Empty chain passes audio through, so it can sit there as DreamShare only.
+This revision focuses on the visual and Builder / DreamShare experience requested:
 
-Building a plugin here does not compile a new binary. You pick an effect from the DreamMaster list, the host parameters for that slot turn on (each name is unique: `Slot 01 Amount`, never a repeated `Amount`), and the dials land on the panel. Save writes a `kyoteppah-module-1` JSON file on this machine. Upload sends that JSON to DreamShare KV so other logged-in people can load the same instrument or effect.
+## What changed
 
-## DreamShare
+### Builder
+- **Proper FX browser** – scrollable searchable list instead of a plain ComboBox.
+- **Hover preview** – moving the mouse over an effect in the browser applies it at half intensity so you can audition while browsing.
+- **Single placement** – PLACE button (and browser selection) adds one effect at a time; no multi-add.
+- **Peg grid** – 12×8 peg layout. Free pegs light up when you are about to place something. Collision detection prevents dials, sliders, keys and waveform screens from overlapping.
+- **Widget kinds** – Dial, Slider, Key/Note, lightweight Waveform display. Instrument-style producers can drop a Key; effects drop the usual AMT/TONE/MOT/MIX/SHP set on free pegs only.
+- **Theme travels with the module** – saved instruments/effects store the chosen theme id so the layout looks the same when loaded by anyone else.
 
-Login, chat, and threads use `https://dreamshare-api.keganacummings.workers.dev`. The session token is stored in the user app-data folder, not inside the DAW project.
+### Themes
+- All themes live in a **single file** `Source/Themes.h` (no more one-HTML-file-per-theme).
+- 22 distinctive palettes taken from the original Site/Themes set (Trippah, Goonr, Abyss, Amber, Bloodmoon, Cobalt, Ember, Fog, Graphite, Honey, Ice, Ink, Lagoon, Lilac, Mint, Neon, Pine, Plum, Rust, Steel, Void, Wine + Default).
+- Theme selector on the DreamShare home screen; choice is remembered in the local session and written into every saved module.
 
-Catalog upload needs `worker/module-rules.js` spliced into the DreamShare worker, with the `DREAMSHARE_KV` binding. Until that action exists, Save still keeps the module locally.
+### DreamShare home
+- Cleaner two-column layout.
+- Login, live feed, send, catalog, theme switcher.
+- Same Cloudflare Worker endpoint (`https://dreamshare-api.keganacummings.workers.dev`).
 
-## FL Studio
+### Still native
+- No WebView in the audio path. DSP, parameters and state remain pure JUCE / C++.
+- Real-time engine is unchanged from the previous stable core.
 
-Push this folder to GitHub. The Actions workflow `Build KYOTRIPPAH` uploads a zip of the real bundles.
+## Build
 
-1. Quit FL Studio.
-2. Remove any older `KYOTO.vst3` or `KYOTRIPPAH FX.vst3` from the VST3 folder and from FL's plugin database.
-3. Unzip the artifact. Copy the `.vst3` folders, do not flatten them. Each one must contain `Contents/x86_64-win`.
-4. Put them in `C:\Program Files\Common Files\VST3`.
-5. Options, Manage plugins, Find more plugins.
-
-Both plugins accept the disabled, mono, and stereo input layouts FL probes while scanning. The instrument has an input bus on purpose.
-
-## Build on a machine
-
-CMake 3.22+, a C++17 compiler, JUCE 8.0.6 fetched by CMake.
-
-```
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+```bash
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64   # Windows
 cmake --build build --config Release --parallel
 ```
 
-JUCE is AGPLv3 unless you hold a commercial licence. Shipping the plugin means shipping this source or holding that licence.
+macOS:
+
+```bash
+cmake -S . -B build -G Xcode -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
+cmake --build build --config Release --parallel
+```
+
+Produces `KYOTO.vst3` and `KYOTRIPPAH FX.vst3`.
+
+## Install (Windows / FL Studio)
+
+1. Quit FL.
+2. Remove any older Kyoto / KYOTRIPPAH bundles.
+3. Copy the two `.vst3` folders into `C:\Program Files\Common Files\VST3`.
+4. Rescan plugins.
+
+## Worker
+
+Use the included `worker/module-rules.js` (or the project `WORKER_DREAMSHARE.js` if present) and bind `DREAMSHARE_KV`.
+
+Default API: `https://dreamshare-api.keganacummings.workers.dev`
