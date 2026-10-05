@@ -1,0 +1,17 @@
+KYOTRIPPAH BUILD FIX — 2026-10-05
+
+CI logs reviewed:
+- Windows and macOS both failed in Source/PluginEditor.cpp.
+- Root cause 1: KyotoLookAndFeel::drawButtonBackground referenced isMouseDown, but the parameter is named isButtonDown.
+- Root cause 2: JUCE 8 DynamicObject::getProperty() accepts only the property name; the redesign introduced calls using a second default-value argument.
+
+Fixes:
+1. Replaced isMouseDown with isButtonDown.
+2. Added propertyOr(...) helper for DynamicObject properties with fallbacks.
+3. Replaced all CI-reported DynamicObject getProperty(name, default) calls with propertyOr(...).
+4. Left ValueTree getProperty usage unchanged where its API is valid.
+5. Re-scanned PluginEditor.cpp for the reported two-argument DynamicObject calls; none remain.
+
+The supplied CI log showed no additional C++ errors after these failures; the job exited because PluginEditor.cpp did not compile.
+
+A full local JUCE build could not be reproduced in this environment because this source project obtains JUCE 8.0.6 through CMake FetchContent and the build environment here does not have that dependency cached.

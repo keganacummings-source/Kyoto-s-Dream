@@ -7,6 +7,15 @@
 
 namespace
 {
+static juce::var propertyOr(const juce::DynamicObject* object,
+                            const juce::Identifier& propertyName,
+                            const juce::var& fallback)
+{
+    return object != nullptr && object->hasProperty(propertyName)
+        ? object->getProperty(propertyName)
+        : fallback;
+}
+
 class KyotoLookAndFeel final : public juce::LookAndFeel_V4
 {
 public:
@@ -16,7 +25,7 @@ public:
     {
         auto r = button.getLocalBounds().toFloat().reduced(0.8f);
         auto fill = kt::c(theme.panel).brighter(isMouseOver ? 0.13f : 0.06f);
-        if (button.getToggleState()) fill = kt::c(theme.accent).withAlpha(isMouseDown ? 0.38f : 0.25f);
+        if (button.getToggleState()) fill = kt::c(theme.accent).withAlpha(isButtonDown ? 0.38f : 0.25f);
         if (isButtonDown) fill = fill.brighter(0.10f);
         g.setColour(fill);
         g.fillRoundedRectangle(r, 8.f);
@@ -818,9 +827,9 @@ void KyotoAudioProcessorEditor::restoreFxStack(const juce::String& json)
             if (auto* o = value.getDynamicObject())
             {
                 auto s = juce::ValueTree("step");
-                s.setProperty("fx", (int)o->getProperty("fx", 0), nullptr); s.setProperty("name", o->getProperty("name").toString(), nullptr);
-                s.setProperty("amount", (double)o->getProperty("amount", 0.5), nullptr); s.setProperty("tone", (double)o->getProperty("tone", 0.5), nullptr);
-                s.setProperty("motion", (double)o->getProperty("motion", 0.35), nullptr); s.setProperty("mix", (double)o->getProperty("mix", 0.4), nullptr); s.setProperty("shape", (double)o->getProperty("shape", 0.5), nullptr);
+                s.setProperty("fx", (int)propertyOr(o, "fx", 0), nullptr); s.setProperty("name", o->getProperty("name").toString(), nullptr);
+                s.setProperty("amount", (double)propertyOr(o, "amount", 0.5), nullptr); s.setProperty("tone", (double)propertyOr(o, "tone", 0.5), nullptr);
+                s.setProperty("motion", (double)propertyOr(o, "motion", 0.35), nullptr); s.setProperty("mix", (double)propertyOr(o, "mix", 0.4), nullptr); s.setProperty("shape", (double)propertyOr(o, "shape", 0.5), nullptr);
                 fxStack.appendChild(s, nullptr);
             }
     selectedFxStep = fxStack.getNumChildren() > 0 ? juce::jlimit(0, fxStack.getNumChildren()-1, selectedFxStep) : -1;
@@ -919,7 +928,7 @@ void KyotoAudioProcessorEditor::addSeriesStep()
             if (first < 0) first = slot;
             const auto prefix = "s" + juce::String(slot + 1).paddedLeft('0', 2);
             auto setP = [&](const juce::String& key, float v) { if (auto* p = proc.apvts.getParameter(prefix + key)) p->setValueNotifyingHost(p->convertTo0to1(v)); };
-            setP("type", (float)(int)src->getProperty("fx", 0)); setP("amt", (float)src->getProperty("amount", 0.5)); setP("tone", (float)src->getProperty("tone", 0.5)); setP("mot", (float)src->getProperty("motion", 0.35)); setP("mix", (float)src->getProperty("mix", 0.4)); setP("shp", (float)src->getProperty("shape", 0.5));
+            setP("type", (float)(int)propertyOr(src, "fx", 0)); setP("amt", (float)propertyOr(src, "amount", 0.5)); setP("tone", (float)propertyOr(src, "tone", 0.5)); setP("mot", (float)propertyOr(src, "motion", 0.35)); setP("mix", (float)propertyOr(src, "mix", 0.4)); setP("shp", (float)propertyOr(src, "shape", 0.5));
             if (auto* p = proc.apvts.getParameter(prefix + "on")) p->setValueNotifyingHost(1.f);
         }
         auto node = juce::ValueTree("w"); node.setProperty("slot", first, nullptr); node.setProperty("param", "amt", nullptr); node.setProperty("label", name, nullptr); node.setProperty("kind", "stack", nullptr); node.setProperty("series", proc.uiState.getNumChildren(), nullptr); node.setProperty("slotCount", (int)steps->size(), nullptr); proc.uiState.appendChild(node, nullptr);
@@ -1181,7 +1190,7 @@ void KyotoAudioProcessorEditor::loadCatalogId(const juce::String& id, const juce
                     w.setProperty("param", nativeKey(wsrc->getProperty("param").toString()), nullptr);
                     w.setProperty("label", wsrc->getProperty("label").toString(), nullptr);
                     w.setProperty("kind", wsrc->getProperty("kind").toString(), nullptr);
-                    w.setProperty("slotCount", (int)wsrc->getProperty("slotCount", 1), nullptr);
+                    w.setProperty("slotCount", (int)propertyOr(wsrc, "slotCount", 1), nullptr);
                     w.setProperty("peaks", wsrc->getProperty("peaks").toString(), nullptr);
                     proc.uiState.appendChild(w, nullptr);
                 }
@@ -1205,7 +1214,7 @@ void KyotoAudioProcessorEditor::loadCatalogId(const juce::String& id, const juce
                 if (auto* steps=mo->getProperty("steps").getArray()) for(auto& v:*steps) if(auto* so=v.getDynamicObject())
                 {
                     auto st=juce::ValueTree("step"); st.setProperty("fx",(int)so->getProperty("fx"),nullptr); st.setProperty("name",so->getProperty("name").toString(),nullptr);
-                    st.setProperty("amount",(double)so->getProperty("amount",0.5),nullptr); st.setProperty("tone",(double)so->getProperty("tone",0.5),nullptr); st.setProperty("motion",(double)so->getProperty("motion",0.35),nullptr); st.setProperty("mix",(double)so->getProperty("mix",0.4),nullptr); st.setProperty("shape",(double)so->getProperty("shape",0.5),nullptr); safe->fxStack.appendChild(st,nullptr);
+                    st.setProperty("amount",(double)propertyOr(so, "amount", 0.5),nullptr); st.setProperty("tone",(double)propertyOr(so, "tone", 0.5),nullptr); st.setProperty("motion",(double)propertyOr(so, "motion", 0.35),nullptr); st.setProperty("mix",(double)propertyOr(so, "mix", 0.4),nullptr); st.setProperty("shape",(double)propertyOr(so, "shape", 0.5),nullptr); safe->fxStack.appendChild(st,nullptr);
                 }
                 auto downloaded = safe->effectDir().getChildFile(modName + ".json"); downloaded.replaceWithText(juce::JSON::toString(mod)); safe->refreshEffectBox();
                 safe->lastPublishedEffectId = mo->getProperty("id").toString(); safe->effectNameBox.setText(modName, juce::dontSendNotification); safe->selectedFxStep = safe->fxStack.getNumChildren()>0?0:-1; if(safe->selectedFxStep>=0)safe->selectFxStep(0); safe->showTab(2); safe->status.setText("Loaded effect: "+modName,juce::dontSendNotification);
