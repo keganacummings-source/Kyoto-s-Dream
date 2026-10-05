@@ -302,7 +302,7 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
             }
         }
         // No active slot: temporarily enable slot 0 at half
-        auto prefix = "s01";
+        juce::String prefix = "s01";
         if (auto* t = proc.apvts.getParameter(prefix + "type"))
             t->setValueNotifyingHost(t->convertTo0to1((float) fx));
         if (auto* a = proc.apvts.getParameter(prefix + "amt"))
@@ -314,7 +314,7 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     fxBrowser->onLeave = [this] {
         if ((int) proc.uiState.getProperty("previewActive", 0) != 0)
         {
-            auto prefix = "s01";
+            juce::String prefix = "s01";
             if (auto* on = proc.apvts.getParameter(prefix + "on"))
                 on->setValueNotifyingHost(0.f);
             proc.uiState.setProperty("previewActive", 0, nullptr);
@@ -823,7 +823,7 @@ void KyotoAudioProcessorEditor::publish()
 
     status.setText("Uploading " + name + "...", juce::dontSendNotification);
     std::thread([this, name, body = file.loadFileAsString()] {
-        auto result = kt::DreamApi::publishModule(token, name, body);
+        auto result = kt::publishModule(token, name, body);
         juce::MessageManager::callAsync([this, result, name] {
             status.setText(result.ok ? ("Published " + name) : ("Upload failed: " + result.error),
                            juce::dontSendNotification);
@@ -838,7 +838,7 @@ void KyotoAudioProcessorEditor::login()
     if (user.isEmpty()) return;
     status.setText("Logging in...", juce::dontSendNotification);
     std::thread([this, user, pass] {
-        auto result = kt::DreamApi::login(user, pass);
+        auto result = kt::login(user, pass);
         juce::MessageManager::callAsync([this, result, user] {
             if (result.ok)
             {
@@ -864,7 +864,7 @@ void KyotoAudioProcessorEditor::sendChat()
     if (text.isEmpty() || token.isEmpty()) return;
     msgBox.clear();
     std::thread([this, text] {
-        auto result = kt::DreamApi::sendChat(token, text);
+        auto result = kt::sendChat(token, text);
         juce::MessageManager::callAsync([this, result] {
             if (result.ok) refreshFeed();
             else status.setText("Send failed: " + result.error, juce::dontSendNotification);
@@ -875,7 +875,7 @@ void KyotoAudioProcessorEditor::sendChat()
 void KyotoAudioProcessorEditor::refreshFeed()
 {
     std::thread([this] {
-        auto result = kt::DreamApi::getFeed(token);
+        auto result = kt::getFeed(token);
         juce::MessageManager::callAsync([this, result] {
             if (result.ok)
             {
@@ -889,7 +889,7 @@ void KyotoAudioProcessorEditor::refreshFeed()
 void KyotoAudioProcessorEditor::refreshCatalog()
 {
     std::thread([this] {
-        auto result = kt::DreamApi::getCatalog(token);
+        auto result = kt::getCatalog(token);
         juce::MessageManager::callAsync([this, result] {
             remoteBox.clear(juce::dontSendNotification);
             if (result.ok)
