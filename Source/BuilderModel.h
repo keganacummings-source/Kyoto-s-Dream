@@ -48,7 +48,7 @@ inline BuilderLayout layoutFromVar(const juce::var& v){
 
 inline BuilderLayout defaultLayout(){
     BuilderLayout l; l.custom=true; l.grid=GridStyle::Cards;
-    l.elements={{BuilderElementType::Dial,"tone","Tone",0.08f,0.12f},{BuilderElementType::Dial,"punch","Punch",0.30f,0.12f},{BuilderElementType::Slider,"space","Space",0.52f,0.12f},{BuilderElementType::Slider,"motion","Motion",0.66f,0.12f},{BuilderElementType::WaveScreen,"scope","Wave Shape",0.08f,0.40f,WaveScreenType::Oscilloscope},{BuilderElementType::Text,"title","Kyoto's Dream",0.55f,0.78f,WaveScreenType::Oscilloscope,"Built in Kyoto's Dream"}};
+    l.elements={{BuilderElementType::Dial,"tone","Tone",0.08f,0.12f},{BuilderElementType::Dial,"punch","Punch",0.30f,0.12f},{BuilderElementType::Slider,"space","Space",0.52f,0.12f},{BuilderElementType::Slider,"motion","Motion",0.66f,0.12f},{BuilderElementType::WaveScreen,"scope","Wave Shape",0.08f,0.40f,WaveScreenType::Oscilloscope},{BuilderElementType::Text,"title","KyotoSpxrit",0.55f,0.78f,WaveScreenType::Oscilloscope,"Built in KyotoSpxrit"}};
     return l;
 }
 }

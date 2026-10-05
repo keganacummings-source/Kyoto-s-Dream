@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(KyotosDream VERSION 0.2.0 LANGUAGES C CXX)
+project(KyotoSpxrit VERSION 0.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -23,7 +23,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(JUCE)
 
 # ============================================================
-# Kyoto's Dream source files
+# KyotoSpxrit source files
 # ============================================================
 
 set(KYOTO_SOURCES
@@ -59,7 +59,7 @@ set(KYOTO_THEMES_JSON
 
 if(NOT EXISTS "${KYOTO_THEMES_JSON}")
     message(FATAL_ERROR
-        "Kyoto's Dream resource file was not found: ${KYOTO_THEMES_JSON}"
+        "KyotoSpxrit resource file was not found: ${KYOTO_THEMES_JSON}"
     )
 endif()
 
@@ -180,18 +180,18 @@ target_compile_features(
 # ============================================================
 
 juce_add_plugin(
-    KyotosDream
+    KyotoSpxrit
 
-    COMPANY_NAME "Kyoto's Dream"
+    COMPANY_NAME "KyotoSpxrit"
 
-    BUNDLE_ID "com.kyotosdream.instrument"
+    BUNDLE_ID "com.kyotospxrit.instrument"
 
     PLUGIN_MANUFACTURER_CODE Kyto
     PLUGIN_CODE KyD1
 
     FORMATS VST3
 
-    PRODUCT_NAME "Kyoto's Dream"
+    PRODUCT_NAME "KyotoSpxrit"
 
     VST3_CATEGORIES Instrument Synth
 
@@ -204,21 +204,21 @@ juce_add_plugin(
     COPY_PLUGIN_AFTER_BUILD FALSE
 )
 
-# Keep the public/plugin product name (including the apostrophe) while using
-# filesystem-safe Windows build artifact names. MSBuild can misparse JUCE's
-# generated ATL condition when an output library path contains an apostrophe.
-set_target_properties(KyotosDream PROPERTIES OUTPUT_NAME "KyotosDream")
+# Use apostrophe-free target/output names on every platform. This avoids
+# the Windows MSBuild path parsing issue and the macOS/Xcode shared-code
+# archive mismatch that occurred with the old product name.
+set_target_properties(KyotoSpxrit PROPERTIES OUTPUT_NAME "KyotoSpxrit")
 
-juce_generate_juce_header(KyotosDream)
+juce_generate_juce_header(KyotoSpxrit)
 
 target_sources(
-    KyotosDream
+    KyotoSpxrit
     PRIVATE
     ${KYOTO_SOURCES}
 )
 
 target_link_libraries(
-    KyotosDream
+    KyotoSpxrit
     PRIVATE
 
     BinaryData
@@ -231,7 +231,7 @@ target_link_libraries(
 )
 
 target_compile_definitions(
-    KyotosDream
+    KyotoSpxrit
     PRIVATE
 
     JUCE_WEB_BROWSER=0
@@ -245,18 +245,18 @@ target_compile_definitions(
 # ============================================================
 
 juce_add_plugin(
-    KyotosDreamFX
+    KyotoSpxritFX
 
-    COMPANY_NAME "Kyoto's Dream"
+    COMPANY_NAME "KyotoSpxrit"
 
-    BUNDLE_ID "com.kyotosdream.fx"
+    BUNDLE_ID "com.kyotospxrit.fx"
 
     PLUGIN_MANUFACTURER_CODE Kyto
     PLUGIN_CODE KyD2
 
     FORMATS VST3
 
-    PRODUCT_NAME "Kyoto's Dream FX"
+    PRODUCT_NAME "KyotoSpxrit FX"
 
     VST3_CATEGORIES Fx
 
@@ -269,19 +269,19 @@ juce_add_plugin(
     COPY_PLUGIN_AFTER_BUILD FALSE
 )
 
-# Same workaround for the FX target.
-set_target_properties(KyotosDreamFX PROPERTIES OUTPUT_NAME "KyotosDreamFX")
+# Same cross-platform output-name fix for the FX target.
+set_target_properties(KyotoSpxritFX PROPERTIES OUTPUT_NAME "KyotoSpxritFX")
 
-juce_generate_juce_header(KyotosDreamFX)
+juce_generate_juce_header(KyotoSpxritFX)
 
 target_sources(
-    KyotosDreamFX
+    KyotoSpxritFX
     PRIVATE
     ${KYOTO_SOURCES}
 )
 
 target_link_libraries(
-    KyotosDreamFX
+    KyotoSpxritFX
     PRIVATE
 
     BinaryData
@@ -294,7 +294,7 @@ target_link_libraries(
 )
 
 target_compile_definitions(
-    KyotosDreamFX
+    KyotoSpxritFX
     PRIVATE
 
     KYOTO_IS_FX=1
@@ -311,8 +311,8 @@ target_compile_definitions(
 
 install(
     TARGETS
-    KyotosDream
-    KyotosDreamFX
+    KyotoSpxrit
+    KyotoSpxritFX
 
     LIBRARY DESTINATION .
     RUNTIME DESTINATION .

@@ -38,7 +38,7 @@ namespace kyoto
         auto dir =
             juce::File::getSpecialLocation(
                 juce::File::tempDirectory)
-                .getChildFile("KyotosDream");
+                .getChildFile("KyotoSpxrit");
 
         dir.createDirectory();
 

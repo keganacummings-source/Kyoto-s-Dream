@@ -1,8 +1,8 @@
-# Kyoto's Dream setup
+# KyotoSpxrit setup
 
 ## 1. GitHub
 
-Create a repository named `KyotosDream` and upload the entire project folder, including `.github`, `Source`, `Resources`, `updates` and `WORKER_DREAMSHARE.js`.
+Create a repository named `KyotoSpxrit` and upload the entire project folder, including `.github`, `Source`, `Resources`, `updates` and `WORKER_DREAMSHARE.js`.
 
 ## 2. Deploy the DreamShare Worker
 
@@ -39,8 +39,8 @@ Or use GitHub Actions. The workflow builds both VST3 variants.
 
 Install both bundles:
 
-- **Kyoto's Dream** — instrument. Use this in FL Studio's Channel Rack / MIDI tracks and Ableton MIDI tracks.
-- **Kyoto's Dream FX** — effect. Use this on the FL Studio Mixer Rack or Ableton audio/effect tracks.
+- **KyotoSpxrit** — instrument. Use this in FL Studio's Channel Rack / MIDI tracks and Ableton MIDI tracks.
+- **KyotoSpxrit FX** — effect. Use this on the FL Studio Mixer Rack or Ableton audio/effect tracks.
 
 Rescan VST3 plugins in the DAW.
 

@@ -6,12 +6,12 @@
 #include <memory>
 #include <vector>
 
-class KyotosDreamEditor final : public juce::AudioProcessorEditor, private juce::Timer {
+class KyotoSpxritEditor final : public juce::AudioProcessorEditor, private juce::Timer {
 public:
-    explicit KyotosDreamEditor(KyotosDreamProcessor&); ~KyotosDreamEditor() override;
+    explicit KyotoSpxritEditor(KyotoSpxritProcessor&); ~KyotoSpxritEditor() override;
     void paint(juce::Graphics&) override; void resized() override;
 private:
-    KyotosDreamProcessor& proc;
+    KyotoSpxritProcessor& proc;
     enum Page { Home, Selector, Builder, Community, Themes }; Page page=Home;
     juce::TextButton home{"HOME"},selector{"PLUGINS"},builder{"BUILD"},community{"COMMUNITY"},themesPage{"THEMES"};
     juce::TextButton login{"LOGIN / REGISTER"},logout{"LOG OUT"},update{"CHECK UPDATE"},refresh{"REFRESH"};
@@ -46,5 +46,5 @@ private:
     void style(juce::Button&); void label(juce::Label&,const juce::String&,float=12.0f);
     class FeedModel; class ModuleModel; class CommunityModel;
     juce::String elementTypeName(kyoto::BuilderElementType) const;
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(KyotosDreamEditor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(KyotoSpxritEditor)
 };

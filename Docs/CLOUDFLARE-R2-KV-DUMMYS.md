@@ -1,6 +1,6 @@
-# Kyoto's Dream — Cloudflare R2 + KV Setup (Dummies Guide)
+# KyotoSpxrit — Cloudflare R2 + KV Setup (Dummies Guide)
 
-This guide sets up the two Cloudflare storage bindings used by the Kyoto's Dream DreamShare Worker:
+This guide sets up the two Cloudflare storage bindings used by the KyotoSpxrit DreamShare Worker:
 
 - `DREAMSHARE_KV` — accounts, sessions/presence, DreamShare feed data, Community Instruments, and other small JSON state.
 - `DREAMSHARE_R2` — large WAV/image/VST release files. R2 is strongly recommended for media.
@@ -97,7 +97,7 @@ Click **Add** / **Save**.
 
 Click **Deploy** when Cloudflare asks you to deploy the Worker.
 
-## Part 4 — Why KV matters to Kyoto's Dream
+## Part 4 — Why KV matters to KyotoSpxrit
 
 The Worker uses KV for things such as:
 
@@ -244,7 +244,7 @@ If `r2` says `false`:
 
 After KV is working:
 
-1. Log into Kyoto's Dream.
+1. Log into KyotoSpxrit.
 2. Build an instrument.
 3. Save it.
 4. Give it a custom UI/theme.
@@ -272,7 +272,7 @@ R2 is the preferred storage location for the larger media objects.
 
 If R2 is missing, the Worker can fall back to KV for some media operations, but that is not the setup you want for a production DreamShare system.
 
-## Part 11 — Put the Kyoto's Dream release ZIP in R2
+## Part 11 — Put the KyotoSpxrit release ZIP in R2
 
 The Worker also knows about a VST release object.
 

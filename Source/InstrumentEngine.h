@@ -10,7 +10,7 @@ struct FxSlot { int effect=0; float amount=0.65f, tone=0.5f, motion=0.5f, mix=0.
 
 struct InstrumentPreset {
     juce::String id = "custom";
-    juce::String name = "Kyoto Init";
+    juce::String name = "KyotoSpxrit Init";
     int osc1 = 0, osc2 = 3, osc3 = 1;
     float mix1 = 0.8f, mix2 = 0.35f, mix3 = 0.2f;
     float detune2 = 7.0f, detune3 = -7.0f;

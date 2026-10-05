@@ -11,9 +11,9 @@
 #include <string>
 #include <vector>
 
-class KyotosDreamProcessor final : public juce::AudioProcessor {
+class KyotoSpxritProcessor final : public juce::AudioProcessor {
 public:
-    KyotosDreamProcessor(); ~KyotosDreamProcessor() override = default;
+    KyotoSpxritProcessor(); ~KyotoSpxritProcessor() override = default;
     void prepareToPlay(double,int) override; void releaseResources() override; void processBlock(juce::AudioBuffer<float>&,juce::MidiBuffer&) override;
     bool isBusesLayoutSupported(const BusesLayout&) const override; juce::AudioProcessorEditor* createEditor() override; bool hasEditor() const override{return true;}
     const juce::String getName() const override;
@@ -69,5 +69,5 @@ private:
     std::array<std::atomic<float>*,fxSlots> fxSelect{};
     std::vector<kyoto::FxSlot> expertFxChain;
     juce::StringArray modules; juce::String currentModule=""; juce::String dreamToken,dreamUser,dreamRole,dreamTheme;
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(KyotosDreamProcessor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(KyotoSpxritProcessor)
 };
