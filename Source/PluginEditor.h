@@ -2,17 +2,13 @@
 #include "PluginProcessor.h"
 #include "Themes.h"
 
-// ---------------------------------------------------------------------------
-// Visual widget that lives on the Builder canvas (dial / slider / key / wave)
-// ---------------------------------------------------------------------------
 struct CanvasWidget : public juce::Component
 {
-    enum class Kind { Dial, Slider, Key, Wave };
+    enum class Kind { Dial, Slider, Key, Wave, Stack };
 
     CanvasWidget(KyotoAudioProcessor& p, juce::ValueTree n);
     void paint(juce::Graphics& g) override;
     void resized() override;
-    void mouseDrag(const juce::MouseEvent& e) override;
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
 
@@ -22,12 +18,8 @@ struct CanvasWidget : public juce::Component
     juce::Slider slider;
     juce::Label caption;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
-    bool dragging = false;
 };
 
-// ---------------------------------------------------------------------------
-// Scrollable FX browser with hover-preview at half intensity
-// ---------------------------------------------------------------------------
 class FxBrowser : public juce::Component, private juce::ListBoxModel
 {
 public:
@@ -37,8 +29,6 @@ public:
     void setTheme(const kt::ThemePalette& t);
     int getSelectedFx() const { return selected; }
     std::function<void(int)> onSelect;
-    std::function<void(int)> onHover;   // called with fx index, or -1 when leave
-    std::function<void()> onLeave;
 
 private:
     int getNumRows() override;
@@ -50,17 +40,12 @@ private:
     juce::ListBox list;
     juce::TextEditor search;
     juce::String filter;
-    juce::Array<int> filtered;   // indices into kt::kFx
+    juce::Array<int> filtered;
     int selected = 0;
-    int hoverRow = -1;
     kt::ThemePalette theme = kt::kThemes[0];
-
     void rebuildFilter();
 };
 
-// ---------------------------------------------------------------------------
-// Main editor
-// ---------------------------------------------------------------------------
 class KyotoAudioProcessorEditor : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
@@ -73,52 +58,55 @@ private:
     void timerCallback() override;
     void showTab(int tab);
     void rebuildCanvas();
-    void addSelectedEffect();
+    void addSeriesStep();
+    void reflowSeries();
+    juce::Rectangle<int> cellFor(int index, const juce::String& kind) const;
     void saveLocal();
     void publish();
     void login();
+    void logout();
     void sendChat();
     void refreshFeed();
     void refreshCatalog();
-    void loadNamed(const juce::String& name);
+    void loadCatalogId(const juce::String& id, const juce::String& name);
     void applyTheme(const juce::String& id);
-    void highlightPegsForPlacement(bool on);
-    juce::Rectangle<int> findFreePeg(int w, int h) const;
-    bool collides(const juce::Rectangle<int>& r) const;
+    void loadWav();
+    void saveEffect();
+    void publishEffect();
+    void refreshEffectBox();
     juce::File sessionFile() const;
     juce::File moduleDir() const;
+    juce::File effectDir() const;
+    void setLoggedIn(bool on);
 
     KyotoAudioProcessor& proc;
-    int tab = 0;                     // 0 = DreamShare, 1 = Builder
+    int tab = 0;
+    bool loggedIn = false;
     juce::String token, account;
     kt::ThemePalette theme = kt::kThemes[0];
 
-    // Top chrome
-    juce::TextButton shareBtn { "DREAMSHARE" }, buildBtn { "BUILDER" };
-    juce::Label status;
+    juce::TextButton shareBtn { "DREAMSHARE" }, chainBtn { "CHAIN" }, fxBtn { "FX BUILDER" }, logoutBtn { "LOG OUT" };
+    juce::Label status, whoLabel;
 
-    // DreamShare tab
     juce::TextEditor userBox, passBox, msgBox, logBox;
-    juce::TextButton loginBtn { "LOGIN" }, sendBtn { "SEND" }, feedBtn { "REFRESH" };
+    juce::TextButton loginBtn { "LOG IN" }, sendBtn { "SEND" }, feedBtn { "REFRESH" };
     juce::ComboBox themeBox;
-    juce::TextButton catBtn { "CATALOG" };
-    juce::ComboBox remoteBox;
+    juce::Viewport catalogView;
+    juce::Component catalogHolder;
 
-    // Builder tab
-    juce::TextEditor nameBox;
-    juce::ComboBox gridStyleBox, localBox, kindBox;
-    juce::TextButton addBtn { "PLACE" }, saveBtn { "SAVE" }, upBtn { "UPLOAD" };
-    juce::Component panel;           // canvas
+    juce::TextEditor nameBox, effectNameBox;
+    juce::ComboBox gridStyleBox, localBox, kindBox, effectBox;
+    juce::TextButton addBtn { "ADD NEXT" }, saveBtn { "SAVE" }, upBtn { "UPLOAD" }, wavBtn { "LOAD WAV" };
+    juce::TextButton fxAddBtn { "STACK FX" }, fxSaveBtn { "SAVE EFFECT" }, fxUpBtn { "UPLOAD EFFECT" };
+    juce::Slider fxAmount;
+    juce::Label stackLabel;
+    juce::Component panel;
     std::unique_ptr<FxBrowser> fxBrowser;
     juce::OwnedArray<CanvasWidget> widgets;
+    juce::ValueTree fxStack { "fxstack" };
 
-    // Peg grid state for placement
-    bool placementMode = false;
-    int pendingFx = -1;
-    int pendingKind = 0;             // 0=dial,1=slider,2=key,3=wave
-    static constexpr int pegCols = 12;
-    static constexpr int pegRows = 8;
-    static constexpr int pegSize = 72;
+    struct CatalogItem { juce::String id, name, face, author; };
+    juce::Array<CatalogItem> catalog;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(KyotoAudioProcessorEditor)
 };

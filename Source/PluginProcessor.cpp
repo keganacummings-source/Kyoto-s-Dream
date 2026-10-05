@@ -271,8 +271,65 @@ void KyotoAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
             if (std::abs(x) > 0.98f)
                 x = std::copysign(0.98f, x);
             buffer.getWritePointer(ch)[i] = x;
+            if (ch == 0)
+            {
+                const int w = scopeWrite.load() % scopeN;
+                scope[w] = x;
+                scopeWrite.store((w + 1) % scopeN);
+            }
+        }
+        int sp = samplePos.load();
+        if (sp >= 0)
+        {
+            float s = 0.f;
+            {
+                juce::ScopedLock lock(sampleLock);
+                if (sp < (int) sample.size())
+                    s = sample[(size_t) sp];
+                else
+                    sp = -2;
+            }
+            if (sp >= 0)
+            {
+                const double ratio = sampleRateFile / sampleRateHz;
+                samplePos.store(sp + juce::jmax(1, (int) std::round(ratio)));
+                for (int ch = 0; ch < nOut; ++ch)
+                    buffer.getWritePointer(ch)[i] += s * 0.8f;
+            }
+            else
+                samplePos.store(-1);
         }
     }
+}
+
+void KyotoAudioProcessor::loadSample(juce::AudioBuffer<float> buffer, double fileRate)
+{
+    juce::ScopedLock lock(sampleLock);
+    sample.clear();
+    sample.reserve((size_t) buffer.getNumSamples());
+    const int chs = juce::jmax(1, buffer.getNumChannels());
+    for (int i = 0; i < buffer.getNumSamples(); ++i)
+    {
+        float s = 0.f;
+        for (int c = 0; c < chs; ++c)
+            s += buffer.getSample(c, i);
+        sample.push_back(s / (float) chs);
+    }
+    sampleRateFile = fileRate > 0.0 ? fileRate : sampleRateHz;
+    samplePos.store(-1);
+}
+
+void KyotoAudioProcessor::triggerSample()
+{
+    if (! sample.empty())
+        samplePos.store(0);
+}
+
+void KyotoAudioProcessor::copyScope(float* dest, int n) const
+{
+    const int w = scopeWrite.load();
+    for (int i = 0; i < n; ++i)
+        dest[i] = scope[(w + i) % scopeN];
 }
 
 void KyotoAudioProcessor::getStateInformation(juce::MemoryBlock& dest)

@@ -1,5 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
+#include <atomic>
+#include <vector>
 
 class KyotoAudioProcessor : public juce::AudioProcessor
 {
@@ -33,6 +35,12 @@ public:
     bool isFx() const;
     int slotCount() const { return isFx() ? 12 : 8; }
 
+    void noteOn(int note, float vel);
+    void noteOff(int note);
+    void loadSample(juce::AudioBuffer<float> buffer, double fileRate);
+    void triggerSample();
+    void copyScope(float* dest, int n) const;
+
     juce::AudioProcessorValueTreeState apvts;
     juce::ValueTree uiState { "ui" };
 
@@ -53,14 +61,21 @@ private:
         int w = 0;
     };
 
-    void noteOn(int note, float vel);
-    void noteOff(int note);
     float renderVoice(Voice& v);
     float applySlot(int slot, int ch, float x);
 
     Voice voices[8];
     SlotDsp slotDsp[12];
     double sampleRateHz = 44100.0;
+
+    static constexpr int scopeN = 256;
+    float scope[scopeN] {};
+    std::atomic<int> scopeWrite { 0 };
+
+    std::vector<float> sample;
+    double sampleRateFile = 44100.0;
+    std::atomic<int> samplePos { -1 };
+    juce::CriticalSection sampleLock;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(KyotoAudioProcessor)
 };
