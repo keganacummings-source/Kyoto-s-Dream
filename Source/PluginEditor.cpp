@@ -319,7 +319,7 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     {
         token = o->getProperty("token").toString();
         account = o->getProperty("user").toString();
-        isAdmin = o->getProperty("admin", false);
+        isAdmin = (bool) o->getProperty("admin");
         if (token.isNotEmpty() && account.isNotEmpty())
             setLoggedIn(true);
     }
