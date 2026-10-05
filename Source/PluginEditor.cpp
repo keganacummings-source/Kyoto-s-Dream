@@ -431,8 +431,7 @@ void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
         g.setColour(kt::c(theme.accent)); g.setFont(juce::FontOptions(20.f).withStyle("Bold"));
         g.drawText("THE ROOM", rail.getX()+16.f, rail.getY()+18.f, 150.f, 28.f, juce::Justification::left);
         g.setColour(kt::c(theme.text)); g.setFont(juce::FontOptions(13.f).withStyle("Bold"));
-        g.drawText("A listening room.
-Not another timeline.", rail.getX()+16.f, rail.getY()+54.f, 150.f, 52.f, juce::Justification::left);
+        g.drawText("A listening room.\\nNot another timeline.", rail.getX()+16.f, rail.getY()+54.f, 150.f, 52.f, juce::Justification::left);
         g.setColour(kt::c(theme.muted)); g.setFont(juce::FontOptions(10.f));
         g.drawText("LIVE FEED", rail.getX()+16.f, rail.getBottom()-86.f, 150.f, 16.f, juce::Justification::left);
         g.drawText("CATALOG", rail.getX()+16.f, rail.getBottom()-62.f, 150.f, 16.f, juce::Justification::left);
@@ -782,15 +781,15 @@ void KyotoAudioProcessorEditor::addSeriesStep()
             if (auto* on = proc.apvts.getParameter(prefix + "on"))
                 on->setValueNotifyingHost(1.f);
             if (auto* a = proc.apvts.getParameter(prefix + "amt"))
-                a->setValueNotifyingHost(a->convertTo0to1((float) s->getProperty("amount", 0.5)));
+                a->setValueNotifyingHost(a->convertTo0to1((float) (s->hasProperty("amount") ? s->getProperty("amount") : juce::var(0.5))));
             if (auto* a = proc.apvts.getParameter(prefix + "tone"))
-                a->setValueNotifyingHost(a->convertTo0to1((float) s->getProperty("tone", 0.5)));
+                a->setValueNotifyingHost(a->convertTo0to1((float) (s->hasProperty("tone") ? s->getProperty("tone") : juce::var(0.5))));
             if (auto* a = proc.apvts.getParameter(prefix + "mot"))
-                a->setValueNotifyingHost(a->convertTo0to1((float) s->getProperty("motion", 0.35)));
+                a->setValueNotifyingHost(a->convertTo0to1((float) (s->hasProperty("motion") ? s->getProperty("motion") : juce::var(0.35))));
             if (auto* a = proc.apvts.getParameter(prefix + "mix"))
-                a->setValueNotifyingHost(a->convertTo0to1((float) s->getProperty("mix", 0.4)));
+                a->setValueNotifyingHost(a->convertTo0to1((float) (s->hasProperty("mix") ? s->getProperty("mix") : juce::var(0.4))));
             if (auto* a = proc.apvts.getParameter(prefix + "shp"))
-                a->setValueNotifyingHost(a->convertTo0to1((float) s->getProperty("shape", 0.5)));
+                a->setValueNotifyingHost(a->convertTo0to1((float) (s->hasProperty("shape") ? s->getProperty("shape") : juce::var(0.5))));
         }
         place(first, "amt", effectBox.getText(), "stack", -1);
     }
@@ -998,7 +997,7 @@ void KyotoAudioProcessorEditor::loadCatalogId(const juce::String& id, const juce
             if (obj->getProperty("face").toString() == "effect" || obj->getProperty("format").toString() == "kyoteppah-effect-1")
             {
                 fxStack.removeAllChildren(nullptr);
-                if (auto* steps=obj->getProperty("steps").getArray()) for(auto& v:*steps) if(auto* so=v.getDynamicObject()){auto st=juce::ValueTree("step");st.setProperty("fx",(int)so->getProperty("fx"),nullptr);st.setProperty("name",so->getProperty("name").toString(),nullptr);st.setProperty("amount",(double)so->getProperty("amount",0.5),nullptr);st.setProperty("tone",(double)so->getProperty("tone",0.5),nullptr);st.setProperty("motion",(double)so->getProperty("motion",0.35),nullptr);st.setProperty("mix",(double)so->getProperty("mix",0.4),nullptr);st.setProperty("shape",(double)so->getProperty("shape",0.5),nullptr);fxStack.appendChild(st,nullptr);}
+                if (auto* steps=obj->getProperty("steps").getArray()) for(auto& v:*steps) if(auto* so=v.getDynamicObject()){auto st=juce::ValueTree("step");st.setProperty("fx",(int)so->getProperty("fx"),nullptr);st.setProperty("name",so->getProperty("name").toString(),nullptr);st.setProperty("amount",(double)(so->hasProperty("amount") ? so->getProperty("amount") : juce::var(0.5)),nullptr);st.setProperty("tone",(double)(so->hasProperty("tone") ? so->getProperty("tone") : juce::var(0.5)),nullptr);st.setProperty("motion",(double)(so->hasProperty("motion") ? so->getProperty("motion") : juce::var(0.35)),nullptr);st.setProperty("mix",(double)(so->hasProperty("mix") ? so->getProperty("mix") : juce::var(0.4)),nullptr);st.setProperty("shape",(double)(so->hasProperty("shape") ? so->getProperty("shape") : juce::var(0.5)),nullptr);fxStack.appendChild(st,nullptr);}
                 effectNameBox.setText(obj->getProperty("name").toString(), juce::dontSendNotification); if (fxStack.getNumChildren() > 0) selectFxStep(0); showTab(2); return;
             }
             nameBox.setText(obj->getProperty("name").toString(), juce::dontSendNotification);
@@ -1013,13 +1012,13 @@ void KyotoAudioProcessorEditor::loadCatalogId(const juce::String& id, const juce
                 {
                     auto* src = slots->getReference(i).getDynamicObject(); if (!src) continue;
                     const auto prefix = "s" + juce::String(i + 1).paddedLeft('0', 2);
-                    if (auto* p = proc.apvts.getParameter(prefix + "on")) p->setValueNotifyingHost(src->getProperty("on", true) ? 1.f : 0.f);
-                    if (auto* p = proc.apvts.getParameter(prefix + "type")) p->setValueNotifyingHost(p->convertTo0to1((float)src->getProperty("fx", 0)));
-                    if (auto* p = proc.apvts.getParameter(prefix + "amt")) p->setValueNotifyingHost(p->convertTo0to1((float)src->getProperty("amount", 0.5)));
-                    if (auto* p = proc.apvts.getParameter(prefix + "tone")) p->setValueNotifyingHost(p->convertTo0to1((float)src->getProperty("tone", 0.5)));
-                    if (auto* p = proc.apvts.getParameter(prefix + "mot")) p->setValueNotifyingHost(p->convertTo0to1((float)src->getProperty("motion", 0.35)));
-                    if (auto* p = proc.apvts.getParameter(prefix + "mix")) p->setValueNotifyingHost(p->convertTo0to1((float)src->getProperty("mix", 0.4)));
-                    if (auto* p = proc.apvts.getParameter(prefix + "shp")) p->setValueNotifyingHost(p->convertTo0to1((float)src->getProperty("shape", 0.5)));
+                    if (auto* p = proc.apvts.getParameter(prefix + "on")) p->setValueNotifyingHost((src->hasProperty("on") ? src->getProperty("on") : juce::var(true)) ? 1.f : 0.f);
+                    if (auto* p = proc.apvts.getParameter(prefix + "type")) p->setValueNotifyingHost(p->convertTo0to1((float)(src->hasProperty("fx") ? src->getProperty("fx") : juce::var(0))));
+                    if (auto* p = proc.apvts.getParameter(prefix + "amt")) p->setValueNotifyingHost(p->convertTo0to1((float)(src->hasProperty("amount") ? src->getProperty("amount") : juce::var(0.5))));
+                    if (auto* p = proc.apvts.getParameter(prefix + "tone")) p->setValueNotifyingHost(p->convertTo0to1((float)(src->hasProperty("tone") ? src->getProperty("tone") : juce::var(0.5))));
+                    if (auto* p = proc.apvts.getParameter(prefix + "mot")) p->setValueNotifyingHost(p->convertTo0to1((float)(src->hasProperty("motion") ? src->getProperty("motion") : juce::var(0.35))));
+                    if (auto* p = proc.apvts.getParameter(prefix + "mix")) p->setValueNotifyingHost(p->convertTo0to1((float)(src->hasProperty("mix") ? src->getProperty("mix") : juce::var(0.4))));
+                    if (auto* p = proc.apvts.getParameter(prefix + "shp")) p->setValueNotifyingHost(p->convertTo0to1((float)(src->hasProperty("shape") ? src->getProperty("shape") : juce::var(0.5))));
                 }
             }
             if (auto* warr = obj->getProperty("widgets").getArray())
@@ -1055,7 +1054,7 @@ void KyotoAudioProcessorEditor::loadCatalogId(const juce::String& id, const juce
             {
                 fxStack.removeAllChildren(nullptr);
                 if (auto* steps = mo->getProperty("steps").getArray()) for (auto& v : *steps)
-                { if (auto* so=v.getDynamicObject()) { auto st=juce::ValueTree("step"); st.setProperty("fx",(int)so->getProperty("fx"),nullptr); st.setProperty("name",so->getProperty("name").toString(),nullptr); st.setProperty("amount",(double)so->getProperty("amount",0.5),nullptr); st.setProperty("tone",(double)so->getProperty("tone",0.5),nullptr); st.setProperty("motion",(double)so->getProperty("motion",0.35),nullptr); st.setProperty("mix",(double)so->getProperty("mix",0.4),nullptr); st.setProperty("shape",(double)so->getProperty("shape",0.5),nullptr); fxStack.appendChild(st,nullptr); } }
+                { if (auto* so=v.getDynamicObject()) { auto st=juce::ValueTree("step"); st.setProperty("fx",(int)so->getProperty("fx"),nullptr); st.setProperty("name",so->getProperty("name").toString(),nullptr); st.setProperty("amount",(double)(so->hasProperty("amount") ? so->getProperty("amount") : juce::var(0.5)),nullptr); st.setProperty("tone",(double)(so->hasProperty("tone") ? so->getProperty("tone") : juce::var(0.5)),nullptr); st.setProperty("motion",(double)(so->hasProperty("motion") ? so->getProperty("motion") : juce::var(0.35)),nullptr); st.setProperty("mix",(double)(so->hasProperty("mix") ? so->getProperty("mix") : juce::var(0.4)),nullptr); st.setProperty("shape",(double)(so->hasProperty("shape") ? so->getProperty("shape") : juce::var(0.5)),nullptr); fxStack.appendChild(st,nullptr); } }
                 effectNameBox.setText(modName, juce::dontSendNotification); if (fxStack.getNumChildren() > 0) selectFxStep(0); showTab(2);
                 status.setText("Loaded effect: " + modName, juce::dontSendNotification);
             }
