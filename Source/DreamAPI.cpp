@@ -58,7 +58,7 @@ juce::var DreamAPI::postJson(
     if (auto* d = v.getDynamicObject())
     {
         if (d->hasProperty("error")
-            && d->getProperty("ok") == false)
+            && !static_cast<bool>(d->getProperty("ok")))
         {
             error =
                 d->getProperty("error").toString();
@@ -411,7 +411,9 @@ bool DreamAPI::postImage(
     const juce::File& f,
     const juce::String& text)
 {
-    auto bytes = f.loadFileAsData();
+    juce::MemoryBlock bytes;
+    if (!f.loadFileAsData(bytes))
+        return false;
 
     if (bytes.isEmpty())
         return false;
@@ -476,11 +478,9 @@ bool DreamAPI::postImage(
 
         o->setProperty(
             "b64",
-            b64.substring(
+            juce::var(b64.substring(
                 i * chunk,
-                juce::jmin(
-                    b64.length(),
-                    (i + 1) * chunk)));
+                std::min(b64.length(), (i + 1) * chunk))));
 
         juce::String e;
 
