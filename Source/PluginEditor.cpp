@@ -127,6 +127,11 @@ CanvasWidget::CanvasWidget(KyotoAudioProcessor& p, juce::ValueTree n)
     caption.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(caption);
 
+    if (kind == Kind::Wave)
+    {
+        waveDisplay = std::make_unique<WaveDisplay>(proc);
+        addAndMakeVisible(*waveDisplay);
+    }
     if (kind == Kind::Dial || kind == Kind::Slider)
     {
         const int slot = (int) node.getProperty("slot", -1);
@@ -197,6 +202,8 @@ void CanvasWidget::resized()
     caption.setBounds(0, 0, getWidth(), 14);
     if (kind == Kind::Dial || kind == Kind::Slider)
         slider.setBounds(4, 14, getWidth() - 8, getHeight() - 18);
+    if (waveDisplay)
+        waveDisplay->setBounds(4, 14, getWidth() - 8, getHeight() - 30);
 }
 
 void CanvasWidget::mouseDown(const juce::MouseEvent&)
@@ -363,7 +370,7 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     for (auto* b : { &shareBtn, &chainBtn, &fxBtn, &logoutBtn, &loginBtn, &sendBtn, &feedBtn,
                      &addBtn, &saveBtn, &upBtn, &wavBtn, &chainBreakBtn, &chainMixBtn, &chainRemoveBtn, &chainUndoBtn,
                      &fxAddBtn, &fxSaveBtn, &fxUpBtn, &fxShareChatBtn, &fxShareThreadBtn, &fxRemoveBtn, &fxUndoBtn,
-                     &fxBreakBtn, &fxMixBtn, &fxRandomBtn, &fxClearBtn, &chatRefreshBtn, &threadsBtn, &socialBtn, &dmBtn, &adminDeleteBtn, &utilityGoBtn })
+                     &fxBreakBtn, &fxMixBtn, &fxRandomBtn, &fxClearBtn, &pluginViewBtn, &pluginBackBtn, &newMachineBtn, &randomMachineBtn, &chatRefreshBtn, &threadsBtn, &socialBtn, &dmBtn, &adminDeleteBtn, &utilityGoBtn })
     {
         addAndMakeVisible(b);
         b->setClickingTogglesState(false);
@@ -372,6 +379,14 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     shareBtn.onClick = [this] { showTab(0); };
     chainBtn.onClick = [this] { if (loggedIn) showTab(1); };
     fxBtn.onClick = [this] { if (loggedIn) showTab(2); };
+    pluginViewBtn.onClick = [this] { setPluginView(true); };
+    pluginBackBtn.onClick = [this] { setPluginView(false); };
+    newMachineBtn.onClick = [this] {
+        juce::PopupMenu menu;
+        menu.addItem(1, "4 : 5  ·  PORTRAIT"); menu.addItem(2, "1 : 1  ·  SQUARE"); menu.addItem(3, "5 : 4  ·  LANDSCAPE"); menu.addItem(4, "FREEFORM");
+        const int choice = menu.show(); if (choice >= 1 && choice <= 4) startNewMachine(choice - 1);
+    };
+    randomMachineBtn.onClick = [this] { randomizeMachine(); };
     logoutBtn.onClick = [this] { logout(); };
     loginBtn.onClick = [this] { login(); };
     sendBtn.onClick = [this] { sendChat(); };
@@ -440,6 +455,8 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     fxClearBtn.onClick = [this] { if (fxStack.getNumChildren() > 0) { captureSnapshot(); fxStack.removeAllChildren(nullptr); selectedFxStep = -1; stackLabel.setText("Empty effect  ·  ready for a new build", juce::dontSendNotification); } };
 
     addAndMakeVisible(status);
+    addAndMakeVisible(pluginViewBtn); addAndMakeVisible(pluginBackBtn); addAndMakeVisible(newMachineBtn); addAndMakeVisible(randomMachineBtn);
+    pluginBackBtn.setVisible(false);
     addAndMakeVisible(whoLabel);
     addAndMakeVisible(userBox);
     addAndMakeVisible(passBox);
@@ -510,7 +527,9 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
         if (token.isNotEmpty() && account.isNotEmpty()) setLoggedIn(true);
     }
     if (! loggedIn) setLoggedIn(false);
-    applyTheme(proc.uiState.getProperty("theme", "trippah").toString());
+    if (proc.uiState.hasProperty("machineDesign")) machineDesign = MachineDesign::fromVar(juce::JSON::parse(proc.uiState.getProperty("machineDesign").toString()));
+    else { machineDesign.choosePlayground((MachineDesign::PlaygroundMode) juce::jlimit(0, 3, (int)proc.uiState.getProperty("playgroundMode"))); machineDesign.theme = proc.uiState.getProperty("theme").toString(); machineDesign.bodyDesign = proc.uiState.getProperty("bodyDesign").toString(); }
+    applyTheme(proc.uiState.getProperty("theme", juce::var("trippah")).toString());
     refreshEffectBox();
     startTimerHz(8);
 }
@@ -541,6 +560,62 @@ void KyotoAudioProcessorEditor::setLoggedIn(bool on)
         showTab(0);
 }
 
+void KyotoAudioProcessorEditor::syncMachineDesignToUi()
+{
+    proc.uiState.setProperty("playgroundMode", (int) machineDesign.playgroundMode, nullptr);
+    proc.uiState.setProperty("playgroundWidth", machineDesign.playgroundWidth, nullptr);
+    proc.uiState.setProperty("playgroundHeight", machineDesign.playgroundHeight, nullptr);
+    proc.uiState.setProperty("aspectRatio", machineDesign.aspectRatio, nullptr);
+    proc.uiState.setProperty("bodyDesign", machineDesign.bodyDesign, nullptr);
+    proc.uiState.setProperty("machineDesign", juce::JSON::toString(machineDesign.toVar()), nullptr);
+}
+
+void KyotoAudioProcessorEditor::startNewMachine(int mode)
+{
+    machineDesign = MachineDesign{};
+    machineDesign.choosePlayground((MachineDesign::PlaygroundMode) juce::jlimit(0, 3, mode));
+    machineDesign.theme = theme.id;
+    machineDesign.bodyDesign = "Bare Frame";
+    syncMachineDesignToUi();
+    proc.uiState.removeAllChildren(nullptr);
+    fxStack.removeAllChildren(nullptr);
+    widgets.clear();
+    selectedFxStep = -1;
+    status.setText("New machine: " + machineDesign.aspectRatio + " playground", juce::dontSendNotification);
+    showTab(1);
+}
+
+void KyotoAudioProcessorEditor::randomizeMachine()
+{
+    machineDesign.theme = theme.id;
+    juce::Random rng((juce::int64) juce::Time::getMillisecondCounterHiRes());
+    machineDesign.randomize(rng);
+    syncMachineDesignToUi();
+    status.setText("Randomized " + machineDesign.bodyDesign + " · " + machineDesign.aspectRatio + " · collision checked", juce::dontSendNotification);
+    repaint();
+}
+
+void KyotoAudioProcessorEditor::setPluginView(bool on)
+{
+    pluginView = on;
+    pluginViewBtn.setVisible(!on && loggedIn);
+    pluginBackBtn.setVisible(on);
+    shareBtn.setVisible(!on); chainBtn.setVisible(!on); fxBtn.setVisible(!on); logoutBtn.setVisible(!on); whoLabel.setVisible(!on);
+    if (on)
+    {
+        showTab(1);
+        panel.setVisible(false);
+        if (fxBrowser) fxBrowser->setVisible(false);
+        for (auto* w : widgets) w->setVisible(false);
+    }
+    else
+    {
+        showTab(tab);
+        for (auto* w : widgets) w->setVisible(true);
+    }
+    resized(); repaint();
+}
+
 void KyotoAudioProcessorEditor::timerCallback()
 {
     animPhase += 0.035f;
@@ -554,6 +629,25 @@ void KyotoAudioProcessorEditor::timerCallback()
 void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
 {
     g.fillAll(kt::c(theme.bg));
+    if (pluginView)
+    {
+        auto r = getLocalBounds().reduced(18).toFloat();
+        g.setColour(kt::c(theme.panel)); g.fillRoundedRectangle(r, 18.f);
+        g.setColour(kt::c(theme.border)); g.drawRoundedRectangle(r, 18.f, 1.f);
+        g.setColour(kt::c(theme.accent)); g.setFont(juce::FontOptions(18.f).withStyle("Bold"));
+        g.drawText(machineDesign.bodyDesign.toUpperCase(), r.getX()+26, r.getY()+52, r.getWidth()-52, 28, juce::Justification::centred);
+        g.setColour(kt::c(theme.muted)); g.setFont(juce::FontOptions(10.f));
+        g.drawText(machineDesign.aspectRatio + "  ·  " + machineDesign.bodyDesign + "  ·  " + theme.name, r.getX()+26, r.getY()+82, r.getWidth()-52, 18, juce::Justification::centred);
+        for (const auto& part : machineDesign.modules)
+        {
+            auto q = juce::Rectangle<float>(r.getX()+part.bounds.getX()*0.72f, r.getY()+part.bounds.getY()*0.72f+112.f, part.bounds.getWidth()*0.72f, part.bounds.getHeight()*0.72f);
+            q.setPosition(juce::jlimit(r.getX()+16.f, r.getRight()-q.getWidth()-16.f, q.getX()), juce::jlimit(r.getY()+112.f, r.getBottom()-q.getHeight()-24.f, q.getY()));
+            g.setColour(kt::c(theme.panel).brighter(0.08f)); g.fillRoundedRectangle(q, 10.f);
+            g.setColour(kt::c(theme.accent).withAlpha(0.72f)); g.drawRoundedRectangle(q, 10.f, 1.5f);
+            g.setColour(kt::c(theme.text)); g.setFont(juce::FontOptions(9.f).withStyle("Bold")); g.drawFittedText(part.type, q.reduced(7.f).toNearestInt(), juce::Justification::centred, 1);
+        }
+        return;
+    }
     for (int i=0;i<5;i++)
     {
         const float px = 80.f + std::fmod((float)i*247.f + animPhase*18.f, (float)juce::jmax(100,getWidth()-150));
@@ -665,6 +759,7 @@ void KyotoAudioProcessorEditor::showTab(int next)
     fxBreakBtn.setVisible(fx); fxMixBtn.setVisible(fx); fxRandomBtn.setVisible(fx); fxClearBtn.setVisible(fx); stackLabel.setVisible(fx);
 
     shareBtn.setToggleState(share, juce::dontSendNotification); chainBtn.setToggleState(chain, juce::dontSendNotification); fxBtn.setToggleState(fx, juce::dontSendNotification);
+    pluginViewBtn.setVisible(!pluginView && loggedIn); pluginBackBtn.setVisible(pluginView); newMachineBtn.setVisible(chain && !pluginView); randomMachineBtn.setVisible(chain && !pluginView);
     resized();
     if (chain) rebuildCanvas();
     repaint();
@@ -673,7 +768,13 @@ void KyotoAudioProcessorEditor::showTab(int next)
 void KyotoAudioProcessorEditor::resized()
 {
     const int W = getWidth(), H = getHeight();
-    shareBtn.setBounds(190, 8, 112, 30); chainBtn.setBounds(308, 8, 92, 30); fxBtn.setBounds(406, 8, 118, 30);
+    if (pluginView)
+    {
+        pluginBackBtn.setBounds(28, 24, 90, 32);
+        pluginViewBtn.setVisible(false); newMachineBtn.setVisible(false); randomMachineBtn.setVisible(false);
+        return;
+    }
+    shareBtn.setBounds(190, 8, 112, 30); chainBtn.setBounds(308, 8, 92, 30); fxBtn.setBounds(406, 8, 118, 30); pluginViewBtn.setBounds(W - 250, 8, 118, 30);
     status.setBounds(538, 8, juce::jmax(160, W - 850), 30); whoLabel.setBounds(W - 278, 8, 150, 30); logoutBtn.setBounds(W - 118, 8, 100, 30);
 
     auto area = getLocalBounds().withTrimmedTop(52).reduced(12);
@@ -709,7 +810,7 @@ void KyotoAudioProcessorEditor::resized()
         auto top = area.removeFromTop(44);
         nameBox.setBounds(top.removeFromLeft(170)); top.removeFromLeft(7); kindBox.setBounds(top.removeFromLeft(116)); top.removeFromLeft(7);
         addBtn.setBounds(top.removeFromLeft(64)); top.removeFromLeft(5); chainBreakBtn.setBounds(top.removeFromLeft(68)); top.removeFromLeft(5); chainMixBtn.setBounds(top.removeFromLeft(68)); top.removeFromLeft(5);
-        chainRemoveBtn.setBounds(top.removeFromLeft(74)); top.removeFromLeft(5); chainUndoBtn.setBounds(top.removeFromLeft(64)); top.removeFromLeft(5); wavBtn.setBounds(top.removeFromLeft(58)); top.removeFromLeft(5); saveBtn.setBounds(top.removeFromLeft(68)); top.removeFromLeft(5); upBtn.setBounds(top.removeFromLeft(78));
+        chainRemoveBtn.setBounds(top.removeFromLeft(74)); top.removeFromLeft(5); chainUndoBtn.setBounds(top.removeFromLeft(64)); top.removeFromLeft(5); newMachineBtn.setBounds(top.removeFromLeft(96)); top.removeFromLeft(5); randomMachineBtn.setBounds(top.removeFromLeft(128)); top.removeFromLeft(5); wavBtn.setBounds(top.removeFromLeft(58)); top.removeFromLeft(5); saveBtn.setBounds(top.removeFromLeft(68)); top.removeFromLeft(5); upBtn.setBounds(top.removeFromLeft(78));
         auto bottom = area.removeFromBottom(38);
         presetBox.setBounds(bottom);
         auto left = area.removeFromLeft(282); if (fxBrowser) fxBrowser->setBounds(left); area.removeFromLeft(10); panel.setBounds(area); reflowSeries();
@@ -1178,9 +1279,15 @@ void KyotoAudioProcessorEditor::loadCatalogId(const juce::String& id, const juce
                     if (auto* p = proc.apvts.getParameter(prefix + "shp")) p->setValueNotifyingHost(p->convertTo0to1((float)(src->hasProperty("shape") ? src->getProperty("shape") : juce::var(0.5))));
                 }
             }
+            if (auto* md = obj->getProperty("machineDesign").getDynamicObject())
+            {
+                machineDesign = MachineDesign::fromVar(juce::var(md));
+                syncMachineDesignToUi();
+            }
             if (auto* warr = obj->getProperty("widgets").getArray())
             {
                 proc.uiState.removeAllChildren(nullptr);
+                syncMachineDesignToUi();
                 for (auto& item : *warr)
                 {
                     auto* wsrc = item.getDynamicObject();
@@ -1221,7 +1328,9 @@ void KyotoAudioProcessorEditor::loadCatalogId(const juce::String& id, const juce
             }
             else
             {
-                auto file=safe->moduleDir().getChildFile(modName+".json"); file.replaceWithText(juce::JSON::toString(mod)); safe->loadCatalogId({},modName); safe->status.setText("Loaded catalog module",juce::dontSendNotification);
+                auto file=safe->moduleDir().getChildFile(modName+".json"); file.replaceWithText(juce::JSON::toString(mod));
+                if (mo->hasProperty("machineDesign")) { safe->machineDesign = MachineDesign::fromVar(mo->getProperty("machineDesign")); safe->syncMachineDesignToUi(); }
+                safe->loadCatalogId({},modName); safe->status.setText("Loaded catalog module",juce::dontSendNotification);
             }
         });
     }).detach();
@@ -1241,7 +1350,7 @@ void KyotoAudioProcessorEditor::applyTheme(const juce::String& id)
         e->setColour(juce::TextEditor::focusedOutlineColourId, kt::c(theme.accent).withAlpha(0.75f));
     }
     kLookAndFeel.setTheme(theme);
-    for (auto* b : { &shareBtn, &chainBtn, &fxBtn, &logoutBtn, &feedBtn, &chatRefreshBtn, &threadsBtn, &socialBtn, &dmBtn, &adminDeleteBtn, &sendBtn, &utilityGoBtn, &addBtn, &chainBreakBtn, &chainMixBtn, &chainRemoveBtn, &chainUndoBtn, &saveBtn, &upBtn, &wavBtn, &fxAddBtn, &fxBreakBtn, &fxMixBtn, &fxRandomBtn, &fxClearBtn, &fxSaveBtn, &fxUpBtn, &fxShareChatBtn, &fxShareThreadBtn, &fxRemoveBtn, &fxUndoBtn })
+    for (auto* b : { &shareBtn, &chainBtn, &fxBtn, &logoutBtn, &feedBtn, &chatRefreshBtn, &threadsBtn, &socialBtn, &dmBtn, &adminDeleteBtn, &sendBtn, &utilityGoBtn, &addBtn, &chainBreakBtn, &chainMixBtn, &chainRemoveBtn, &chainUndoBtn, &saveBtn, &upBtn, &wavBtn, &fxAddBtn, &fxBreakBtn, &fxMixBtn, &fxRandomBtn, &fxClearBtn, &fxSaveBtn, &fxUpBtn, &fxShareChatBtn, &fxShareThreadBtn, &fxRemoveBtn, &fxUndoBtn, &pluginViewBtn, &pluginBackBtn, &newMachineBtn, &randomMachineBtn })
     {
         b->setColour(juce::TextButton::buttonColourId, kt::c(theme.panel).brighter(0.08f));
         b->setColour(juce::TextButton::buttonOnColourId, kt::c(theme.accent).withAlpha(0.30f));
@@ -1446,7 +1555,7 @@ void KyotoAudioProcessorEditor::refreshEffectBox()
     {
         const auto dir = sessionFile().getParentDirectory().getChildFile("kyoto"); dir.createDirectory();
         const auto file = dir.getChildFile(name + ".json"); if (file.existsAsFile()) return;
-        auto* obj = new juce::DynamicObject(); obj->setProperty("format", "kyoteppah-module-1"); obj->setProperty("face", "chain"); obj->setProperty("name", name); obj->setProperty("grid", 0); obj->setProperty("theme", proc.uiState.getProperty("theme", "trippah"));
+        auto* obj = new juce::DynamicObject(); obj->setProperty("format", "kyoteppah-module-1"); obj->setProperty("face", "chain"); obj->setProperty("name", name); obj->setProperty("grid", 0); obj->setProperty("theme", proc.uiState.getProperty("theme", juce::var("trippah")));
         juce::Array<juce::var> slots;
         for (const auto& row : rows) { auto* step = new juce::DynamicObject(); step->setProperty("on", true); step->setProperty("fx", (int)row[0]); step->setProperty("amount", row[1]); step->setProperty("tone", row[2]); step->setProperty("motion", row[3]); step->setProperty("mix", row[4]); step->setProperty("shape", row[5]); slots.add(juce::var(step)); }
         obj->setProperty("slots", slots); obj->setProperty("widgets", juce::var(juce::Array<juce::var>())); file.replaceWithText(juce::JSON::toString(juce::var(obj)));
@@ -1482,7 +1591,8 @@ void KyotoAudioProcessorEditor::saveLocal()
     const auto name = nameBox.getText().trim().isEmpty() ? "untitled" : nameBox.getText().trim();
     obj->setProperty("name", name);
     obj->setProperty("grid", 0);
-    obj->setProperty("theme", proc.uiState.getProperty("theme", "trippah"));
+    obj->setProperty("theme", proc.uiState.getProperty("theme", juce::var("trippah")));
+    obj->setProperty("machineDesign", machineDesign.toVar());
     juce::Array<juce::var> widgetsArr, slots, steps;
     for (int i = 0; i < proc.slotCount(); ++i)
     {

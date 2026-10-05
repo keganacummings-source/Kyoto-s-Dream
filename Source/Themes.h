@@ -18,6 +18,18 @@ struct ThemePalette
     juce::uint32 pegHot;   // grid peg highlighted for placement
     juce::uint32 knob;     // knob face
     juce::uint32 border;   // subtle border
+    // Deep theme tokens used by the machine builder and smart decals. Existing palettes remain compatible.
+    const char* backgroundStyle = "flat";
+    const char* bodyMaterial = "panel";
+    const char* borderStyle = "rounded";
+    const char* screenStyle = "crt";
+    const char* knobStyle = "soft";
+    const char* ledStyle = "dot";
+    const char* textStyle = "clean";
+    const char* panelTexture = "none";
+    const char* waveformStyle = "line";
+    const char* meterStyle = "bar";
+    const char* highlightStyle = "glow";
 };
 
 // Compact set of the most distinctive themes from the Site/Themes folder.

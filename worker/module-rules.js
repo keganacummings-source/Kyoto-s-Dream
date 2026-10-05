@@ -102,6 +102,8 @@ async function handleKyotoModule(action, body, sess, env, deps) {
       steps:Array.isArray(mod.steps)?mod.steps.slice(0,16):[],
       slots:Array.isArray(mod.slots)?mod.slots.slice(0,32):[],
       widgets:Array.isArray(mod.widgets)?mod.widgets.slice(0,80):[],
+      // Full machine reconstruction payload: playground/body/parts/connections/theme/macro data.
+      machineDesign: (mod.machineDesign && typeof mod.machineDesign === "object") ? mod.machineDesign : null,
       instrument:face === "kyoto" ? (mod.instrument || null) : null,
       description:String(body.description||mod.description||"").replace(/[<>]/g,"").trim().slice(0,280),
       at:Date.now()

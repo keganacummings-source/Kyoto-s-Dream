@@ -1,6 +1,8 @@
 #pragma once
 #include "PluginProcessor.h"
 #include "Themes.h"
+#include "MachineDesign.h"
+#include "WaveDisplay.h"
 #include <vector>
 
 struct CanvasWidget : public juce::Component
@@ -19,6 +21,7 @@ struct CanvasWidget : public juce::Component
     juce::Slider slider;
     juce::Label caption;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
+    std::unique_ptr<WaveDisplay> waveDisplay;
     std::function<void()> onSelect;
     bool selected = false;
 };
@@ -121,17 +124,24 @@ private:
     juce::File moduleDir() const;
     juce::File effectDir() const;
     void setLoggedIn(bool on);
+    void setPluginView(bool on);
+    void startNewMachine(int playgroundMode);
+    void randomizeMachine();
+    void syncMachineDesignToUi();
 
     KyotoAudioProcessor& proc;
     int tab = 0;
     bool loggedIn = false;
     bool isAdmin = false;
+    bool pluginView = false;
+    MachineDesign machineDesign;
     float animPhase = 0.f;
     juce::String token, account;
     juce::String lastPublishedEffectId;
     kt::ThemePalette theme = kt::kThemes[0];
 
     juce::TextButton shareBtn { "DREAMSHARE" }, chainBtn { "CHAIN" }, fxBtn { "FX BUILDER" }, logoutBtn { "LOG OUT" };
+    juce::TextButton pluginViewBtn { "PLUGIN VIEW" }, pluginBackBtn { "← BACK" }, newMachineBtn { "NEW MACHINE" }, randomMachineBtn { "RANDOMIZE MACHINE" };
     juce::TextButton chatRefreshBtn { "CHAT" }, threadsBtn { "THREADS" }, socialBtn { "FRIENDS" }, dmBtn { "DM" }, adminDeleteBtn { "REMOVE" }, utilityGoBtn { "GO" };
     juce::TextEditor utilityBox;
     juce::ComboBox utilityActionBox;
@@ -155,6 +165,7 @@ private:
     int selectedChainWidget = -1;
     juce::Component panel;
     std::unique_ptr<FxBrowser> fxBrowser;
+    std::unique_ptr<WaveDisplay> waveDisplay;
     juce::OwnedArray<CanvasWidget> widgets;
     juce::ValueTree fxStack { "fxstack" };
 

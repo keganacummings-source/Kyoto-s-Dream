@@ -31,6 +31,11 @@ KyotoAudioProcessor::KyotoAudioProcessor()
     uiState.setProperty("free", 0, nullptr);
     uiState.setProperty("name", "untitled", nullptr);
     uiState.setProperty("theme", "trippah", nullptr);
+    uiState.setProperty("playgroundMode", 1, nullptr);
+    uiState.setProperty("playgroundWidth", 800, nullptr);
+    uiState.setProperty("playgroundHeight", 800, nullptr);
+    uiState.setProperty("aspectRatio", "1:1", nullptr);
+    uiState.setProperty("bodyDesign", "Bare Frame", nullptr);
 }
 
 KyotoAudioProcessor::~KyotoAudioProcessor() = default;
@@ -407,8 +412,8 @@ void KyotoAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
 
         const float original = left;
         processChain(left, right, original);
-        left = juce::jlimit(-0.98f, 0.98f, std::isfinite(left) ? left : 0.f);
-        right = juce::jlimit(-0.98f, 0.98f, std::isfinite(right) ? right : 0.f);
+        left = std::isfinite(left) ? std::tanh(left * 0.92f) * 0.92f : 0.f;
+        right = std::isfinite(right) ? std::tanh(right * 0.92f) * 0.92f : 0.f;
 
         if (writeL != nullptr) writeL[i] = left;
         if (nOut > 1 && writeR != nullptr) writeR[i] = right;
