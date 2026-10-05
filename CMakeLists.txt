@@ -54,7 +54,7 @@ set(KYOTO_RESOURCES_DIR
 )
 
 set(KYOTO_THEMES_JSON
-    "${KYOTO_RESOURCES_DIR}/themes.json"
+    "${KYOTO_RESOURCES_DIR}/themes/themes.json"
 )
 
 if(NOT EXISTS "${KYOTO_THEMES_JSON}")
