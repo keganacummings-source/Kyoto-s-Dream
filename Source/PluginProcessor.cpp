@@ -80,7 +80,7 @@ void KyotosDreamProcessor::getStateInformation(juce::MemoryBlock&dest){
         juce::JSON::toString(
             kyoto::layoutToVar(builderLayout)),
         nullptr);root.setProperty("activeModule",currentModule,nullptr);root.setProperty("dreamUser",dreamUser,nullptr);root.setProperty("dreamRole",dreamRole,nullptr);root.setProperty("dreamTheme",dreamTheme,nullptr);root.setProperty("uiVariant",(int)uiMode,nullptr);root.setProperty("expertMode",expertMode,nullptr);
-    juce::Array<juce::var> ms; for(auto&kv:modulePresets) { auto v=kyoto::presetToVar(kv.second); if(auto*o=v.getDynamicObject()) o->setProperty("id",kv.first); ms.add(v); } root.setProperty("moduleStates",juce::var(juce::JSON::toString(juce::var(ms))),nullptr);
+    juce::Array<juce::var> ms; for(auto&kv:modulePresets) { auto v=kyoto::presetToVar(kv.second); if(auto*o=v.getDynamicObject()) o->setProperty("id",juce::String(kv.first)); ms.add(v); } root.setProperty("moduleStates",juce::var(juce::JSON::toString(juce::var(ms))),nullptr);
     juce::Array<juce::var> ct;for(auto&t:userThemes)ct.add(kyoto::ThemeManager::toVar(t));root.setProperty("customThemes",juce::var(juce::JSON::toString(juce::var(ct))),nullptr);
     auto chain=kyoto::InstrumentPreset{}; chain.expertFxChain=expertFxChain; root.setProperty("expertFxChain",juce::var(juce::JSON::toString(kyoto::presetToVar(chain))),nullptr);
     if(auto xml=root.createXml())copyXmlToBinary(*xml,dest);
