@@ -6,7 +6,10 @@
 #include "DreamAPI.h"
 #include "ThemeManager.h"
 #include <array>
+#include <atomic>
 #include <map>
+#include <string>
+#include <vector>
 
 class KyotosDreamProcessor final : public juce::AudioProcessor {
 public:

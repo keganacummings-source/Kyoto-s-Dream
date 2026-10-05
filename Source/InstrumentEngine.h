@@ -58,5 +58,7 @@ private:
     std::array<Voice,maxVoices> voices{};
     InstrumentPreset current{};
     juce::Random random;
+    float filterL = 0.0f;
+    float filterR = 0.0f;
 };
 }

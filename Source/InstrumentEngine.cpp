@@ -5,7 +5,14 @@ namespace kyoto {
 static constexpr float pi=3.14159265358979323846f;
 InstrumentEngine::InstrumentEngine()=default;
 void InstrumentEngine::prepare(double rate,int block){ sr=std::clamp(rate,8000.0,192000.0); maxBlock=block; reset(); }
-void InstrumentEngine::reset(){ for(auto&v:voices)v=Voice{}; }
+void InstrumentEngine::reset()
+{
+    for (auto& v : voices)
+        v = Voice{};
+
+    filterL = 0.0f;
+    filterR = 0.0f;
+}
 void InstrumentEngine::setPreset(const InstrumentPreset&p){current=p;}
 float InstrumentEngine::midiHz(int n){return 440.0f*std::pow(2.0f,(n-69)/12.0f);}
 float InstrumentEngine::osc(float p,int type){
@@ -43,7 +50,15 @@ void InstrumentEngine::renderSample(float&l,float&r){
         const int types[3]={current.osc1,current.osc2,current.osc3};const float mixes[3]={current.mix1,current.mix2,current.mix3};const float cents[3]={0,current.detune2,current.detune3};
         for(int k=0;k<3;k++){float f=base*std::pow(2.0f,cents[k]/1200.0f);v.phase[k]+=f/sr; if(v.phase[k]>=1)v.phase[k]-=std::floor(v.phase[k]);s+=osc((float)v.phase[k],types[k])*mixes[k];}
         s/=1.8f;s+=current.noise*(random.nextFloat()*2.0f-1.0f);s*=e*v.velocity;
-        float cutoff=std::clamp(current.cutoff,0.01f,0.99f); static thread_local float fl=0,fr=0; float a=std::clamp(0.01f+cutoff*0.3f,0.005f,0.35f); fl+=(s-fl)*a; fr+=(s-fr)*a; float y=fl + (s-fl)*current.resonance*0.35f; y=std::tanh(y*(1.0f+current.drive*5.0f)); l+=y;r+=y;
+        float cutoff=std::clamp(current.cutoff,0.01f,0.99f); float a=std::clamp(0.01f+cutoff*0.3f,0.005f,0.35f);
+        filterL += (s - filterL) * a;
+        filterR += (s - filterR) * a;
+        float yL = filterL + (s - filterL) * current.resonance * 0.35f;
+        float yR = filterR + (s - filterR) * current.resonance * 0.35f;
+        yL = std::tanh(yL * (1.0f + current.drive * 5.0f));
+        yR = std::tanh(yR * (1.0f + current.drive * 5.0f));
+        l += yL;
+        r += yR;
         v.age+=1.0/sr;
     }
     l=std::tanh(l*0.8f);r=std::tanh(r*0.8f);

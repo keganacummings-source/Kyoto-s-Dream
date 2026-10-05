@@ -14,8 +14,11 @@ KyotosDreamProcessor::KyotosDreamProcessor()
 #endif
   state(*this,nullptr,"PARAMETERS",createParams()), activeTheme(themeManager.get("trippah"))
 {
-    if(!themeManager.loadFromJson(juce::String::fromUTF8(BinaryData::themes_json, (int) BinaryData::themes_jsonSize))){
-        auto resources=juce::File::getCurrentWorkingDirectory().getChildFile("Resources").getChildFile("themes.json");
+    if(!themeManager.loadFromJson(juce::String::fromUTF8(
+        reinterpret_cast<const char*>(BinaryData::themes_json),
+        (int) BinaryData::themes_jsonSize
+    ))){
+        auto resources=juce::File::getCurrentWorkingDirectory().getChildFile("Resources").getChildFile("themes").getChildFile("themes.json");
         if(resources.existsAsFile()) themeManager.loadFromFile(resources);
     }
     activeTheme=themeManager.get("trippah");
@@ -70,7 +73,13 @@ void KyotosDreamProcessor::processBlock(juce::AudioBuffer<float>&b,juce::MidiBuf
     fx.process(b.getWritePointer(0),b.getNumChannels()>1?b.getWritePointer(1):nullptr,b.getNumChannels(),b.getNumSamples(),en,a,t,mo,mi,sh,&order);
 }
 void KyotosDreamProcessor::getStateInformation(juce::MemoryBlock&dest){
-    auto root=state.copyState(); root.setProperty("modules",modules.joinIntoString("|"),nullptr);root.setProperty("activeModule",currentModule,nullptr);root.setProperty("dreamUser",dreamUser,nullptr);root.setProperty("dreamRole",dreamRole,nullptr);root.setProperty("dreamTheme",dreamTheme,nullptr);root.setProperty("uiVariant",(int)uiMode,nullptr);root.setProperty("expertMode",expertMode,nullptr);
+    auto root=state.copyState();
+    root.setProperty("modules",modules.joinIntoString("|"),nullptr);
+    root.setProperty(
+        "builderLayout",
+        juce::JSON::toString(
+            kyoto::layoutToVar(builderLayout)),
+        nullptr);root.setProperty("activeModule",currentModule,nullptr);root.setProperty("dreamUser",dreamUser,nullptr);root.setProperty("dreamRole",dreamRole,nullptr);root.setProperty("dreamTheme",dreamTheme,nullptr);root.setProperty("uiVariant",(int)uiMode,nullptr);root.setProperty("expertMode",expertMode,nullptr);
     juce::Array<juce::var> ms; for(auto&kv:modulePresets) { auto v=kyoto::presetToVar(kv.second); if(auto*o=v.getDynamicObject()) o->setProperty("id",kv.first); ms.add(v); } root.setProperty("moduleStates",juce::JSON::toString(juce::var(ms)),nullptr);
     juce::Array<juce::var> ct;for(auto&t:userThemes)ct.add(kyoto::ThemeManager::toVar(t));root.setProperty("customThemes",juce::JSON::toString(juce::var(ct)),nullptr);
     auto chain=kyoto::InstrumentPreset{}; chain.expertFxChain=expertFxChain; root.setProperty("expertFxChain",juce::JSON::toString(kyoto::presetToVar(chain)),nullptr);
@@ -78,7 +87,19 @@ void KyotosDreamProcessor::getStateInformation(juce::MemoryBlock&dest){
 }
 void KyotosDreamProcessor::setStateInformation(const void*d,int n){
     if(auto xml=getXmlFromBinary(d,n)){auto root=juce::ValueTree::fromXml(*xml);if(root.isValid()){
-        state.replaceState(root);synth.setPreset(getInstrumentPreset());modules=splitModuleString(root.getProperty("modules").toString());currentModule=root.getProperty("activeModule").toString();dreamUser=root.getProperty("dreamUser").toString();dreamRole=root.getProperty("dreamRole").toString();dreamTheme=root.getProperty("dreamTheme").toString();uiMode=(kyoto::UiVariant)(int)root.getProperty("uiVariant");expertMode=(bool)root.getProperty("expertMode"); auto lv=juce::JSON::parse(root.getProperty("builderLayout").toString()); builderLayout=kyoto::layoutFromVar(lv);
+        state.replaceState(root);modules=splitModuleString(root.getProperty("modules").toString());currentModule=root.getProperty("activeModule").toString();dreamUser=root.getProperty("dreamUser").toString();dreamRole=root.getProperty("dreamRole").toString();dreamTheme=root.getProperty("dreamTheme").toString();uiMode=(kyoto::UiVariant)juce::jlimit(0,3,(int)root.getProperty("uiVariant"));
+        expertMode=(bool)root.getProperty("expertMode");
+
+        const auto layoutJson =
+            root.getProperty("builderLayout").toString();
+
+        if (layoutJson.isNotEmpty())
+        {
+            auto lv = juce::JSON::parse(layoutJson);
+
+            if (!lv.isVoid())
+                builderLayout = kyoto::layoutFromVar(lv);
+        }
         expertFxChain.clear(); auto cv=juce::JSON::parse(root.getProperty("expertFxChain").toString()); kyoto::InstrumentPreset cp; if(kyoto::presetFromVar(cv,cp)) expertFxChain=cp.expertFxChain;
         modulePresets.clear();auto mv=juce::JSON::parse(root.getProperty("moduleStates").toString());if(auto*a=mv.getArray())for(auto&v:*a){auto*o=v.getDynamicObject();if(o){kyoto::InstrumentPreset p; if(kyoto::presetFromVar(v,p))modulePresets[o->getProperty("id").toString().toStdString()]=p;}}
         userThemes.clear();auto tv=juce::JSON::parse(root.getProperty("customThemes").toString());if(auto*a=tv.getArray())for(auto&v:*a)userThemes.push_back(kyoto::ThemeManager::fromVar(v,themeManager.get(dreamTheme)));
@@ -91,12 +112,144 @@ void KyotosDreamProcessor::saveModule(const juce::String&name){auto p=getInstrum
 bool KyotosDreamProcessor::loadModule(const juce::String&id){auto it=modulePresets.find(id.toStdString());if(it==modulePresets.end())return false;currentModule=id;setInstrumentPreset(it->second);return true;}
 bool KyotosDreamProcessor::hasModules()const{return modules.size()>0;} juce::String KyotosDreamProcessor::activeModule()const{return currentModule;} void KyotosDreamProcessor::setActiveModule(const juce::String&id){currentModule=id;loadModule(id);}
 kyoto::InstrumentPreset KyotosDreamProcessor::getInstrumentPreset()const{kyoto::InstrumentPreset p;p.id=currentModule.isEmpty()?"custom":currentModule;p.name=currentModule.isEmpty()?"Kyoto Init":currentModule;p.osc1=(int)state.getRawParameterValue("osc1")->load();p.osc2=(int)state.getRawParameterValue("osc2")->load();p.osc3=(int)state.getRawParameterValue("osc3")->load();p.mix1=state.getRawParameterValue("mix1")->load();p.mix2=state.getRawParameterValue("mix2")->load();p.mix3=state.getRawParameterValue("mix3")->load();p.detune2=state.getRawParameterValue("detune2")->load();p.detune3=state.getRawParameterValue("detune3")->load();p.octave=(int)state.getRawParameterValue("octave")->load();p.cutoff=state.getRawParameterValue("cutoff")->load();p.resonance=state.getRawParameterValue("resonance")->load();p.attack=state.getRawParameterValue("attack")->load();p.decay=state.getRawParameterValue("decay")->load();p.sustain=state.getRawParameterValue("sustain")->load();p.release=state.getRawParameterValue("release")->load();p.noise=state.getRawParameterValue("noise")->load();p.drive=state.getRawParameterValue("drive")->load();p.lfoRate=state.getRawParameterValue("lfoRate")->load();p.lfoDepth=state.getRawParameterValue("lfoDepth")->load();p.arp=state.getRawParameterValue("arp")->load()>0.5f;p.arpRate=state.getRawParameterValue("arpRate")->load();for(int i=0;i<fxSlots;i++){p.fx[i]=fxIndex(i);p.fxAmount[i]=amount[p.fx[i]]->load();} p.expertFxChain=expertFxChain; p.uiLayout=kyoto::layoutToVar(builderLayout); p.uiTheme=kyoto::ThemeManager::toVar(activeTheme); return p;}
-void KyotosDreamProcessor::setInstrumentPreset(const kyoto::InstrumentPreset&p){auto setf=[&](const char*n,float v){state.getParameterAsValue(n).setValueNotifyingHost(v);};auto seti=[&](const char*n,int v){state.getParameterAsValue(n).setValueNotifyingHost(v);};seti("osc1",p.osc1);seti("osc2",p.osc2);seti("osc3",p.osc3);setf("mix1",p.mix1);setf("mix2",p.mix2);setf("mix3",p.mix3);setf("detune2",p.detune2);setf("detune3",p.detune3);seti("octave",p.octave);setf("cutoff",p.cutoff);setf("resonance",p.resonance);setf("attack",p.attack);setf("decay",p.decay);setf("sustain",p.sustain);setf("release",p.release);setf("noise",p.noise);setf("drive",p.drive);setf("lfoRate",p.lfoRate);setf("lfoDepth",p.lfoDepth);setf("arp",p.arp?1.f:0.f);setf("arpRate",p.arpRate);for(int i=0;i<fxSlots;i++){setFxIndex(i,p.fx[i]);setFxParam(i,0,p.fxAmount[i]);} expertFxChain=p.expertFxChain; if(!p.uiLayout.isVoid()) builderLayout=kyoto::layoutFromVar(p.uiLayout); if(!p.uiTheme.isVoid()){ auto ct=kyoto::ThemeManager::fromVar(p.uiTheme,activeTheme); ct.custom=true; activeTheme=ct; dreamTheme=ct.id; bool found=false; for(auto&t:userThemes)if(t.id==ct.id)found=true; if(!found)userThemes.push_back(ct); } if(expertFxChain.empty()) for(int i=0;i<fxSlots;i++){ kyoto::FxSlot f; f.effect=p.fx[i]; f.amount=p.fxAmount[i]; expertFxChain.push_back(f); } synth.setPreset(p);}
+void KyotosDreamProcessor::setInstrumentPreset(const kyoto::InstrumentPreset& p)
+{
+    auto setFloat = [&](const char* name, float value)
+    {
+        if (auto* parameter = state.getParameter(name))
+            parameter->setValueNotifyingHost(
+                parameter->convertTo0to1(value));
+    };
+
+    auto setInt = [&](const char* name, int value)
+    {
+        if (auto* parameter = state.getParameter(name))
+            parameter->setValueNotifyingHost(
+                parameter->convertTo0to1((float) value));
+    };
+
+    setInt("osc1", p.osc1);
+    setInt("osc2", p.osc2);
+    setInt("osc3", p.osc3);
+
+    setFloat("mix1", p.mix1);
+    setFloat("mix2", p.mix2);
+    setFloat("mix3", p.mix3);
+
+    setFloat("detune2", p.detune2);
+    setFloat("detune3", p.detune3);
+
+    setInt("octave", p.octave);
+
+    setFloat("cutoff", p.cutoff);
+    setFloat("resonance", p.resonance);
+    setFloat("attack", p.attack);
+    setFloat("decay", p.decay);
+    setFloat("sustain", p.sustain);
+    setFloat("release", p.release);
+    setFloat("noise", p.noise);
+    setFloat("drive", p.drive);
+    setFloat("lfoRate", p.lfoRate);
+    setFloat("lfoDepth", p.lfoDepth);
+    setFloat("arp", p.arp ? 1.0f : 0.0f);
+    setFloat("arpRate", p.arpRate);
+
+    for (int i = 0; i < fxSlots; ++i)
+    {
+        setFxIndex(i, p.fx[i]);
+        setFxParam(i, 0, p.fxAmount[i]);
+    }
+
+    expertFxChain = p.expertFxChain;
+
+    if (!p.uiLayout.isVoid())
+        builderLayout = kyoto::layoutFromVar(p.uiLayout);
+
+    if (!p.uiTheme.isVoid())
+    {
+        auto ct =
+            kyoto::ThemeManager::fromVar(
+                p.uiTheme,
+                activeTheme);
+
+        ct.custom = true;
+        activeTheme = ct;
+        dreamTheme = ct.id;
+
+        bool found = false;
+
+        for (auto& t : userThemes)
+        {
+            if (t.id == ct.id)
+            {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found)
+            userThemes.push_back(ct);
+    }
+
+    if (expertFxChain.empty())
+    {
+        for (int i = 0; i < fxSlots; ++i)
+        {
+            kyoto::FxSlot f;
+            f.effect = p.fx[i];
+            f.amount = p.fxAmount[i];
+            expertFxChain.push_back(f);
+        }
+    }
+
+    synth.setPreset(p);
+}
 void KyotosDreamProcessor::savePreset(const juce::String&name){saveModule(name);}
 int KyotosDreamProcessor::fxIndex(int slot)const{return juce::jlimit(0,199,(int)std::round(fxSelect[juce::jlimit(0,fxSlots-1,slot)]->load()));}
-void KyotosDreamProcessor::setFxIndex(int slot,int idx){if(slot<0||slot>=fxSlots)return;state.getParameterAsValue("slot"+juce::String(slot)).setValueNotifyingHost((float)juce::jlimit(0,199,idx));}
+void KyotosDreamProcessor::setFxIndex(int slot, int idx)
+{
+    if (slot < 0 || slot >= fxSlots)
+        return;
+
+    const auto name =
+        "slot" + juce::String(slot);
+
+    if (auto* parameter = state.getParameter(name))
+    {
+        const auto value =
+            (float) juce::jlimit(0, 199, idx);
+
+        parameter->setValueNotifyingHost(
+            parameter->convertTo0to1(value));
+    }
+}
 float KyotosDreamProcessor::fxParam(int slot,int which)const{int idx=fxIndex(slot);switch(which){case 0:return amount[idx]->load();case 1:return tone[idx]->load();case 2:return motion[idx]->load();case 3:return mix[idx]->load();default:return shape[idx]->load();}}
-void KyotosDreamProcessor::setFxParam(int slot,int which,float value){int idx=fxIndex(slot);value=juce::jlimit(0.f,1.f,value);auto set=[&](std::atomic<float>*v,const char*prefix){state.getParameterAsValue(juce::String(prefix)+juce::String(idx)).setValueNotifyingHost(value);};switch(which){case 0:set(amount[idx],"amt");break;case 1:set(tone[idx],"tone");break;case 2:set(motion[idx],"motion");break;case 3:set(mix[idx],"mix");break;default:set(shape[idx],"shape");break;}}
+void KyotosDreamProcessor::setFxParam(
+    int slot,
+    int which,
+    float value)
+{
+    const int idx = fxIndex(slot);
+    value = juce::jlimit(0.0f, 1.0f, value);
+
+    const char* prefix = "shape";
+
+    switch (which)
+    {
+        case 0: prefix = "amt";   break;
+        case 1: prefix = "tone";  break;
+        case 2: prefix = "motion";break;
+        case 3: prefix = "mix";   break;
+        default: break;
+    }
+
+    const auto name =
+        juce::String(prefix) + juce::String(idx);
+
+    if (auto* parameter = state.getParameter(name))
+        parameter->setValueNotifyingHost(
+            parameter->convertTo0to1(value));
+}
 void KyotosDreamProcessor::setSession(const kyoto::DreamSession&s){if(s.ok){dreamToken=s.token;dreamUser=s.user;dreamRole=s.role;dreamTheme=s.theme;setTheme(dreamTheme);}}
 void KyotosDreamProcessor::logout(){dreamToken.clear();dreamUser.clear();dreamRole.clear();}
 void KyotosDreamProcessor::setTheme(const juce::String&id){dreamTheme=id;activeTheme=themeManager.get(id);for(auto&t:userThemes)if(t.id==id)activeTheme=t;}

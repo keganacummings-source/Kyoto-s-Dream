@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_core/juce_core.h>
 #include <functional>
+#include <vector>
 
 namespace kyoto {
 struct DreamThread { juce::String id,user,title,text,audioUrl,imageUrl; int64_t at=0; bool hasAudio=false,hasImage=false; };

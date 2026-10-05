@@ -11,7 +11,7 @@ static int gSelectedCommunityRow=-1;
 class KyotosDreamEditor::FeedModel : public juce::ListBoxModel {
 public: explicit FeedModel(KyotosDreamEditor& e):ed(e){}
     int getNumRows() override { return (int)ed.feed.size(); }
-    void paintListBoxItem(int r,juce::Graphics&g,int w,int h,bool sel) override { if(r<0||r>=getNumRows())return; auto&t=ed.feed[(size_t)r]; auto&th=ed.proc.theme(); g.fillAll(sel?th.panel2:th.bg); g.setColour(th.accent); g.setFont(13); g.drawText(t.user+" / "+t.title,10,4,w-20,20,juce::Justification::left); g.setColour(th.textDim); g.setFont(11); g.drawText(t.text.replaceNewLines(" "),10,25,w-20,h-28,juce::Justification::left,false); if(t.hasAudio)g.drawText("WAV",w-100,5,40,18,juce::Justification::centred); if(t.hasImage)g.drawText("IMG",w-55,5,40,18,juce::Justification::centred); }
+    void paintListBoxItem(int r,juce::Graphics&g,int w,int h,bool sel) override { if(r<0||r>=getNumRows())return; auto&t=ed.feed[(size_t)r]; auto&th=ed.proc.theme(); g.fillAll(sel?th.panel2:th.bg); g.setColour(th.accent); g.setFont(13); g.drawText(t.user+" / "+t.title,10,4,w-20,20,juce::Justification::left); g.setColour(th.textDim); g.setFont(11); g.drawText(t.text.replace("\n", " ").replace("\r", " "),10,25,w-20,h-28,juce::Justification::left,false); if(t.hasAudio)g.drawText("WAV",w-100,5,40,18,juce::Justification::centred); if(t.hasImage)g.drawText("IMG",w-55,5,40,18,juce::Justification::centred); }
 private: KyotosDreamEditor& ed;
 };
 
@@ -35,7 +35,7 @@ class KyotosDreamEditor::FxRow : public juce::Component {
 public:
     FxRow(KyotosDreamEditor& e,size_t i):ed(e),index(i){
         addAndMakeVisible(effect); addAndMakeVisible(amount); addAndMakeVisible(tone); addAndMakeVisible(motion); addAndMakeVisible(mix); addAndMakeVisible(shape); addAndMakeVisible(remove);
-        effect.addItem("Select effect",1); for(int n=0;n<200;n++) effect.addItem(juce::String(n+1)+"  "+juce::String(dm::featureNames[n]),n+2);
+        effect.addItem("Select effect",1); for(int n=0;n<200;n++) effect.addItem(juce::String(n+1)+"  "+juce::String(dm::featureNames[n].data()),n+2);
         for(auto*s:{&amount,&tone,&motion,&mix,&shape}){s->setRange(0,1,0.001);s->setTextBoxStyle(juce::Slider::TextBoxRight,false,48,18);}
         remove.setButtonText("×"); remove.onClick=[this]{auto*editor=&ed; auto i=index; juce::MessageManager::callAsync([editor,i]{editor->proc.removeFxSlot(i); editor->rebuildFxRows();});};
         effect.onChange=[this]{auto c=ed.proc.fxChain();if(index<c.size()){c[index].effect=effect.getSelectedId()-2;ed.proc.setFxChainSlot(index,c[index]);if(!ed.proc.isExpertMode()&&index<KyotosDreamProcessor::fxSlots)ed.proc.setFxIndex((int)index,c[index].effect);}};
@@ -77,8 +77,58 @@ KyotosDreamEditor::KyotosDreamEditor(KyotosDreamProcessor&p):AudioProcessorEdito
     for(auto*b:{&home,&selector,&builder,&community,&themesPage,&login,&logout,&update,&refresh,&post,&postWav,&postImage,&saveModule,&uploadCommunity,&loadCommunity,&addFx,&addDial,&addSlider,&addScreen,&addText,&deleteElement,&makeTheme}){addAndMakeVisible(*b);style(*b);}
     for(auto*w:{&expert,&showGrid})addAndMakeVisible(*w); for(auto*c:{&themeBox,&variantBox,&gridBox,&screenBox,&elementBox})addAndMakeVisible(*c);
     for(auto*l:{&title,&status,&modeLabel,&lockLabel,&moduleName,&themeHint,&screenHint})addAndMakeVisible(*l);
-    for(auto*t:{&user,&pass,&postText,&saveName,&themeName,&themeAccent,&elementText}){addAndMakeVisible(*t);t->setColour(juce::TextEditor::backgroundColourId,proc.theme().panel2);t->setColour(juce::TextEditor::textColourId,proc.theme().text);}
-    home.onClick=[this]{show(Home);};selector.onClick=[this]{show(Selector);};builder.onClick=[this]{show(Builder);};community.onClick=[this]{show(Community);};themesPage.onClick=[this]{show(Themes);};login.onClick=[this]{doLogin();};logout.onClick=[this]{proc.logout();show(Home);};refresh.onClick=[this]{refreshFeed();};post.onClick=[this]{postPlain();};postWav.onClick=[this]{postFile(false);};postImage.onClick=[this]{postFile(true);};saveModule.onClick=[this]{saveBuilder();};uploadCommunity.onClick=[this]{uploadCurrent();};loadCommunity.onClick=[this]{loadSelectedCommunity();};update.onClick=[this]{checkUpdate();};expert.onClick=[this]{setExpert(expert.getToggleState());};themeBox.onChange=[this]{applyThemeSelection();};variantBox.onChange=[this]{applyVariant();};makeTheme.onClick=[this]{createTheme();};addFx.onClick=[this]{addFx();};addDial.onClick=[this]{addElement(kyoto::BuilderElementType::Dial);};addSlider.onClick=[this]{addElement(kyoto::BuilderElementType::Slider);};addScreen.onClick=[this]{addElement(kyoto::BuilderElementType::WaveScreen);};addText.onClick=[this]{addElement(kyoto::BuilderElementType::Text);};deleteElement.onClick=[this]{removeElement();};elementBox.onChange=[this]{selectElement(elementBox.getSelectedItemIndex());};elementText.onTextChange=[this]{updateElementText();};gridBox.onChange=[this]{applyGrid();};screenBox.onChange=[this]{applyScreen();};showGrid.onClick=[this]{if(canvas)canvas->repaint();};
+    for(auto*t:{&user,&pass,&postText,&saveName,&themeName,&themeAccent,&elementText}){addAndMakeVisible(*t);t->setColour(juce::TextEditor::backgroundColourId,proc.theme().panel2);t->setColour(juce::TextEditor::textColourId,proc.theme().text);} 
+    addAndMakeVisible(fxViewport);
+
+    auto configureSlider = [](juce::Slider& slider, double minimum, double maximum, double step)
+    {
+        slider.setSliderStyle(juce::Slider::LinearHorizontal);
+        slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 58, 18);
+        slider.setRange(minimum, maximum, step);
+    };
+
+    for (auto* slider : { &macroTone, &macroPunch, &macroSpace, &macroMovement, &macroWidth })
+    {
+        addAndMakeVisible(*slider);
+        configureSlider(*slider, 0.0, 1.0, 0.001);
+    }
+
+    configureSlider(oscMix1, 0.0, 1.0, 0.001);
+    configureSlider(oscMix2, 0.0, 1.0, 0.001);
+    configureSlider(oscMix3, 0.0, 1.0, 0.001);
+    configureSlider(detune2, -50.0, 50.0, 0.01);
+    configureSlider(detune3, -50.0, 50.0, 0.01);
+    configureSlider(cutoff, 0.01, 0.99, 0.001);
+    configureSlider(resonance, 0.0, 1.0, 0.001);
+    configureSlider(attack, 0.001, 2.0, 0.001);
+    configureSlider(decay, 0.001, 2.0, 0.001);
+    configureSlider(sustain, 0.0, 1.0, 0.001);
+    configureSlider(release, 0.001, 4.0, 0.001);
+    configureSlider(noise, 0.0, 1.0, 0.001);
+    configureSlider(drive, 0.0, 1.0, 0.001);
+    configureSlider(lfoRate, 0.05, 20.0, 0.01);
+    configureSlider(lfoDepth, 0.0, 1.0, 0.001);
+    configureSlider(octave, -4.0, 4.0, 1.0);
+
+    for (auto* slider : { &oscMix1, &oscMix2, &oscMix3, &detune2, &detune3,
+                          &cutoff, &resonance, &attack, &decay, &sustain,
+                          &release, &noise, &drive, &lfoRate, &lfoDepth, &octave })
+        addAndMakeVisible(*slider);
+
+    auto updateFromControls = [this]
+    {
+        syncProcessorFromBuilder();
+    };
+
+    for (auto* slider : { &macroTone, &macroPunch, &macroSpace, &macroMovement, &macroWidth })
+        slider->onValueChange = updateFromControls;
+
+    for (auto* slider : { &oscMix1, &oscMix2, &oscMix3, &detune2, &detune3,
+                          &cutoff, &resonance, &attack, &decay, &sustain,
+                          &release, &noise, &drive, &lfoRate, &lfoDepth, &octave })
+        slider->onValueChange = updateFromControls;
+
+    home.onClick=[this]{show(Home);};selector.onClick=[this]{show(Selector);};builder.onClick=[this]{show(Builder);};community.onClick=[this]{show(Community);};themesPage.onClick=[this]{show(Themes);};login.onClick=[this]{doLogin();};logout.onClick=[this]{proc.logout();show(Home);};refresh.onClick=[this]{refreshFeed();};post.onClick=[this]{postPlain();};postWav.onClick=[this]{postFile(false);};postImage.onClick=[this]{postFile(true);};saveModule.onClick=[this]{saveBuilder();};uploadCommunity.onClick=[this]{uploadCurrent();};loadCommunity.onClick=[this]{loadSelectedCommunity();};update.onClick=[this]{checkUpdate();};expert.onClick=[this]{setExpert(expert.getToggleState());};themeBox.onChange=[this]{applyThemeSelection();};variantBox.onChange=[this]{applyVariant();};makeTheme.onClick=[this]{createTheme();};addFx.onClick=[this]{addFxToChain();};addDial.onClick=[this]{addElement(kyoto::BuilderElementType::Dial);};addSlider.onClick=[this]{addElement(kyoto::BuilderElementType::Slider);};addScreen.onClick=[this]{addElement(kyoto::BuilderElementType::WaveScreen);};addText.onClick=[this]{addElement(kyoto::BuilderElementType::Text);};deleteElement.onClick=[this]{removeElement();};elementBox.onChange=[this]{selectElement(elementBox.getSelectedItemIndex());};elementText.onTextChange=[this]{updateElementText();};gridBox.onChange=[this]{applyGrid();};screenBox.onChange=[this]{applyScreen();};showGrid.onClick=[this]{if(canvas)canvas->repaint();};
     saveModule.setButtonText(isFxBuild()?"SAVE EFFECT":"SAVE INSTRUMENT"); uploadCommunity.setButtonText("UPLOAD COMMUNITY");
     label(title,"KYOTO'S DREAM",28);label(status,"NATIVE VST3 / DREAMSHARE / 200+ EFFECTS",11);label(modeLabel,isFxBuild()?"FX PEDAL / MIXER RACK":"MIDI SYNTH / CHANNEL RACK",12);label(lockLabel,"PLUGIN SELECTOR LOCKED — BUILD OR LOAD A MODULE",15);label(moduleName,isFxBuild()?"EFFECT BUILDER":"INSTRUMENT BUILDER");label(themeHint,"MODULE UI: drag controls around the canvas. Controls have fixed designed sizes.",11);label(screenHint,"WAVE SCREEN TYPE",10);
     user.setTextToShowWhenEmpty("Dream account username",juce::Colours::grey);pass.setTextToShowWhenEmpty("Password",juce::Colours::grey);pass.setPasswordCharacter('*');postText.setMultiLine(true);saveName.setTextToShowWhenEmpty("Instrument / effect name",juce::Colours::grey);themeName.setTextToShowWhenEmpty("Custom theme name",juce::Colours::grey);themeAccent.setTextToShowWhenEmpty("Accent hex, e.g. #c04068",juce::Colours::grey);themeAccent.setText("#c04068",juce::dontSendNotification);elementText.setTextToShowWhenEmpty("Text element content",juce::Colours::grey);
@@ -99,10 +149,150 @@ void KyotosDreamEditor::refreshFeed(){if(!proc.loggedIn())return;feed.clear();pr
 void KyotosDreamEditor::doLogin(){auto s=proc.api().login(user.getText().trim(),pass.getText());if(s.ok){proc.setSession(s);user.clear();pass.clear();status.setText("LOGGED IN AS "+proc.user(),juce::dontSendNotification);ensureCustomBuilderTheme();show(Home);refreshFeed();}else status.setText("LOGIN FAILED: "+s.error,juce::dontSendNotification);}
 void KyotosDreamEditor::postPlain(){if(proc.api().postText(proc.token(),postText.getText(),"DreamShare")){postText.clear();refreshFeed();}}
 void KyotosDreamEditor::postFile(bool image){auto chooser=std::make_shared<juce::FileChooser>(image?"Choose an image":"Choose a WAV",juce::File{},image?"*.png;*.jpg;*.jpeg;*.gif":"*.wav");chooser->launchAsync(juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectFiles,[this,chooser,image](const juce::FileChooser&c){auto f=c.getResult();if(f.existsAsFile()){bool ok=image?proc.api().postImage(proc.token(),f,postText.getText()):proc.api().postAudio(proc.token(),f,postText.getText());status.setText(ok?"POSTED TO DREAMSHARE":"POST FAILED — CHECK WORKER",juce::dontSendNotification);postText.clear();refreshFeed();}});}
-void KyotosDreamEditor::syncBuilderFromProcessor(){auto p=proc.getInstrumentPreset();macroTone.setValue(p.cutoff,juce::dontSendNotification);macroPunch.setValue(p.drive,juce::dontSendNotification);macroSpace.setValue(juce::jlimit(0.0,1.0,(p.release-.05)/3.0),juce::dontSendNotification);macroMovement.setValue(p.lfoDepth,juce::dontSendNotification);macroWidth.setValue(juce::jlimit(0.0,1.0,(p.detune2+50.0)/100.0),juce::dontSendNotification);oscMix1.setValue(p.mix1,juce::dontSendNotification);oscMix2.setValue(p.mix2,juce::dontSendNotification);oscMix3.setValue(p.mix3,juce::dontSendNotification);detune2.setValue(p.detune2,juce::dontSendNotification);detune3.setValue(p.detune3,juce::dontSendNotification);cutoff.setValue(p.cutoff,juce::dontSendNotification);resonance.setValue(p.resonance,juce::dontSendNotification);attack.setValue(p.attack,juce::dontSendNotification);decay.setValue(p.decay,juce::dontSendNotification);sustain.setValue(p.sustain,juce::dontSendNotification);release.setValue(p.release,juce::dontSendNotification);noise.setValue(p.noise,juce::dontSendNotification);drive.setValue(p.drive,juce::dontSendNotification);lfoRate.setValue(p.lfoRate,juce::dontSendNotification);lfoDepth.setValue(p.lfoDepth,juce::dontSendNotification);octave.setValue(p.octave,juce::dontSendNotification);proc.setUiLayout(p.uiLayout.isVoid()?kyoto::defaultLayout():kyoto::layoutFromVar(p.uiLayout));rebuildFxRows();populateThemes();if(canvas)canvas->repaint();}
+void KyotosDreamEditor::syncBuilderFromProcessor()
+{
+    auto p = proc.getInstrumentPreset();
+
+    macroTone.setValue(p.cutoff, juce::dontSendNotification);
+    macroPunch.setValue(p.drive, juce::dontSendNotification);
+    macroSpace.setValue(
+        juce::jlimit(0.0, 1.0, (p.release - .05) / 3.0),
+        juce::dontSendNotification);
+    macroMovement.setValue(p.lfoDepth, juce::dontSendNotification);
+    macroWidth.setValue(
+        juce::jlimit(0.0, 1.0, (p.detune2 + 50.0) / 100.0),
+        juce::dontSendNotification);
+
+    oscMix1.setValue(p.mix1, juce::dontSendNotification);
+    oscMix2.setValue(p.mix2, juce::dontSendNotification);
+    oscMix3.setValue(p.mix3, juce::dontSendNotification);
+    detune2.setValue(p.detune2, juce::dontSendNotification);
+    detune3.setValue(p.detune3, juce::dontSendNotification);
+    cutoff.setValue(p.cutoff, juce::dontSendNotification);
+    resonance.setValue(p.resonance, juce::dontSendNotification);
+    attack.setValue(p.attack, juce::dontSendNotification);
+    decay.setValue(p.decay, juce::dontSendNotification);
+    sustain.setValue(p.sustain, juce::dontSendNotification);
+    release.setValue(p.release, juce::dontSendNotification);
+    noise.setValue(p.noise, juce::dontSendNotification);
+    drive.setValue(p.drive, juce::dontSendNotification);
+    lfoRate.setValue(p.lfoRate, juce::dontSendNotification);
+    lfoDepth.setValue(p.lfoDepth, juce::dontSendNotification);
+    octave.setValue(p.octave, juce::dontSendNotification);
+
+    proc.setUiLayout(
+        p.uiLayout.isVoid()
+            ? kyoto::defaultLayout()
+            : kyoto::layoutFromVar(p.uiLayout));
+
+    elementBox.clear();
+
+    const auto& layout = proc.uiLayout();
+
+    for (const auto& element : layout.elements)
+        elementBox.addItem(
+            element.label.isEmpty()
+                ? element.id
+                : element.label,
+            elementBox.getNumItems() + 1);
+
+    if (!layout.elements.empty())
+        elementBox.setSelectedId(
+            1,
+            juce::dontSendNotification);
+
+    rebuildFxRows();
+    populateThemes();
+
+    if (canvas)
+        canvas->repaint();
+}
 void KyotosDreamEditor::syncProcessorFromBuilder(){auto p=proc.getInstrumentPreset();if(proc.isExpertMode()){p.mix1=oscMix1.getValue();p.mix2=oscMix2.getValue();p.mix3=oscMix3.getValue();p.detune2=detune2.getValue();p.detune3=detune3.getValue();p.cutoff=cutoff.getValue();p.resonance=resonance.getValue();p.attack=attack.getValue();p.decay=decay.getValue();p.sustain=sustain.getValue();p.release=release.getValue();p.noise=noise.getValue();p.drive=drive.getValue();p.lfoRate=lfoRate.getValue();p.lfoDepth=lfoDepth.getValue();p.octave=(int)octave.getValue();}else if(isFxBuild()){auto c=proc.fxChain();if(c.empty())for(int i=0;i<8;i++)proc.addFxSlot(i);if(!proc.fxChain().empty()){auto f=proc.fxChain()[0];f.amount=macroTone.getValue();f.tone=macroPunch.getValue();f.motion=macroMovement.getValue();f.mix=macroWidth.getValue();f.shape=macroSpace.getValue();proc.setFxChainSlot(0,f);}}else{p.cutoff=macroTone.getValue();p.drive=macroPunch.getValue();p.release=.05f+(float)macroSpace.getValue()*3.f;p.lfoDepth=macroMovement.getValue();p.detune2=-50.f+(float)macroWidth.getValue()*100.f;p.detune3=-p.detune2;}if(!isFxBuild())proc.setInstrumentPreset(p);}
-void KyotosDreamEditor::saveBuilder(){ensureCustomBuilderTheme();syncProcessorFromBuilder();auto name=saveName.getText().trim();if(name.isEmpty())name=juce::AlertWindow::getTextFromUser("Save Module",isFxBuild()?"Name your effect":"Name your instrument","Kyoto Module");if(name.isNotEmpty()){proc.saveModule(name);status.setText("SAVED: "+name+" — CUSTOM UI/THEME EMBEDDED",juce::dontSendNotification);show(Selector);}}
-void KyotosDreamEditor::uploadCurrent(){if(!proc.loggedIn()){status.setText("LOGIN REQUIRED TO UPLOAD",juce::dontSendNotification);return;}if(isFxBuild()){status.setText("FX COMMUNITY PUBLISHING WILL USE THE COMMUNITY EFFECTS API IN THE NEXT API REVISION",juce::dontSendNotification);return;}ensureCustomBuilderTheme();syncProcessorFromBuilder();kyoto::CommunityInstrument item;item.name=proc.activeModule().isNotEmpty()?proc.activeModule():"Kyoto Instrument";item.description=juce::AlertWindow::getTextFromUser("Community Instrument","Description","Made in Kyoto's Dream");auto p=proc.getInstrumentPreset();p.uiLayout=kyoto::layoutToVar(proc.uiLayout());p.uiTheme=kyoto::ThemeManager::toVar(proc.theme());item.state=kyoto::presetToVar(p);bool ok=proc.api().communityPublish(proc.token(),item);status.setText(ok?"UPLOADED TO COMMUNITY INSTRUMENTS":"COMMUNITY UPLOAD FAILED — CHECK DREAMSHARE_KV",juce::dontSendNotification);if(ok)refreshCommunity();}
+void KyotosDreamEditor::saveBuilder()
+{
+    ensureCustomBuilderTheme();
+    syncProcessorFromBuilder();
+
+    auto name = saveName.getText().trim();
+
+    if (name.isEmpty())
+    {
+        status.setText(
+            isFxBuild()
+                ? "ENTER AN EFFECT NAME ABOVE"
+                : "ENTER AN INSTRUMENT NAME ABOVE",
+            juce::dontSendNotification);
+        return;
+    }
+
+    proc.saveModule(name);
+
+    status.setText(
+        "SAVED: " + name
+            + " — CUSTOM UI/THEME EMBEDDED",
+        juce::dontSendNotification);
+
+    show(Selector);
+}
+void KyotosDreamEditor::uploadCurrent()
+{
+    if (!proc.loggedIn())
+    {
+        status.setText(
+            "LOGIN REQUIRED TO UPLOAD",
+            juce::dontSendNotification);
+        return;
+    }
+
+    if (isFxBuild())
+    {
+        status.setText(
+            "COMMUNITY PUBLISHING IS CURRENTLY FOR INSTRUMENTS",
+            juce::dontSendNotification);
+        return;
+    }
+
+    ensureCustomBuilderTheme();
+    syncProcessorFromBuilder();
+
+    kyoto::CommunityInstrument item;
+
+    item.name =
+        proc.activeModule().isNotEmpty()
+            ? proc.activeModule()
+            : "Kyoto Instrument";
+
+    item.description =
+        postText.getText().trim();
+
+    if (item.description.isEmpty())
+        item.description = "Made in Kyoto's Dream";
+
+    auto p = proc.getInstrumentPreset();
+
+    p.uiLayout =
+        kyoto::layoutToVar(proc.uiLayout());
+
+    p.uiTheme =
+        kyoto::ThemeManager::toVar(proc.theme());
+
+    item.state =
+        kyoto::presetToVar(p);
+
+    const bool ok =
+        proc.api().communityPublish(
+            proc.token(),
+            item);
+
+    status.setText(
+        ok
+            ? "UPLOADED TO COMMUNITY INSTRUMENTS"
+            : "COMMUNITY UPLOAD FAILED — CHECK DREAMSHARE_KV",
+        juce::dontSendNotification);
+
+    if (ok)
+        refreshCommunity();
+}
 void KyotosDreamEditor::refreshCommunity(){if(!proc.loggedIn())return;communityItems.clear();if(proc.api().communityList(communityItems)){if(!communityModel)communityModel=std::make_unique<CommunityModel>(*this);communityList.setModel(communityModel.get());communityList.updateContent();}}
 void KyotosDreamEditor::loadSelectedCommunity(){int r=gSelectedCommunityRow;if(r<0||r>=(int)communityItems.size())r=communityList.getSelectedRow();if(r<0||r>=(int)communityItems.size())return;kyoto::CommunityInstrument item;if(proc.api().communityGet(communityItems[(size_t)r].id,item)){kyoto::InstrumentPreset p;if(kyoto::presetFromVar(item.state,p)){proc.setInstrumentPreset(p);if(!p.uiTheme.isVoid()){auto ct=kyoto::ThemeManager::fromVar(p.uiTheme,proc.theme());ct.custom=true;proc.addCustomTheme(ct);}syncBuilderFromProcessor();status.setText("COMMUNITY INSTRUMENT LOADED: "+item.name,juce::dontSendNotification);show(Builder);}}}
 void KyotosDreamEditor::checkUpdate(){auto info=kyoto::UpdateService().check(KyotosDreamProcessor::version);status.setText(info.available?"MODULE UPDATE AVAILABLE: "+info.version:"KYOTO'S DREAM IS UP TO DATE",juce::dontSendNotification);}
@@ -113,10 +303,60 @@ void KyotosDreamEditor::applyVariant(){proc.setUiVariant((kyoto::UiVariant)juce:
 void KyotosDreamEditor::setExpert(bool b){proc.setExpertMode(b);syncFxFromProcessor();show(Builder);status.setText(b?"EXPERT MODE — UNLIMITED FX CHAIN + FULL PRECISION":"NORMAL MODE — 8 FX SLOTS + SIMPLE MACROS",juce::dontSendNotification);}
 void KyotosDreamEditor::rebuildFxRows(){if(page!=Builder)return;fxRows.clear();fxContent.reset();auto c=proc.fxChain();if(c.empty()){for(int i=0;i<8;i++)proc.addFxSlot(i);c=proc.fxChain();}size_t count=proc.isExpertMode()?c.size():std::min<size_t>(8,c.size());fxContent=std::make_unique<juce::Component>();fxContent->setSize(780,(int)count*48+8);for(size_t i=0;i<count;i++){auto*row=new FxRow(*this,i);fxContent->addAndMakeVisible(row);row->setBounds(4,(int)i*48,772,44);row->sync();fxRows.push_back(row);}fxViewport.setViewedComponent(fxContent.get(),false);fxContent->setVisible(true);}
 void KyotosDreamEditor::syncFxFromProcessor(){rebuildFxRows();}
-void KyotosDreamEditor::addFx(){if(!proc.isExpertMode())return;proc.addFxSlot(0);rebuildFxRows();status.setText("FX ADDED — EXPERT CHAIN IS UNLIMITED",juce::dontSendNotification);}
+void KyotosDreamEditor::addFxToChain(){if(!proc.isExpertMode())return;proc.addFxSlot(0);rebuildFxRows();status.setText("FX ADDED — EXPERT CHAIN IS UNLIMITED",juce::dontSendNotification);}
 void KyotosDreamEditor::addElement(kyoto::BuilderElementType type){auto l=proc.uiLayout();kyoto::UiElement e;e.type=type;e.id="element-"+juce::String(l.elements.size()+1);e.label=type==kyoto::BuilderElementType::Dial?"Dial":type==kyoto::BuilderElementType::Slider?"Slider":type==kyoto::BuilderElementType::WaveScreen?"Wave Shape":"Text";e.x=.05f+(l.elements.size()%4)*.22f;e.y=.08f+(l.elements.size()/4)*.16f;if(type==kyoto::BuilderElementType::WaveScreen)e.screen=(kyoto::WaveScreenType)juce::jlimit(0,4,screenBox.getSelectedId()-1);if(type==kyoto::BuilderElementType::Text)e.text="Your text";l.elements.push_back(e);proc.setUiLayout(l);elementBox.addItem(e.label,elementBox.getNumItems()+1);elementBox.setSelectedId(elementBox.getNumItems(),juce::dontSendNotification);if(canvas)canvas->repaint();}
-void KyotosDreamEditor::removeElement(){int i=elementBox.getSelectedItemIndex();auto l=proc.uiLayout();if(i>=0&&i<(int)l.elements.size()){l.elements.erase(l.elements.begin()+i);proc.setUiLayout(l);elementBox.clear();for(auto&e:l.elements)elementBox.addItem(e.label,elementBox.getNumItems()+1);if(canvas)canvas->repaint();}}
-void KyotosDreamEditor::selectElement(int i){auto l=proc.uiLayout();if(i<0||i>=(int)l.elements.size())return;auto&e=l.elements[(size_t)i];elementText.setText(e.text,juce::dontSendNotification);screenBox.setSelectedId((int)e.screen+1,juce::dontSendNotification);}
+void KyotosDreamEditor::removeElement()
+{
+    int i = elementBox.getSelectedItemIndex();
+    auto l = proc.uiLayout();
+
+    if (i < 0 || i >= (int) l.elements.size())
+        return;
+
+    l.elements.erase(
+        l.elements.begin() + i);
+
+    proc.setUiLayout(l);
+
+    elementBox.clear();
+
+    for (const auto& e : l.elements)
+        elementBox.addItem(
+            e.label.isEmpty() ? e.id : e.label,
+            elementBox.getNumItems() + 1);
+
+    if (!l.elements.empty())
+        elementBox.setSelectedId(
+            juce::jlimit(
+                1,
+                elementBox.getNumItems(),
+                i + 1),
+            juce::dontSendNotification);
+
+    if (canvas)
+        canvas->repaint();
+}
+void KyotosDreamEditor::selectElement(int i)
+{
+    auto l = proc.uiLayout();
+
+    if (i < 0 || i >= (int) l.elements.size())
+        return;
+
+    elementBox.setSelectedId(
+        i + 1,
+        juce::dontSendNotification);
+
+    auto& e = l.elements[(size_t) i];
+
+    elementText.setText(
+        e.text,
+        juce::dontSendNotification);
+
+    screenBox.setSelectedId(
+        (int) e.screen + 1,
+        juce::dontSendNotification);
+}
 void KyotosDreamEditor::elementChanged(){int i=elementBox.getSelectedItemIndex();if(i<0)return;auto l=proc.uiLayout();if(i<(int)l.elements.size()){elementText.setText(l.elements[(size_t)i].text,juce::dontSendNotification);screenBox.setSelectedId((int)l.elements[(size_t)i].screen+1,juce::dontSendNotification);}}
 void KyotosDreamEditor::updateElementText(){int i=elementBox.getSelectedItemIndex();auto l=proc.uiLayout();if(i>=0&&i<(int)l.elements.size()&&l.elements[(size_t)i].type==kyoto::BuilderElementType::Text){l.elements[(size_t)i].text=elementText.getText();proc.setUiLayout(l);if(canvas)canvas->repaint();}}
 void KyotosDreamEditor::applyGrid(){auto l=proc.uiLayout();l.grid=(kyoto::GridStyle)juce::jlimit(0,9,gridBox.getSelectedId()-1);proc.setUiLayout(l);if(canvas)canvas->repaint();}

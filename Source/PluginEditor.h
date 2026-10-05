@@ -40,7 +40,7 @@ private:
     bool isFxBuild() const;
     void show(Page); void refreshFeed(); void doLogin(); void postPlain(); void postFile(bool image); void saveBuilder(); void uploadCurrent(); void refreshCommunity(); void loadSelectedCommunity(); void checkUpdate();
     void populateThemes(); void applyThemeSelection(); void createTheme(); void applyVariant(); void setExpert(bool);
-    void rebuildFxRows(); void addFx(); void syncFxFromProcessor(); void syncProcessorFromBuilder(); void syncBuilderFromProcessor();
+    void rebuildFxRows(); void addFxToChain(); void syncFxFromProcessor(); void syncProcessorFromBuilder(); void syncBuilderFromProcessor();
     void addElement(kyoto::BuilderElementType); void removeElement(); void elementChanged(); void selectElement(int); void updateElementText(); void applyGrid(); void applyScreen(); void ensureCustomBuilderTheme();
     void timerCallback() override;
     void style(juce::Button&); void label(juce::Label&,const juce::String&,float=12.0f);
