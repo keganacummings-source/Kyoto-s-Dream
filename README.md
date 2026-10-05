@@ -1,4 +1,4 @@
-# KYOTRIPPAH 0.4.0
+# KYOTRIPPAH 0.4.1
 
 Native VST3 instrument (**KYOTO**) and effect (**KYOTRIPPAH FX**).
 
@@ -44,3 +44,13 @@ cmake --build build --config Release --parallel
 Push this folder to GitHub. Actions workflow `Build KYOTRIPPAH` uploads the VST3 zips.
 
 JUCE is AGPLv3 unless you hold a commercial licence.
+
+## UI refinement 0.4.1
+
+- Rebuilt the native theme registry as 42 stable theme presets. Theme IDs are serialization-safe and shared by the editor, machine builder, wave surfaces, and future modular parts.
+- Theme selection now drives fonts as well as colours, popup menus, text editors, labels, sliders, FX catalog surfaces, and plugin-view text.
+- Reworked text rendering/layout to reduce overdraw and cramped controls; chat text uses explicit theme fonts and increased line spacing.
+- Fixed the PLUGIN VIEW hit area: the account/status controls no longer overlap the button.
+- Rebuilt the DreamShare home screen around a dashboard hero, responsive live-room/catalog split, cleaner utility controls, and a responsive catalog card grid.
+- Reflowed the Chain builder controls into two compact action rows so the UI remains usable at the minimum editor size.
+- Human-readable DreamShare utility labels replace raw API action names in the dropdown while preserving the same API actions internally.

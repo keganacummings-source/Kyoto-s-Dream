@@ -1,5 +1,6 @@
 #pragma once
 #include "PluginProcessor.h"
+#include "Themes.h"
 
 // Reusable visualization surface. The processor owns the lock-free-ish sample ring;
 // this component only consumes a small snapshot at UI rate and never asks the audio thread
@@ -10,14 +11,15 @@ public:
     enum class Mode { Oscilloscope, StereoScope, Spectrum, Spectrogram, GhostWave, BrokenWave, VectorXY };
     explicit WaveDisplay(KyotoAudioProcessor& p) : processor(p) { startTimerHz(20); }
     void setMode(Mode m) { mode = m; repaint(); }
+    void setTheme(const kt::ThemePalette& t) { theme = t; repaint(); }
     void paint(juce::Graphics& g) override
     {
         auto r = getLocalBounds().toFloat().reduced(4.f);
-        g.setColour(juce::Colour(0xff10141c)); g.fillRoundedRectangle(r, 6.f);
-        g.setColour(juce::Colour(0x4460c0ff)); g.drawRoundedRectangle(r, 6.f, 1.f);
+        g.setColour(kt::c(theme.bg).brighter(0.02f)); g.fillRoundedRectangle(r, theme.cornerRadius - 2.f);
+        g.setColour(kt::c(theme.border).withAlpha(0.70f)); g.drawRoundedRectangle(r, theme.cornerRadius - 2.f, 1.f);
         float samples[256] {};
         processor.copyScope(samples, 256);
-        const auto accent = juce::Colour(0xff60c0ff);
+        const auto accent = kt::c(theme.accent);
         g.setColour(accent.withAlpha(mode == Mode::BrokenWave ? 0.72f : 0.9f));
         juce::Path p;
         const float mid = r.getCentreY();
@@ -32,8 +34,8 @@ public:
             p.lineTo(x, mid - y * r.getHeight() * 0.38f);
         }
         g.strokePath(p, juce::PathStrokeType(1.4f));
-        g.setColour(juce::Colours::white.withAlpha(0.65f));
-        g.setFont(juce::FontOptions(8.f).withStyle("Bold"));
+        g.setColour(kt::c(theme.muted));
+        g.setFont(kt::font(theme, 8.f, true));
         const char* labels[] = { "OSCILLOSCOPE", "STEREO SCOPE", "SPECTRUM", "SPECTROGRAM", "GHOST WAVE", "BROKEN WAVE", "VECTOR / XY" };
         g.drawText(labels[(int)mode], r.getX()+8, r.getBottom()-15.f, r.getWidth()-16.f, 11, juce::Justification::centred);
     }
@@ -41,4 +43,5 @@ private:
     void timerCallback() override { repaint(); }
     KyotoAudioProcessor& processor;
     Mode mode = Mode::Oscilloscope;
+    kt::ThemePalette theme = kt::kThemes[0];
 };

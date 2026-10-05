@@ -12,6 +12,7 @@ struct CanvasWidget : public juce::Component
     CanvasWidget(KyotoAudioProcessor& p, juce::ValueTree n);
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void setTheme(const kt::ThemePalette& t);
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
 
@@ -24,6 +25,7 @@ struct CanvasWidget : public juce::Component
     std::unique_ptr<WaveDisplay> waveDisplay;
     std::function<void()> onSelect;
     bool selected = false;
+    kt::ThemePalette theme = kt::kThemes[0];
 };
 
 class FxBrowser : public juce::Component, private juce::ListBoxModel

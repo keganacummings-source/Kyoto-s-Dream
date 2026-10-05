@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include "Themes.h"
 #include <algorithm>
 #include <cmath>
 
@@ -62,6 +63,18 @@ struct MachineDesign
     juce::Array<Part> decals, modules;
     juce::Array<Connection> connections;
     juce::Array<juce::String> macros;
+
+    const kt::ThemePalette& palette() const
+    {
+        return kt::themeById(theme.isEmpty() ? juce::String("trippah") : theme);
+    }
+
+    void normalizeThemeIds()
+    {
+        theme = kt::themeById(theme).id;
+        for (auto& p : decals) p.themeFamily = kt::themeById(p.themeFamily.isEmpty() ? theme : p.themeFamily).id;
+        for (auto& p : modules) p.themeFamily = kt::themeById(p.themeFamily.isEmpty() ? theme : p.themeFamily).id;
+    }
 
     void choosePlayground(PlaygroundMode mode)
     {
@@ -138,6 +151,7 @@ struct MachineDesign
                 }
             };
             readParts(o->getProperty("modules"), d.modules); readParts(o->getProperty("decals"), d.decals);
+            d.normalizeThemeIds();
             if (auto* arr = o->getProperty("macros").getArray()) for (auto& m : *arr) d.macros.add(m.toString());
         }
         return d;

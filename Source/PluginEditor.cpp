@@ -21,6 +21,31 @@ class KyotoLookAndFeel final : public juce::LookAndFeel_V4
 public:
     void setTheme(const kt::ThemePalette& t) { theme = t; }
 
+    juce::Font getTextButtonFont(juce::TextButton& button, int buttonHeight) override
+    {
+        return kt::font(theme, buttonHeight < 28 ? 10.0f : 11.0f, true);
+    }
+
+    juce::Font getComboBoxFont(juce::ComboBox&) override
+    {
+        return kt::font(theme, 11.0f);
+    }
+
+    juce::Font getLabelFont(juce::Label&) override
+    {
+        return kt::font(theme, 10.0f);
+    }
+
+    juce::Font getPopupMenuFont() override
+    {
+        return kt::font(theme, 10.5f);
+    }
+
+    juce::Font getSliderPopupFont(juce::Slider&) override
+    {
+        return kt::font(theme, 10.0f);
+    }
+
     void drawButtonBackground(juce::Graphics& g, juce::Button& button, const juce::Colour&, bool isMouseOver, bool isButtonDown) override
     {
         auto r = button.getLocalBounds().toFloat().reduced(0.8f);
@@ -41,7 +66,7 @@ public:
     void drawButtonText(juce::Graphics& g, juce::TextButton& button, bool, bool) override
     {
         g.setColour(kt::c(theme.text));
-        g.setFont(juce::FontOptions(button.getHeight() < 28 ? 10.f : 11.f).withStyle("Bold"));
+        g.setFont(kt::font(theme, button.getHeight() < 28 ? 10.f : 11.f, true));
         g.drawFittedText(button.getButtonText(), button.getLocalBounds().reduced(7, 2), juce::Justification::centred, 1);
     }
 
@@ -53,7 +78,7 @@ public:
         g.setColour(kt::c(theme.border));
         g.drawRoundedRectangle(r, 7.f, 1.f);
         g.setColour(kt::c(theme.text));
-        g.setFont(juce::FontOptions(11.f));
+        g.setFont(kt::font(theme, 11.f));
         g.drawText(box.getText(), 10, 0, width - 30, height, juce::Justification::centredLeft);
         g.setColour(kt::c(theme.accent));
         juce::Path p;
@@ -123,13 +148,14 @@ CanvasWidget::CanvasWidget(KyotoAudioProcessor& p, juce::ValueTree n)
 
     caption.setText(node.getProperty("label").toString(), juce::dontSendNotification);
     caption.setJustificationType(juce::Justification::centred);
-    caption.setFont(juce::FontOptions(10.f));
+    caption.setFont(kt::font(theme, 10.f, true));
     caption.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(caption);
 
     if (kind == Kind::Wave)
     {
         waveDisplay = std::make_unique<WaveDisplay>(proc);
+        waveDisplay->setTheme(theme);
         addAndMakeVisible(*waveDisplay);
     }
     if (kind == Kind::Dial || kind == Kind::Slider)
@@ -147,27 +173,41 @@ CanvasWidget::CanvasWidget(KyotoAudioProcessor& p, juce::ValueTree n)
     }
 }
 
+void CanvasWidget::setTheme(const kt::ThemePalette& t)
+{
+    theme = t;
+    caption.setFont(kt::font(theme, 10.f, true));
+    caption.setColour(juce::Label::textColourId, kt::c(theme.text));
+    slider.setColour(juce::Slider::rotarySliderFillColourId, kt::c(theme.accent));
+    slider.setColour(juce::Slider::rotarySliderOutlineColourId, kt::c(theme.border));
+    slider.setColour(juce::Slider::thumbColourId, kt::c(theme.accent));
+    slider.setColour(juce::Slider::trackColourId, kt::c(theme.border));
+    slider.setColour(juce::Slider::backgroundColourId, kt::c(theme.panel));
+    if (waveDisplay) waveDisplay->setTheme(theme);
+    repaint();
+}
+
 void CanvasWidget::paint(juce::Graphics& g)
 {
     auto bounds = getLocalBounds().toFloat().reduced(2.f);
-    g.setColour(juce::Colour(0x33000000));
-    g.fillRoundedRectangle(bounds, 6.f);
-    g.setColour(selected ? juce::Colour(0xffc77dff).withAlpha(0.9f) : juce::Colour(0x55ffffff));
-    g.drawRoundedRectangle(bounds, 6.f, selected ? 2.f : 1.f);
+    g.setColour(kt::c(theme.bg).withAlpha(0.55f));
+    g.fillRoundedRectangle(bounds, theme.cornerRadius);
+    g.setColour(selected ? kt::c(theme.accent).withAlpha(0.95f) : kt::c(theme.border).withAlpha(0.85f));
+    g.drawRoundedRectangle(bounds, theme.cornerRadius, selected ? 2.f : 1.f);
 
     if (kind == Kind::Key)
     {
-        g.setColour(isMouseButtonDown() ? juce::Colour(0xffc77dff) : juce::Colour(0xff2a2a3a));
-        g.fillRoundedRectangle(bounds.reduced(6.f), 4.f);
-        g.setColour(juce::Colours::white);
-        g.setFont(juce::FontOptions(11.f).withStyle("Bold"));
+        g.setColour(isMouseButtonDown() ? kt::c(theme.accent) : kt::c(theme.panel).brighter(0.08f));
+        g.fillRoundedRectangle(bounds.reduced(6.f), theme.cornerRadius - 2.f);
+        g.setColour(kt::c(theme.text));
+        g.setFont(kt::font(theme, 11.f, true));
         g.drawText(node.getProperty("label").toString(), bounds, juce::Justification::centred);
     }
     else if (kind == Kind::Wave || kind == Kind::Stack)
     {
-        g.setColour(juce::Colour(0xff10141c));
-        g.fillRoundedRectangle(bounds.reduced(4.f), 4.f);
-        g.setColour(kind == Kind::Stack ? juce::Colour(0xffffb060) : juce::Colour(0xff60c0ff));
+        g.setColour(kt::c(theme.bg).brighter(0.02f));
+        g.fillRoundedRectangle(bounds.reduced(4.f), theme.cornerRadius - 2.f);
+        g.setColour(kind == Kind::Stack ? kt::c(theme.accent).brighter(0.10f) : kt::c(theme.accent));
         juce::Path wave;
         const float mid = bounds.getCentreY() - 4.f;
         const float w = bounds.getWidth() - 14.f;
@@ -191,8 +231,8 @@ void CanvasWidget::paint(juce::Graphics& g)
             wave.lineTo(x, mid - amp * (bounds.getHeight() * 0.32f));
         }
         g.strokePath(wave, juce::PathStrokeType(1.6f));
-        g.setColour(juce::Colour(0xffb0b8c8));
-        g.setFont(juce::FontOptions(9.f));
+        g.setColour(kt::c(theme.muted));
+        g.setFont(kt::font(theme, 9.f));
         g.drawText(kind == Kind::Stack ? "STACKED FX" : "WAV", bounds.removeFromBottom(14).toNearestInt(), juce::Justification::centred);
     }
 }
@@ -243,7 +283,17 @@ FxBrowser::FxBrowser(KyotoAudioProcessor& p) : proc(p)
     showCustom(false);
 }
 
-void FxBrowser::setTheme(const kt::ThemePalette& t) { theme = t; repaint(); list.repaint(); }
+void FxBrowser::setTheme(const kt::ThemePalette& t)
+{
+    theme = t;
+    search.setColour(juce::TextEditor::backgroundColourId, kt::c(theme.bg).brighter(0.03f));
+    search.setColour(juce::TextEditor::textColourId, kt::c(theme.text));
+    search.setColour(juce::TextEditor::outlineColourId, kt::c(theme.border));
+    search.setColour(juce::TextEditor::focusedOutlineColourId, kt::c(theme.accent).withAlpha(0.8f));
+    search.setFont(kt::font(theme, 10.5f));
+    repaint();
+    list.repaint();
+}
 void FxBrowser::setSelectedFx(int index) { if (index >= 0 && index < kt::kFxCount) { selected = index; showCustom(false); } }
 
 void FxBrowser::setCustomItems(const juce::Array<CustomItem>& items)
@@ -273,7 +323,7 @@ void FxBrowser::paint(juce::Graphics& g)
     g.setColour(kt::c(theme.accent).withAlpha(0.18f));
     g.fillRoundedRectangle(8.f, 8.f, (float)getWidth()-16.f, 28.f, 7.f);
     g.setColour(kt::c(theme.accent));
-    g.setFont(juce::FontOptions(10.f).withStyle("Bold"));
+    g.setFont(kt::font(theme, 10.f, true));
     g.drawText(customMode ? "CUSTOM EFFECTS" : "FX CATALOG", 12, 41, getWidth()-24, 18, juce::Justification::left);
 }
 
@@ -322,10 +372,10 @@ void FxBrowser::paintListBoxItem(int row, juce::Graphics& g, int w, int h, bool 
         g.setColour(isSelected ? kt::c(theme.accent).withAlpha(0.30f) : juce::Colours::transparentBlack);
         g.fillRoundedRectangle(2.f, 2.f, (float)w-4.f, (float)h-4.f, 6.f);
         g.setColour(kt::c(theme.text));
-        g.setFont(juce::FontOptions(11.f).withStyle("Bold"));
+        g.setFont(kt::font(theme, 11.f, true));
         g.drawText(item.name, 10, 2, w-20, 17, juce::Justification::centredLeft);
         g.setColour(kt::c(theme.muted));
-        g.setFont(juce::FontOptions(9.f));
+        g.setFont(kt::font(theme, 9.f));
         g.drawText(item.remote ? "DreamShare  ·  " + item.author : "My custom effect", 10, 18, w-20, 13, juce::Justification::centredLeft);
         return;
     }
@@ -334,7 +384,7 @@ void FxBrowser::paintListBoxItem(int row, juce::Graphics& g, int w, int h, bool 
     g.setColour(isSelected ? kt::c(theme.accent).withAlpha(0.30f) : juce::Colours::transparentBlack);
     g.fillRoundedRectangle(2.f, 2.f, (float)w-4.f, (float)h-4.f, 6.f);
     g.setColour(kt::c(theme.text));
-    g.setFont(juce::FontOptions(11.f));
+    g.setFont(kt::font(theme, 11.f));
     g.drawText(kt::kFx[fx].name, 10, 0, w - 20, h, juce::Justification::centredLeft);
 }
 
@@ -402,7 +452,16 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     socialBtn.onClick = [this] { chatUtility("social_list"); };
     dmBtn.onClick = [this] { chatUtility("dm_list"); };
     adminDeleteBtn.onClick = [this] { if (selectedCatalogId.isNotEmpty()) deleteCatalogId(selectedCatalogId); };
-    utilityGoBtn.onClick = [this] { chatUtility(utilityActionBox.getText()); };
+    utilityGoBtn.onClick = [this] {
+        static const char* actions[] = {
+            "chat_list", "list_threads", "social_list", "dm_list", "dm_send",
+            "friend_request", "friend_accept", "friend_decline", "friend_remove",
+            "wav_request", "react_heart", "chat_delete", "chat_clear", "presence",
+            "create_thread", "comment"
+        };
+        const int index = utilityActionBox.getSelectedId() - 1;
+        if (index >= 0 && index < 16) chatUtility(actions[index]);
+    };
 
     addBtn.onClick = [this] { addSeriesStep(); };
     chainRemoveBtn.onClick = [this] { removeSelectedChainStep(); };
@@ -461,9 +520,12 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     fxClearBtn.onClick = [this] { if (fxStack.getNumChildren() > 0) { captureSnapshot(); fxStack.removeAllChildren(nullptr); selectedFxStep = -1; stackLabel.setText("Empty effect  ·  ready for a new build", juce::dontSendNotification); } };
 
     addAndMakeVisible(status);
+    status.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(pluginViewBtn); addAndMakeVisible(pluginBackBtn); addAndMakeVisible(newMachineBtn); addAndMakeVisible(randomMachineBtn);
     pluginBackBtn.setVisible(false);
     addAndMakeVisible(whoLabel);
+    whoLabel.setJustificationType(juce::Justification::centredRight);
+    pluginViewBtn.toFront(false);
     addAndMakeVisible(userBox);
     addAndMakeVisible(passBox);
     addAndMakeVisible(msgBox);
@@ -491,10 +553,15 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     effectNameBox.setTextToShowWhenEmpty("Custom effect name", juce::Colours::grey);
     msgBox.setTextToShowWhenEmpty("Message  ·  shared FX links appear as clickable cards", juce::Colours::grey);
     utilityBox.setTextToShowWhenEmpty("Target / ID / thread ID", juce::Colours::grey);
-    const char* utilityItems[] = {"chat_list","list_threads","social_list","dm_list","dm_send","friend_request","friend_accept","friend_decline","friend_remove","wav_request","react_heart","chat_delete","chat_clear","presence","create_thread","comment"};
+    const char* utilityItems[] = {
+        "Chat list", "Threads", "Friends", "Direct messages", "Send DM",
+        "Friend request", "Accept friend", "Decline friend", "Remove friend",
+        "WAV request", "React: heart", "Delete chat", "Clear chat", "Presence",
+        "Create thread", "Comment"
+    };
     for (int i=0;i<16;++i) utilityActionBox.addItem(utilityItems[i], i+1);
     utilityActionBox.setSelectedId(1);
-    logBox.setMultiLine(true); logBox.setReadOnly(true); logBox.setScrollbarsShown(true);
+    logBox.setMultiLine(true); logBox.setReadOnly(true); logBox.setScrollbarsShown(true); logBox.setOpaque(true); logBox.setLineSpacing(2.0f);
     fxAmount.setRange(0.0, 1.0, 0.01); fxAmount.setValue(0.55); fxAmount.setSliderStyle(juce::Slider::LinearHorizontal); fxAmount.setTextBoxStyle(juce::Slider::TextBoxRight, false, 48, 18);
     auto setupFx = [](juce::Slider& s) { s.setRange(0.0, 1.0, 0.001); s.setValue(0.5); s.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag); s.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 48, 16); };
     setupFx(fxTone); setupFx(fxMotion); setupFx(fxMix); setupFx(fxShape);
@@ -573,6 +640,7 @@ void KyotoAudioProcessorEditor::syncMachineDesignToUi()
     proc.uiState.setProperty("playgroundHeight", machineDesign.playgroundHeight, nullptr);
     proc.uiState.setProperty("aspectRatio", machineDesign.aspectRatio, nullptr);
     proc.uiState.setProperty("bodyDesign", machineDesign.bodyDesign, nullptr);
+    proc.uiState.setProperty("theme", machineDesign.theme, nullptr);
     proc.uiState.setProperty("machineDesign", juce::JSON::toString(machineDesign.toVar()), nullptr);
 }
 
@@ -617,6 +685,7 @@ void KyotoAudioProcessorEditor::setPluginView(bool on)
     else
     {
         showTab(tab);
+        status.setVisible(true);
         for (auto* w : widgets) w->setVisible(true);
     }
     resized(); repaint();
@@ -640,9 +709,9 @@ void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
         auto r = getLocalBounds().reduced(18).toFloat();
         g.setColour(kt::c(theme.panel)); g.fillRoundedRectangle(r, 18.f);
         g.setColour(kt::c(theme.border)); g.drawRoundedRectangle(r, 18.f, 1.f);
-        g.setColour(kt::c(theme.accent)); g.setFont(juce::FontOptions(18.f).withStyle("Bold"));
+        g.setColour(kt::c(theme.accent)); g.setFont(kt::font(theme, 18.f, true));
         g.drawText(machineDesign.bodyDesign.toUpperCase(), r.getX()+26, r.getY()+52, r.getWidth()-52, 28, juce::Justification::centred);
-        g.setColour(kt::c(theme.muted)); g.setFont(juce::FontOptions(10.f));
+        g.setColour(kt::c(theme.muted)); g.setFont(kt::font(theme, 10.f));
         g.drawText(machineDesign.aspectRatio + "  ·  " + machineDesign.bodyDesign + "  ·  " + theme.name, r.getX()+26, r.getY()+82, r.getWidth()-52, 18, juce::Justification::centred);
         for (const auto& part : machineDesign.modules)
         {
@@ -650,7 +719,7 @@ void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
             q.setPosition(juce::jlimit(r.getX()+16.f, r.getRight()-q.getWidth()-16.f, q.getX()), juce::jlimit(r.getY()+112.f, r.getBottom()-q.getHeight()-24.f, q.getY()));
             g.setColour(kt::c(theme.panel).brighter(0.08f)); g.fillRoundedRectangle(q, 10.f);
             g.setColour(kt::c(theme.accent).withAlpha(0.72f)); g.drawRoundedRectangle(q, 10.f, 1.5f);
-            g.setColour(kt::c(theme.text)); g.setFont(juce::FontOptions(9.f).withStyle("Bold")); g.drawFittedText(part.type, q.reduced(7.f).toNearestInt(), juce::Justification::centred, 1);
+            g.setColour(kt::c(theme.text)); g.setFont(kt::font(theme, 9.f, true)); g.drawFittedText(part.type, q.reduced(7.f).toNearestInt(), juce::Justification::centred, 1);
         }
         return;
     }
@@ -664,40 +733,69 @@ void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
     g.setColour(kt::c(theme.panel).withAlpha(0.98f));
     g.fillRoundedRectangle(8.f, 8.f, (float)getWidth()-16.f, 42.f, 11.f);
     g.setColour(kt::c(theme.border)); g.drawRoundedRectangle(8.5f, 8.5f, (float)getWidth()-17.f, 41.f, 11.f, 1.f);
-    g.setColour(kt::c(theme.accent)); g.setFont(juce::FontOptions(15.f).withStyle("Bold"));
+    g.setColour(kt::c(theme.accent)); g.setFont(kt::font(theme, 15.f, true));
     g.drawText("DREAMSHARE", 20, 13, 150, 18, juce::Justification::left);
-    g.setColour(kt::c(theme.muted)); g.setFont(juce::FontOptions(8.5f));
+    g.setColour(kt::c(theme.muted)); g.setFont(kt::font(theme, 8.5f));
     g.drawText("KYOTRIPPAH  ·  BUILD / PLAY / SHARE", 20, 31, 180, 10, juce::Justification::left);
 
     if (!loggedIn)
     {
         auto card = getLocalBounds().withTrimmedTop(66).reduced(24).toFloat();
         g.setColour(kt::c(theme.panel).withAlpha(0.96f)); g.fillRoundedRectangle(card, 16.f); g.setColour(kt::c(theme.border)); g.drawRoundedRectangle(card, 16.f, 1.f);
-        g.setColour(kt::c(theme.accent)); g.setFont(juce::FontOptions(18.f).withStyle("Bold")); g.drawText("ENTER THE ROOM", card.getX()+26, card.getY()+24, 220, 26, juce::Justification::left);
-        g.setColour(kt::c(theme.muted)); g.setFont(juce::FontOptions(11.f)); g.drawText("Your saved presets and shared effects stay with your DreamShare account.", card.getX()+26, card.getY()+56, card.getWidth()-52, 22, juce::Justification::left);
+        g.setColour(kt::c(theme.accent)); g.setFont(kt::font(theme, 18.f, true)); g.drawText("ENTER THE ROOM", card.getX()+26, card.getY()+24, 220, 26, juce::Justification::left);
+        g.setColour(kt::c(theme.muted)); g.setFont(kt::font(theme, 11.f)); g.drawText("Your saved presets and shared effects stay with your DreamShare account.", card.getX()+26, card.getY()+56, card.getWidth()-52, 22, juce::Justification::left);
         return;
     }
 
     if (tab == 0)
     {
-        auto main = getLocalBounds().withTrimmedTop(62).reduced(12).toFloat();
-        g.setColour(kt::c(theme.panel).withAlpha(0.96f)); g.fillRoundedRectangle(main, 15.f); g.setColour(kt::c(theme.border)); g.drawRoundedRectangle(main, 15.f, 1.f);
-        g.setColour(kt::c(theme.accent)); g.setFont(juce::FontOptions(18.f).withStyle("Bold")); g.drawText("THE ROOM", main.getX()+18, main.getY()+16, 160, 24, juce::Justification::left);
-        g.setColour(kt::c(theme.muted)); g.setFont(juce::FontOptions(10.f)); g.drawText("Live DreamShare chat, threads, and a shelf of things you can load.", main.getX()+18, main.getY()+42, main.getWidth()-36, 18, juce::Justification::left);
-        g.setColour(kt::c(theme.accent).withAlpha(0.16f)); g.fillRoundedRectangle(catalogView.getBounds().toFloat().reduced(1.f), 10.f);
-        g.setColour(kt::c(theme.text)); g.setFont(juce::FontOptions(10.f).withStyle("Bold")); g.drawText("CATALOG", catalogView.getX()+12, catalogView.getY()+8, 100, 16, juce::Justification::left);
+        auto shell = getLocalBounds().withTrimmedTop(62).reduced(12).toFloat();
+        g.setColour(kt::c(theme.panel).withAlpha(0.97f));
+        g.fillRoundedRectangle(shell, 15.f);
+        g.setColour(kt::c(theme.border));
+        g.drawRoundedRectangle(shell, 15.f, 1.f);
+
+        auto hero = shell.reduced(12.f);
+        hero.setHeight(82.f);
+        g.setColour(kt::c(theme.accent).withAlpha(0.10f));
+        g.fillRoundedRectangle(hero, 12.f);
+        g.setColour(kt::c(theme.accent));
+        g.setFont(kt::font(theme, 19.f, true));
+        g.drawText("DREAMSHARE HOME", hero.getX()+18, hero.getY()+13, 280, 25, juce::Justification::left);
+        g.setColour(kt::c(theme.text));
+        g.setFont(kt::font(theme, 10.5f, false));
+        g.drawText("Build. play. share. Keep your room, themes, presets and community tools in one surface.", hero.getX()+18, hero.getY()+43, hero.getWidth()-250, 18, juce::Justification::left);
+        g.setColour(kt::c(theme.accent));
+        g.setFont(kt::font(theme, 9.f, true));
+        g.drawText("LIVE  ·  " + (account.isEmpty() ? juce::String("SIGNED IN") : account.toUpperCase()), hero.getRight()-210, hero.getY()+20, 192, 16, juce::Justification::right);
+        g.setColour(kt::c(theme.muted));
+        g.setFont(kt::font(theme, 8.5f));
+        g.drawText("Theme: " + juce::String(theme.name) + "  ·  " + juce::String(kt::kThemeCount) + " presets", hero.getRight()-210, hero.getY()+40, 192, 15, juce::Justification::right);
+
+        g.setColour(kt::c(theme.border).withAlpha(0.55f));
+        g.drawLine(shell.getX()+12.f, hero.getBottom()+10.f, shell.getRight()-12.f, hero.getBottom()+10.f, 1.f);
+
+        auto chatCard = logBox.getBounds().toFloat().expanded(1.f);
+        auto catalogCard = catalogView.getBounds().toFloat().expanded(1.f);
+        g.setColour(kt::c(theme.accent).withAlpha(0.055f));
+        g.fillRoundedRectangle(chatCard, 10.f);
+        g.fillRoundedRectangle(catalogCard, 10.f);
+        g.setColour(kt::c(theme.accent));
+        g.setFont(kt::font(theme, 9.f, true));
+        g.drawText("LIVE ROOM", chatCard.getX()+12, chatCard.getY()+7, 110, 15, juce::Justification::left);
+        g.drawText("CATALOG", catalogCard.getX()+12, catalogCard.getY()+7, 100, 15, juce::Justification::left);
     }
 
     if (tab == 1)
     {
         auto pb = panel.getBounds().toFloat();
         g.setColour(kt::c(theme.panel).withAlpha(0.96f)); g.fillRoundedRectangle(pb, 12.f); g.setColour(kt::c(theme.border)); g.drawRoundedRectangle(pb, 12.f, 1.f);
-        g.setColour(kt::c(theme.accent)); g.setFont(juce::FontOptions(13.f).withStyle("Bold")); g.drawText("PERFORMANCE SURFACE", pb.getX()+16, pb.getY()+12, 220, 18, juce::Justification::left);
-        g.setColour(kt::c(theme.muted)); g.setFont(juce::FontOptions(9.f)); g.drawText("Controls place themselves. No overlaps. No grid hunting.", pb.getX()+16, pb.getY()+31, 300, 15, juce::Justification::left);
+        g.setColour(kt::c(theme.accent)); g.setFont(kt::font(theme, 13.f, true)); g.drawText("PERFORMANCE SURFACE", pb.getX()+16, pb.getY()+12, 220, 18, juce::Justification::left);
+        g.setColour(kt::c(theme.muted)); g.setFont(kt::font(theme, 9.f)); g.drawText("Controls place themselves. No overlaps. No grid hunting.", pb.getX()+16, pb.getY()+31, 300, 15, juce::Justification::left);
         g.setColour(kt::c(theme.border).withAlpha(0.32f)); g.drawLine(pb.getX()+16, pb.getY()+52, pb.getRight()-16, pb.getY()+52, 1.f);
         if (widgets.isEmpty())
         {
-            g.setColour(kt::c(theme.muted)); g.setFont(juce::FontOptions(12.f)); g.drawText("Choose an FX from the catalog, choose a control type, then press ADD.", pb.reduced(24.f), juce::Justification::centred);
+            g.setColour(kt::c(theme.muted)); g.setFont(kt::font(theme, 12.f)); g.drawText("Choose an FX from the catalog, choose a control type, then press ADD.", pb.reduced(24.f), juce::Justification::centred);
         }
     }
 
@@ -705,8 +803,8 @@ void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
     {
         auto pb = panel.getBounds().toFloat();
         g.setColour(kt::c(theme.panel).withAlpha(0.96f)); g.fillRoundedRectangle(pb, 12.f); g.setColour(kt::c(theme.border)); g.drawRoundedRectangle(pb, 12.f, 1.f);
-        g.setColour(kt::c(theme.accent)); g.setFont(juce::FontOptions(13.f).withStyle("Bold")); g.drawText("CUSTOM EFFECT", pb.getX()+16, pb.getY()+12, 180, 18, juce::Justification::left);
-        g.setColour(kt::c(theme.muted)); g.setFont(juce::FontOptions(9.f)); g.drawText("Build up to 16 stages. Save, publish, then share the effect itself.", pb.getX()+16, pb.getY()+31, pb.getWidth()-32, 15, juce::Justification::left);
+        g.setColour(kt::c(theme.accent)); g.setFont(kt::font(theme, 13.f, true)); g.drawText("CUSTOM EFFECT", pb.getX()+16, pb.getY()+12, 180, 18, juce::Justification::left);
+        g.setColour(kt::c(theme.muted)); g.setFont(kt::font(theme, 9.f)); g.drawText("Build up to 16 stages. Save, publish, then share the effect itself.", pb.getX()+16, pb.getY()+31, pb.getWidth()-32, 15, juce::Justification::left);
 
         const int cols = juce::jmax(1, (int)(pb.getWidth() / 220.f));
         const float gap = 10.f, cw = (pb.getWidth()-gap*(cols+1))/cols, ch = 76.f;
@@ -717,9 +815,9 @@ void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
             const bool selected=i==selectedFxStep;
             g.setColour(selected ? kt::c(theme.accent).withAlpha(0.20f) : kt::c(theme.panel).brighter(0.06f)); g.fillRoundedRectangle(r, 9.f);
             g.setColour(kt::c(theme.border).withAlpha(selected?0.95f:0.75f)); g.drawRoundedRectangle(r, 9.f, selected?2.f:1.f);
-            g.setColour(kt::c(theme.accent)); g.setFont(juce::FontOptions(10.f).withStyle("Bold")); g.drawText(juce::String(i+1).paddedLeft('0',2), r.getX()+9, r.getY()+8, 22, 14, juce::Justification::left);
-            g.setColour(kt::c(theme.text)); g.setFont(juce::FontOptions(11.f).withStyle("Bold")); g.drawFittedText(st.getProperty("name").toString(), r.getX()+34, r.getY()+7, r.getWidth()-44, 18, juce::Justification::left, 1);
-            g.setColour(kt::c(theme.muted)); g.setFont(juce::FontOptions(9.f));
+            g.setColour(kt::c(theme.accent)); g.setFont(kt::font(theme, 10.f, true)); g.drawText(juce::String(i+1).paddedLeft('0',2), r.getX()+9, r.getY()+8, 22, 14, juce::Justification::left);
+            g.setColour(kt::c(theme.text)); g.setFont(kt::font(theme, 11.f, true)); g.drawFittedText(st.getProperty("name").toString(), r.getX()+34, r.getY()+7, r.getWidth()-44, 18, juce::Justification::left, 1);
+            g.setColour(kt::c(theme.muted)); g.setFont(kt::font(theme, 9.f));
             g.drawText("A " + juce::String((double)st.getProperty("amount",0.5),2) + "   T " + juce::String((double)st.getProperty("tone",0.5),2) + "   M " + juce::String((double)st.getProperty("motion",0.35),2), r.getX()+10, r.getBottom()-23, r.getWidth()-20, 15, juce::Justification::left);
         }
     }
@@ -776,12 +874,29 @@ void KyotoAudioProcessorEditor::resized()
     const int W = getWidth(), H = getHeight();
     if (pluginView)
     {
-        pluginBackBtn.setBounds(28, 24, 90, 32);
+        pluginBackBtn.setBounds(24, 20, 104, 34);
         pluginViewBtn.setVisible(false); newMachineBtn.setVisible(false); randomMachineBtn.setVisible(false);
+        shareBtn.setVisible(false); chainBtn.setVisible(false); fxBtn.setVisible(false); logoutBtn.setVisible(false); whoLabel.setVisible(false); status.setVisible(false);
         return;
     }
-    shareBtn.setBounds(190, 8, 112, 30); chainBtn.setBounds(308, 8, 92, 30); fxBtn.setBounds(406, 8, 118, 30); pluginViewBtn.setBounds(W - 250, 8, 118, 30);
-    status.setBounds(538, 8, juce::jmax(160, W - 850), 30); whoLabel.setBounds(W - 278, 8, 150, 30); logoutBtn.setBounds(W - 118, 8, 100, 30);
+    const int navY = 8;
+    const int rightPad = 18;
+    const int logoutW = 100;
+    const int whoW = 132;
+    const int pluginW = 132;
+    const int rightX = W - rightPad;
+    logoutBtn.setBounds(rightX - logoutW, navY, logoutW, 32);
+    whoLabel.setBounds(rightX - logoutW - whoW - 8, navY, whoW, 32);
+    pluginViewBtn.setBounds(rightX - logoutW - whoW - pluginW - 16, navY, pluginW, 32);
+    shareBtn.setBounds(190, navY, 106, 32);
+    chainBtn.setBounds(302, navY, 88, 32);
+    fxBtn.setBounds(396, navY, 112, 32);
+    const int statusX = 520;
+    const int statusRight = pluginViewBtn.getX() - 12;
+    status.setBounds(statusX, navY, juce::jmax(120, statusRight - statusX), 32);
+    pluginViewBtn.toFront(false);
+    whoLabel.toFront(false);
+    logoutBtn.toFront(false);
 
     auto area = getLocalBounds().withTrimmedTop(52).reduced(12);
     if (! loggedIn)
@@ -793,37 +908,70 @@ void KyotoAudioProcessorEditor::resized()
 
     if (tab == 0)
     {
-        auto top = area.removeFromTop(38);
-        themeBox.setBounds(top.removeFromLeft(148)); top.removeFromLeft(6); feedBtn.setBounds(top.removeFromLeft(72)); top.removeFromLeft(5);
-        chatRefreshBtn.setBounds(top.removeFromLeft(58)); top.removeFromLeft(4); threadsBtn.setBounds(top.removeFromLeft(72)); top.removeFromLeft(4); socialBtn.setBounds(top.removeFromLeft(72)); top.removeFromLeft(4); dmBtn.setBounds(top.removeFromLeft(48));
-        if (isAdmin) { top.removeFromLeft(5); adminDeleteBtn.setBounds(top.removeFromLeft(72)); }
-        auto bottom = area.removeFromBottom(42);
-        msgBox.setBounds(bottom.removeFromLeft(bottom.getWidth()-96)); sendBtn.setBounds(bottom);
-        auto util = area.removeFromBottom(30);
-        utilityBox.setBounds(util.removeFromLeft(util.getWidth()-176)); util.removeFromLeft(6); utilityActionBox.setBounds(util.removeFromLeft(126)); util.removeFromLeft(6); utilityGoBtn.setBounds(util);
+        area.removeFromTop(88); // dashboard hero
+        auto top = area.removeFromTop(42);
+        themeBox.setBounds(top.removeFromLeft(154)); top.removeFromLeft(8);
+        feedBtn.setBounds(top.removeFromLeft(76)); top.removeFromLeft(6);
+        chatRefreshBtn.setBounds(top.removeFromLeft(64)); top.removeFromLeft(5);
+        threadsBtn.setBounds(top.removeFromLeft(74)); top.removeFromLeft(5);
+        socialBtn.setBounds(top.removeFromLeft(74)); top.removeFromLeft(5);
+        dmBtn.setBounds(top.removeFromLeft(54));
+        if (isAdmin && top.getWidth() > 78) { top.removeFromLeft(6); adminDeleteBtn.setBounds(top.removeFromLeft(76)); }
+        auto bottom = area.removeFromBottom(44);
+        msgBox.setBounds(bottom.removeFromLeft(juce::jmax(160, bottom.getWidth()-104))); bottom.removeFromLeft(8); sendBtn.setBounds(bottom);
+        auto util = area.removeFromBottom(32);
+        utilityBox.setBounds(util.removeFromLeft(juce::jmax(180, util.getWidth()-188))); util.removeFromLeft(8);
+        utilityActionBox.setBounds(util.removeFromLeft(136)); util.removeFromLeft(8); utilityGoBtn.setBounds(util);
         auto main = area;
-        logBox.setBounds(main.getX(), main.getY(), (int)(main.getWidth()*0.64f), main.getHeight());
-        catalogView.setBounds(main.getX() + (int)(main.getWidth()*0.64f) + 10, main.getY(), (int)(main.getWidth()*0.36f)-10, main.getHeight());
-        catalogHolder.setSize(juce::jmax(1, catalogView.getWidth()-18), juce::jmax(catalogView.getHeight(), ((catalog.size()+1)/2)*96));
+        const int split = juce::jlimit(420, juce::jmax(420, main.getWidth()-300), (int)(main.getWidth()*0.66f));
+        logBox.setBounds(main.getX(), main.getY(), split, main.getHeight());
+        catalogView.setBounds(main.getX()+split+12, main.getY(), main.getWidth()-split-12, main.getHeight());
+        const int catalogW = juce::jmax(220, catalogView.getWidth()-18);
+        const int cols = catalogW >= 500 ? 2 : 1;
+        const int gap = 8;
+        const int cardW = juce::jmax(160, (catalogW - gap * (cols + 1)) / cols);
+        const int cardH = 84;
+        catalogHolder.setSize(catalogW, juce::jmax(catalogView.getHeight(), ((catalog.size()+cols-1)/cols) * (cardH+gap) + gap));
+        for (int i = 0; i < catalogHolder.getNumChildComponents(); ++i)
+        {
+            auto* card = catalogHolder.getChildComponent(i);
+            const int col = i % cols, row = i / cols;
+            card->setBounds(gap + col * (cardW + gap), gap + row * (cardH + gap), cardW, cardH);
+        }
         for (int i=0;i<feedEffectButtons.size();++i)
         {
-            const int bw = juce::jmin(280, logBox.getWidth()-24);
-            feedEffectButtons[i]->setBounds(logBox.getX()+12, logBox.getBottom()-34*(i+1)-8, bw, 28);
+            const int bw = juce::jmin(300, logBox.getWidth()-24);
+            feedEffectButtons[i]->setBounds(logBox.getX()+12, logBox.getBottom()-36*(i+1)-8, bw, 30);
         }
     }
     else if (tab == 1)
     {
-        auto top = area.removeFromTop(44);
-        nameBox.setBounds(top.removeFromLeft(170)); top.removeFromLeft(7); kindBox.setBounds(top.removeFromLeft(116)); top.removeFromLeft(7);
-        addBtn.setBounds(top.removeFromLeft(64)); top.removeFromLeft(5); chainBreakBtn.setBounds(top.removeFromLeft(68)); top.removeFromLeft(5); chainMixBtn.setBounds(top.removeFromLeft(68)); top.removeFromLeft(5);
-        chainRemoveBtn.setBounds(top.removeFromLeft(74)); top.removeFromLeft(5); chainUndoBtn.setBounds(top.removeFromLeft(64)); top.removeFromLeft(5); newMachineBtn.setBounds(top.removeFromLeft(96)); top.removeFromLeft(5); randomMachineBtn.setBounds(top.removeFromLeft(128)); top.removeFromLeft(5); wavBtn.setBounds(top.removeFromLeft(58)); top.removeFromLeft(5); saveBtn.setBounds(top.removeFromLeft(68)); top.removeFromLeft(5); upBtn.setBounds(top.removeFromLeft(78));
-        auto bottom = area.removeFromBottom(38);
-        presetBox.setBounds(bottom);
-        auto left = area.removeFromLeft(282); if (fxBrowser) fxBrowser->setBounds(left); area.removeFromLeft(10); panel.setBounds(area); reflowSeries();
+        auto top = area.removeFromTop(48);
+        nameBox.setBounds(top.removeFromLeft(178)); top.removeFromLeft(7);
+        kindBox.setBounds(top.removeFromLeft(118)); top.removeFromLeft(7);
+        addBtn.setBounds(top.removeFromLeft(64)); top.removeFromLeft(5);
+        chainBreakBtn.setBounds(top.removeFromLeft(68)); top.removeFromLeft(5);
+        chainMixBtn.setBounds(top.removeFromLeft(68)); top.removeFromLeft(5);
+        chainRemoveBtn.setBounds(top.removeFromLeft(74)); top.removeFromLeft(5);
+        chainUndoBtn.setBounds(top.removeFromLeft(64));
+
+        auto actions = area.removeFromTop(40);
+        presetBox.setBounds(actions.removeFromLeft(238)); actions.removeFromLeft(8);
+        newMachineBtn.setBounds(actions.removeFromLeft(96)); actions.removeFromLeft(6);
+        randomMachineBtn.setBounds(actions.removeFromLeft(128)); actions.removeFromLeft(6);
+        wavBtn.setBounds(actions.removeFromLeft(58)); actions.removeFromLeft(6);
+        saveBtn.setBounds(actions.removeFromLeft(68)); actions.removeFromLeft(6);
+        upBtn.setBounds(actions.removeFromLeft(78));
+
+        auto left = area.removeFromLeft(282);
+        if (fxBrowser) fxBrowser->setBounds(left);
+        area.removeFromLeft(10);
+        panel.setBounds(area);
+        reflowSeries();
     }
     else
     {
-        auto top = area.removeFromTop(56);
+        auto top = area.removeFromTop(58);
         effectNameBox.setBounds(top.removeFromLeft(190)); top.removeFromLeft(7); fxAddBtn.setBounds(top.removeFromLeft(70)); top.removeFromLeft(5); fxBreakBtn.setBounds(top.removeFromLeft(60)); top.removeFromLeft(5); fxMixBtn.setBounds(top.removeFromLeft(92)); top.removeFromLeft(5); fxRemoveBtn.setBounds(top.removeFromLeft(70)); top.removeFromLeft(5); fxUndoBtn.setBounds(top.removeFromLeft(60)); top.removeFromLeft(5); fxSaveBtn.setBounds(top.removeFromLeft(62)); top.removeFromLeft(5); fxUpBtn.setBounds(top.removeFromLeft(74)); top.removeFromLeft(5); fxShareChatBtn.setBounds(top.removeFromLeft(54)); top.removeFromLeft(5); fxShareThreadBtn.setBounds(top.removeFromLeft(62));
         auto left = area.removeFromLeft(282); if (fxBrowser) fxBrowser->setBounds(left); area.removeFromLeft(10);
         auto inspector = area.removeFromRight(286);
@@ -903,6 +1051,7 @@ void KyotoAudioProcessorEditor::rebuildCanvas()
         if (! child.hasType("w")) continue;
         const int widgetIndex = widgets.size();
         auto* w = widgets.add(new CanvasWidget(proc, child));
+        w->setTheme(theme);
         w->selected = (widgetIndex == selectedChainWidget);
         w->onSelect = [this, widgetIndex] { selectedChainWidget = widgetIndex; for (auto* item : widgets) { item->selected = false; item->repaint(); } if (widgetIndex >= 0 && widgetIndex < widgets.size()) { widgets[widgetIndex]->selected = true; widgets[widgetIndex]->repaint(); } repaint(); };
         panel.addAndMakeVisible(w);
@@ -1243,7 +1392,7 @@ void KyotoAudioProcessorEditor::refreshCatalog()
                 auto* card=new juce::TextButton(c.name+"\n"+c.face+"  ·  "+c.author); card->setBounds((i%2)*250,(i/2)*104,238,94);
                 card->onClick=[safe,id=c.id,name=c.name]{ if(safe!=nullptr){safe->selectedCatalogId=id;safe->loadCatalogId(id,name);} }; safe->catalogHolder.addAndMakeVisible(card); ++i;
             }
-            safe->catalogHolder.setSize(500,juce::jmax(220,((i+1)/2)*104)); safe->catalogView.setViewedComponent(&safe->catalogHolder,false); safe->refreshEffectBox();
+            safe->catalogHolder.setSize(juce::jmax(220, safe->catalogView.getWidth()-18), juce::jmax(220, ((i+1)/2)*92)); safe->catalogView.setViewedComponent(&safe->catalogHolder,false); safe->resized(); safe->refreshEffectBox();
         });
     }).detach();
 }
@@ -1344,18 +1493,39 @@ void KyotoAudioProcessorEditor::loadCatalogId(const juce::String& id, const juce
 
 void KyotoAudioProcessorEditor::applyTheme(const juce::String& id)
 {
-    for (auto& t : kt::kThemes)
-        if (id == t.id) { theme = t; break; }
-    proc.uiState.setProperty("theme", id, nullptr);
+    theme = kt::themeById(id);
+    proc.uiState.setProperty("theme", theme.id, nullptr);
+    for (int i = 0; i < kt::kThemeCount; ++i)
+        if (juce::String(kt::kThemes[i].id).equalsIgnoreCase(theme.id))
+        {
+            themeBox.setSelectedId(i + 1, juce::dontSendNotification);
+            break;
+        }
+    machineDesign.theme = theme.id;
+    machineDesign.normalizeThemeIds();
     if (fxBrowser) fxBrowser->setTheme(theme);
     for (auto* e : { &logBox, &msgBox, &utilityBox, &userBox, &passBox, &nameBox, &effectNameBox })
     {
         e->setColour(juce::TextEditor::backgroundColourId, kt::c(theme.bg).brighter(0.03f));
         e->setColour(juce::TextEditor::textColourId, kt::c(theme.text));
         e->setColour(juce::TextEditor::outlineColourId, kt::c(theme.border));
-        e->setColour(juce::TextEditor::focusedOutlineColourId, kt::c(theme.accent).withAlpha(0.75f));
+        e->setColour(juce::TextEditor::focusedOutlineColourId, kt::c(theme.accent).withAlpha(0.85f));
+        e->setColour(juce::TextEditor::highlightColourId, kt::c(theme.accent).withAlpha(0.30f));
+        e->setColour(juce::TextEditor::highlightedTextColourId, kt::c(theme.text));
+        e->setColour(juce::TextEditor::shadowColourId, juce::Colours::transparentBlack);
+        e->setFont(kt::font(theme, 11.f));
     }
+    for (auto* l : { &status, &whoLabel, &fxAmountLabel, &fxToneLabel, &fxMotionLabel, &fxMixLabel, &fxShapeLabel, &stackLabel })
+    {
+        l->setColour(juce::Label::textColourId, kt::c(theme.text));
+        l->setFont(kt::font(theme, 10.f, true));
+    }
+    for (auto* w : widgets) w->setTheme(theme);
     kLookAndFeel.setTheme(theme);
+    kLookAndFeel.setColour(juce::PopupMenu::backgroundColourId, kt::c(theme.panel));
+    kLookAndFeel.setColour(juce::PopupMenu::textColourId, kt::c(theme.text));
+    kLookAndFeel.setColour(juce::PopupMenu::highlightedBackgroundColourId, kt::c(theme.accent).withAlpha(0.32f));
+    kLookAndFeel.setColour(juce::PopupMenu::highlightedTextColourId, kt::c(theme.text));
     for (auto* b : { &shareBtn, &chainBtn, &fxBtn, &logoutBtn, &feedBtn, &chatRefreshBtn, &threadsBtn, &socialBtn, &dmBtn, &adminDeleteBtn, &sendBtn, &utilityGoBtn, &addBtn, &chainBreakBtn, &chainMixBtn, &chainRemoveBtn, &chainUndoBtn, &saveBtn, &upBtn, &wavBtn, &fxAddBtn, &fxBreakBtn, &fxMixBtn, &fxRandomBtn, &fxClearBtn, &fxSaveBtn, &fxUpBtn, &fxShareChatBtn, &fxShareThreadBtn, &fxRemoveBtn, &fxUndoBtn, &pluginViewBtn, &pluginBackBtn, &newMachineBtn, &randomMachineBtn })
     {
         b->setColour(juce::TextButton::buttonColourId, kt::c(theme.panel).brighter(0.08f));
@@ -1363,6 +1533,7 @@ void KyotoAudioProcessorEditor::applyTheme(const juce::String& id)
         b->setColour(juce::TextButton::textColourOffId, kt::c(theme.text));
         b->setColour(juce::TextButton::textColourOnId, kt::c(theme.text));
     }
+    syncMachineDesignToUi();
     repaint();
 }
 
