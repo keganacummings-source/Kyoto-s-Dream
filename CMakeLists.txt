@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(KyotoSpxrit VERSION 0.2.0 LANGUAGES C CXX)
+project(KyotoSpxrit VERSION 0.2.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -204,9 +204,9 @@ juce_add_plugin(
     COPY_PLUGIN_AFTER_BUILD FALSE
 )
 
-# Use apostrophe-free target/output names on every platform. This avoids
-# the Windows MSBuild path parsing issue and the macOS/Xcode shared-code
-# archive mismatch that occurred with the old product name.
+# Keep the public/plugin product name (including the apostrophe) while using
+# filesystem-safe Windows build artifact names. MSBuild can misparse JUCE's
+# generated ATL condition when an output library path contains an apostrophe.
 set_target_properties(KyotoSpxrit PROPERTIES OUTPUT_NAME "KyotoSpxrit")
 
 juce_generate_juce_header(KyotoSpxrit)
@@ -269,7 +269,7 @@ juce_add_plugin(
     COPY_PLUGIN_AFTER_BUILD FALSE
 )
 
-# Same cross-platform output-name fix for the FX target.
+# Same workaround for the FX target.
 set_target_properties(KyotoSpxritFX PROPERTIES OUTPUT_NAME "KyotoSpxritFX")
 
 juce_generate_juce_header(KyotoSpxritFX)
