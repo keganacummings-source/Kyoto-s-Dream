@@ -21,3 +21,14 @@
 ## Cleanup
 - Removed the unused legacy `DspEngine.cpp/.h` files.
 - Kept the existing 42 themes, community/DreamShare functionality, module preset system, builder, and native UI architecture.
+
+
+# KyotoSpxrit 0.2.4
+
+FL Studio on Windows crashed while scanning 0.2.3. See CRASH-FIX-0.2.4.md.
+
+- Unique host parameter names (`FX 1 Amount` ... `FX 200 Shape`).
+- Optional stereo input, and bus layouts FL probes are accepted.
+- VST2-compatibility CID disabled.
+- Audio callback tolerates a process call before prepare, and a zero-channel buffer.
+- Editor construction no longer starts a network request.

@@ -238,6 +238,8 @@ target_compile_definitions(
     JUCE_USE_CURL=0
     JUCE_DISPLAY_SPLASH_SCREEN=0
     JUCE_STRICT_REFCOUNTEDPOINTER=1
+    JUCE_VST3_CAN_REPLACE_VST2=0
+    JUCE_REPORT_PLUGIN_BEING_CREATED=0
 )
 
 # ============================================================
@@ -303,6 +305,8 @@ target_compile_definitions(
     JUCE_USE_CURL=0
     JUCE_DISPLAY_SPLASH_SCREEN=0
     JUCE_STRICT_REFCOUNTEDPOINTER=1
+    JUCE_VST3_CAN_REPLACE_VST2=0
+    JUCE_REPORT_PLUGIN_BEING_CREATED=0
 )
 
 # ============================================================

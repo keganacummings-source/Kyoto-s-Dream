@@ -7,17 +7,30 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
-      - name: Clean build directory
-        shell: pwsh
-        run: Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
       - uses: ilammy/msvc-dev-cmd@v1
       - uses: lukka/get-cmake@latest
-      - run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
-      - run: cmake --build build --config Release --parallel
-      - shell: pwsh
+      - name: Configure
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Package VST3 bundles
+        shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path release | Out-Null
-          Get-ChildItem -Path build -Recurse -Filter *.vst3 | Compress-Archive -DestinationPath release/KyotoSpxrit-Windows-VST3.zip -Force
+          $staging = Join-Path (Resolve-Path release) "vst3"
+          New-Item -ItemType Directory -Force -Path $staging | Out-Null
+          $bundles = Get-ChildItem -Path build -Recurse -Directory -Filter *.vst3
+          if (-not $bundles) { throw "No VST3 bundle was produced" }
+          foreach ($b in $bundles) {
+            Write-Host "Found $($b.FullName)"
+            $dll = Get-ChildItem -Path (Join-Path $b.FullName "Contents") -Recurse -Filter *.vst3 -File -ErrorAction SilentlyContinue
+            if (-not $dll) { throw "Bundle $($b.Name) has no plugin binary under Contents" }
+            Copy-Item $b.FullName -Destination (Join-Path $staging $b.Name) -Recurse -Force
+          }
+          # tar keeps each .vst3 folder intact. Compress-Archive has flattened
+          # these bundles before, and FL then refuses to load them.
+          tar -a -c -f release/KyotoSpxrit-Windows-VST3.zip -C $staging .
+          Get-ChildItem -Recurse release
       - uses: actions/upload-artifact@v4
         with:
           name: KyotoSpxrit-Windows
@@ -26,12 +39,8 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-      - name: Clean build directory
-        run: rm -rf build
-      - name: Configure CMake (Universal macOS)
-        run: cmake -S . -B build -G Xcode "-DCMAKE_OSX_ARCHITECTURES=x86_64;arm64"
-      - name: Build VST3 targets (Universal macOS)
-        run: cmake --build build --config Release --target KyotoSpxrit_VST3 KyotoSpxritFX_VST3 --parallel 2
+      - run: cmake -S . -B build -G Xcode -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
+      - run: cmake --build build --config Release --parallel
       - run: |
           mkdir -p release/KyotoSpxrit-macOS-VST3
           find build -type d -name "*.vst3" -prune -exec cp -R {} release/KyotoSpxrit-macOS-VST3/ \;

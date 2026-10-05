@@ -7,11 +7,9 @@
 static juce::StringArray splitModuleString(const juce::String& s){ return juce::StringArray::fromTokens(s,"|",""); }
 
 KyotoSpxritProcessor::KyotoSpxritProcessor()
-#if defined(KYOTO_IS_FX)
-: AudioProcessor(BusesProperties().withInput("Input",juce::AudioChannelSet::stereo(),true).withOutput("Output",juce::AudioChannelSet::stereo(),true)),
-#else
-: AudioProcessor(BusesProperties().withOutput("Output",juce::AudioChannelSet::stereo(),true)),
-#endif
+: AudioProcessor(BusesProperties()
+    .withInput("Input", juce::AudioChannelSet::stereo(), false)
+    .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
   state(*this,nullptr,"PARAMETERS",createParams()), activeTheme(themeManager.get("trippah"))
 {
     if(!themeManager.loadFromJson(juce::String::fromUTF8(
@@ -24,6 +22,7 @@ KyotoSpxritProcessor::KyotoSpxritProcessor()
     activeTheme=themeManager.get("trippah");
     for(int i=0;i<kyoto::kNumEffects;i++){auto s=juce::String(i);enabled[i]=state.getRawParameterValue("fx"+s);amount[i]=state.getRawParameterValue("amt"+s);tone[i]=state.getRawParameterValue("tone"+s);motion[i]=state.getRawParameterValue("motion"+s);mix[i]=state.getRawParameterValue("mix"+s);shape[i]=state.getRawParameterValue("shape"+s);}
     for(int i=0;i<fxSlots;i++)fxSelect[i]=state.getRawParameterValue("slot"+juce::String(i));
+    prepared = false;
 }
 const juce::String KyotoSpxritProcessor::getName() const {
 #if defined(KYOTO_IS_FX)
@@ -34,7 +33,18 @@ const juce::String KyotoSpxritProcessor::getName() const {
 }
 juce::AudioProcessorValueTreeState::ParameterLayout KyotoSpxritProcessor::createParams(){
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> p;
-    for(int i=0;i<kyoto::kNumEffects;i++){auto s=juce::String(i);p.push_back(std::make_unique<juce::AudioParameterBool>("fx"+s,"FX "+s,false));p.push_back(std::make_unique<juce::AudioParameterFloat>("amt"+s,"Amount",0,1,0.5f));p.push_back(std::make_unique<juce::AudioParameterFloat>("tone"+s,"Tone",0,1,0.5f));p.push_back(std::make_unique<juce::AudioParameterFloat>("motion"+s,"Motion",0,1,0.5f));p.push_back(std::make_unique<juce::AudioParameterFloat>("mix"+s,"Mix",0,1,0.65f));p.push_back(std::make_unique<juce::AudioParameterFloat>("shape"+s,"Shape",0,1,0.5f));}
+    // FL Studio aborts the host if two parameters share a name. Every
+    // host-visible name must be unique, even though the IDs already were.
+    for(int i=0;i<kyoto::kNumEffects;i++){
+        auto s=juce::String(i);
+        auto tag=juce::String(i+1);
+        p.push_back(std::make_unique<juce::AudioParameterBool>("fx"+s,"FX "+tag+" On",false));
+        p.push_back(std::make_unique<juce::AudioParameterFloat>("amt"+s,"FX "+tag+" Amount",0,1,0.5f));
+        p.push_back(std::make_unique<juce::AudioParameterFloat>("tone"+s,"FX "+tag+" Tone",0,1,0.5f));
+        p.push_back(std::make_unique<juce::AudioParameterFloat>("motion"+s,"FX "+tag+" Motion",0,1,0.5f));
+        p.push_back(std::make_unique<juce::AudioParameterFloat>("mix"+s,"FX "+tag+" Mix",0,1,0.65f));
+        p.push_back(std::make_unique<juce::AudioParameterFloat>("shape"+s,"FX "+tag+" Shape",0,1,0.5f));
+    }
     for(int i=0;i<fxSlots;i++)p.push_back(std::make_unique<juce::AudioParameterInt>("slot"+juce::String(i),"FX Slot "+juce::String(i+1),0,199,i));
     p.push_back(std::make_unique<juce::AudioParameterInt>("osc1","Oscillator 1",0,5,0));p.push_back(std::make_unique<juce::AudioParameterInt>("osc2","Oscillator 2",0,5,3));p.push_back(std::make_unique<juce::AudioParameterInt>("osc3","Oscillator 3",0,5,1));
     p.push_back(std::make_unique<juce::AudioParameterFloat>("oscMix1","Osc Mix 1",0,1,.8f));p.push_back(std::make_unique<juce::AudioParameterFloat>("oscMix2","Osc Mix 2",0,1,.35f));p.push_back(std::make_unique<juce::AudioParameterFloat>("oscMix3","Osc Mix 3",0,1,.2f));
@@ -44,45 +54,53 @@ juce::AudioProcessorValueTreeState::ParameterLayout KyotoSpxritProcessor::create
 }
 void KyotoSpxritProcessor::prepareToPlay(double sr, int bs)
 {
-    synth.prepare(sr, bs);
-    fx.prepare(sr);
+    const double rate = sr > 0.0 ? sr : 44100.0;
+    const int block = bs > 0 ? bs : 512;
+    synth.prepare(rate, block);
+    fx.prepare(rate);
     publishExpertSnapshot();
+    prepared = true;
 }
 
 void KyotoSpxritProcessor::releaseResources()
 {
     synth.reset();
     fx.reset();
+    prepared = false;
 }
 
 bool KyotoSpxritProcessor::isBusesLayoutSupported(const BusesLayout& l) const
 {
-#if defined(KYOTO_IS_FX)
-    auto in=l.getMainInputChannelSet();
-    auto out=l.getMainOutputChannelSet();
-    return (in==juce::AudioChannelSet::mono()||in==juce::AudioChannelSet::stereo()) &&
-           (out==juce::AudioChannelSet::mono()||out==juce::AudioChannelSet::stereo());
-#else
-    return l.getMainOutputChannelSet()==juce::AudioChannelSet::mono() ||
-           l.getMainOutputChannelSet()==juce::AudioChannelSet::stereo();
-#endif
+    // FL probes disabled, mono and stereo inputs while scanning. Rejecting
+    // the layout it asks for aborts the scan and takes the host down.
+    const auto out = l.getMainOutputChannelSet();
+    if (out != juce::AudioChannelSet::mono() && out != juce::AudioChannelSet::stereo())
+        return false;
+    const auto in = l.getMainInputChannelSet();
+    return in.isDisabled() || in == juce::AudioChannelSet::mono() || in == juce::AudioChannelSet::stereo();
 }
 
 void KyotoSpxritProcessor::processBlock(juce::AudioBuffer<float>& b, juce::MidiBuffer& m)
 {
     juce::ScopedNoDenormals noDenormals;
+    if (b.getNumSamples() <= 0 || b.getNumChannels() <= 0)
+        return;
+    if (!prepared)
+    {
+        prepareToPlay(getSampleRate() > 0.0 ? getSampleRate() : 44100.0, b.getNumSamples());
+    }
 
 #if !defined(KYOTO_IS_FX)
     b.clear();
     synth.render(b, m);
 #endif
 
-    auto* left = b.getNumChannels() > 0 ? b.getWritePointer(0) : nullptr;
+    auto* left = b.getWritePointer(0);
     auto* right = b.getNumChannels() > 1 ? b.getWritePointer(1) : nullptr;
-    if (left == nullptr || b.getNumSamples() <= 0)
+    if (left == nullptr)
         return;
 
-    if (expertMode)
+    if (expertMode.load(std::memory_order_acquire))
     {
         // The editor/state thread publishes immutable chain snapshots. The
         // audio thread only reads the currently published snapshot, so vector
@@ -110,13 +128,16 @@ void KyotoSpxritProcessor::processBlock(juce::AudioBuffer<float>& b, juce::MidiB
     for (int slot = 0; slot < fxSlots; ++slot)
     {
         const int idx = fxIndex(slot);
+        auto loadOr = [](std::atomic<float>* p, float fallback) {
+            return p != nullptr ? p->load(std::memory_order_relaxed) : fallback;
+        };
         slots[(size_t) slot].effect = idx;
         slots[(size_t) slot].on = true;
-        slots[(size_t) slot].amount = amount[(size_t) idx]->load(std::memory_order_relaxed);
-        slots[(size_t) slot].tone = tone[(size_t) idx]->load(std::memory_order_relaxed);
-        slots[(size_t) slot].motion = motion[(size_t) idx]->load(std::memory_order_relaxed);
-        slots[(size_t) slot].mix = mix[(size_t) idx]->load(std::memory_order_relaxed);
-        slots[(size_t) slot].shape = shape[(size_t) idx]->load(std::memory_order_relaxed);
+        slots[(size_t) slot].amount = loadOr(amount[(size_t) idx], 0.5f);
+        slots[(size_t) slot].tone = loadOr(tone[(size_t) idx], 0.5f);
+        slots[(size_t) slot].motion = loadOr(motion[(size_t) idx], 0.5f);
+        slots[(size_t) slot].mix = loadOr(mix[(size_t) idx], 0.65f);
+        slots[(size_t) slot].shape = loadOr(shape[(size_t) idx], 0.5f);
     }
     fx.process(left, right, b.getNumSamples(), slots.data(), fxSlots);
 }
@@ -164,7 +185,7 @@ void KyotoSpxritProcessor::getStateInformation(juce::MemoryBlock&dest){
         "builderLayout",
         juce::JSON::toString(
             kyoto::layoutToVar(builderLayout)),
-        nullptr);root.setProperty("activeModule",currentModule,nullptr);root.setProperty("dreamUser",dreamUser,nullptr);root.setProperty("dreamRole",dreamRole,nullptr);root.setProperty("dreamTheme",dreamTheme,nullptr);root.setProperty("uiVariant",(int)uiMode,nullptr);root.setProperty("expertMode",expertMode,nullptr);
+        nullptr);root.setProperty("activeModule",currentModule,nullptr);root.setProperty("dreamUser",dreamUser,nullptr);root.setProperty("dreamRole",dreamRole,nullptr);root.setProperty("dreamTheme",dreamTheme,nullptr);root.setProperty("uiVariant",(int)uiMode,nullptr);root.setProperty("expertMode", isExpertMode(), nullptr);
     juce::Array<juce::var> ms; for(auto&kv:modulePresets) { auto v=kyoto::presetToVar(kv.second); if(auto*o=v.getDynamicObject()) o->setProperty("id",juce::String(kv.first)); ms.add(v); } root.setProperty("moduleStates",juce::var(juce::JSON::toString(juce::var(ms))),nullptr);
     juce::Array<juce::var> ct;for(auto&t:userThemes)ct.add(kyoto::ThemeManager::toVar(t));root.setProperty("customThemes",juce::var(juce::JSON::toString(juce::var(ct))),nullptr);
     auto chain=kyoto::InstrumentPreset{}; chain.expertFxChain=expertFxChain; root.setProperty("expertFxChain",juce::var(juce::JSON::toString(kyoto::presetToVar(chain))),nullptr);
@@ -221,7 +242,7 @@ void KyotoSpxritProcessor::setStateInformation(const void* data, int sizeInBytes
     dreamTheme = root.getProperty("dreamTheme").toString();
     uiMode = (kyoto::UiVariant) juce::jlimit(
         0, 3, (int) root.getProperty("uiVariant", 0));
-    expertMode = (bool) root.getProperty("expertMode", false);
+    expertMode.store((bool) root.getProperty("expertMode", false), std::memory_order_release);
 
     builderLayout = kyoto::defaultLayout();
     const auto layoutJson = root.getProperty("builderLayout").toString();
@@ -299,7 +320,49 @@ void KyotoSpxritProcessor::addModule(const juce::String&id){ if(id.isEmpty())ret
 void KyotoSpxritProcessor::saveModule(const juce::String&name){auto p=getInstrumentPreset(); p.uiLayout=kyoto::layoutToVar(builderLayout); p.uiTheme=kyoto::ThemeManager::toVar(activeTheme);p.name=name.trim().isEmpty()?"KyotoSpxrit Instrument":name.trim();p.id=p.name.toLowerCase().replaceCharacters(" ","-");if(!modules.contains(p.id))modules.add(p.id);currentModule=p.id;modulePresets[p.id.toStdString()]=p;}
 bool KyotoSpxritProcessor::loadModule(const juce::String&id){auto it=modulePresets.find(id.toStdString());if(it==modulePresets.end())return false;currentModule=id;setInstrumentPreset(it->second);return true;}
 bool KyotoSpxritProcessor::hasModules()const{return modules.size()>0;} juce::String KyotoSpxritProcessor::activeModule()const{return currentModule;} void KyotoSpxritProcessor::setActiveModule(const juce::String&id){currentModule=id;loadModule(id);}
-kyoto::InstrumentPreset KyotoSpxritProcessor::getInstrumentPreset()const{kyoto::InstrumentPreset p;p.id=currentModule.isEmpty()?"custom":currentModule;p.name=currentModule.isEmpty()?"KyotoSpxrit Init":currentModule;p.osc1=(int)state.getRawParameterValue("osc1")->load();p.osc2=(int)state.getRawParameterValue("osc2")->load();p.osc3=(int)state.getRawParameterValue("osc3")->load();p.mix1=state.getRawParameterValue("oscMix1")->load();p.mix2=state.getRawParameterValue("oscMix2")->load();p.mix3=state.getRawParameterValue("oscMix3")->load();p.detune2=state.getRawParameterValue("detune2")->load();p.detune3=state.getRawParameterValue("detune3")->load();p.octave=(int)state.getRawParameterValue("octave")->load();p.cutoff=state.getRawParameterValue("cutoff")->load();p.resonance=state.getRawParameterValue("resonance")->load();p.attack=state.getRawParameterValue("attack")->load();p.decay=state.getRawParameterValue("decay")->load();p.sustain=state.getRawParameterValue("sustain")->load();p.release=state.getRawParameterValue("release")->load();p.noise=state.getRawParameterValue("noise")->load();p.drive=state.getRawParameterValue("drive")->load();p.lfoRate=state.getRawParameterValue("lfoRate")->load();p.lfoDepth=state.getRawParameterValue("lfoDepth")->load();p.arp=state.getRawParameterValue("arp")->load()>0.5f;p.arpRate=state.getRawParameterValue("arpRate")->load();for(int i=0;i<fxSlots;i++){p.fx[i]=fxIndex(i);p.fxAmount[i]=amount[p.fx[i]]->load();} p.expertFxChain=expertFxChain; p.uiLayout=kyoto::layoutToVar(builderLayout); p.uiTheme=kyoto::ThemeManager::toVar(activeTheme); return p;}
+kyoto::InstrumentPreset KyotoSpxritProcessor::getInstrumentPreset() const
+{
+    auto raw = [this](const char* id, float fallback) {
+        if (auto* v = state.getRawParameterValue(id))
+            return v->load();
+        return fallback;
+    };
+    kyoto::InstrumentPreset p;
+    p.id = currentModule.isEmpty() ? "custom" : currentModule;
+    p.name = currentModule.isEmpty() ? "KyotoSpxrit Init" : currentModule;
+    p.osc1 = (int) raw("osc1", 0);
+    p.osc2 = (int) raw("osc2", 3);
+    p.osc3 = (int) raw("osc3", 1);
+    p.mix1 = raw("oscMix1", 0.8f);
+    p.mix2 = raw("oscMix2", 0.35f);
+    p.mix3 = raw("oscMix3", 0.2f);
+    p.detune2 = raw("detune2", 7);
+    p.detune3 = raw("detune3", -7);
+    p.octave = (int) raw("octave", 0);
+    p.cutoff = raw("cutoff", 0.72f);
+    p.resonance = raw("resonance", 0.15f);
+    p.attack = raw("attack", 0.01f);
+    p.decay = raw("decay", 0.18f);
+    p.sustain = raw("sustain", 0.72f);
+    p.release = raw("release", 0.25f);
+    p.noise = raw("noise", 0);
+    p.drive = raw("drive", 0);
+    p.lfoRate = raw("lfoRate", 4);
+    p.lfoDepth = raw("lfoDepth", 0);
+    p.arp = raw("arp", 0) > 0.5f;
+    p.arpRate = raw("arpRate", 8);
+    for (int i = 0; i < fxSlots; ++i)
+    {
+        p.fx[i] = fxIndex(i);
+        auto* amt = amount[(size_t) p.fx[i]];
+        p.fxAmount[i] = amt != nullptr ? amt->load() : 0.5f;
+    }
+    p.expertFxChain = expertFxChain;
+    p.uiLayout = kyoto::layoutToVar(builderLayout);
+    p.uiTheme = kyoto::ThemeManager::toVar(activeTheme);
+    return p;
+}
+
 void KyotoSpxritProcessor::setInstrumentPreset(const kyoto::InstrumentPreset& p)
 {
     auto setFloat = [&](const char* name, float value)
@@ -395,7 +458,7 @@ void KyotoSpxritProcessor::setInstrumentPreset(const kyoto::InstrumentPreset& p)
     synth.setPreset(p);
 }
 void KyotoSpxritProcessor::savePreset(const juce::String&name){saveModule(name);}
-int KyotoSpxritProcessor::fxIndex(int slot)const{return juce::jlimit(0,199,(int)std::round(fxSelect[juce::jlimit(0,fxSlots-1,slot)]->load()));}
+int KyotoSpxritProcessor::fxIndex(int slot)const{auto* p=fxSelect[(size_t)juce::jlimit(0,fxSlots-1,slot)]; if(p==nullptr) return juce::jlimit(0,199,slot); return juce::jlimit(0,199,(int)std::round(p->load()));}
 void KyotoSpxritProcessor::setFxIndex(int slot, int idx)
 {
     if (slot < 0 || slot >= fxSlots)

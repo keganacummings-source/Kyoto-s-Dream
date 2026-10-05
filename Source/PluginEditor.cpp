@@ -35,7 +35,7 @@ class KyotoSpxritEditor::FxRow : public juce::Component {
 public:
     FxRow(KyotoSpxritEditor& e,size_t i):ed(e),index(i){
         addAndMakeVisible(effect); addAndMakeVisible(amount); addAndMakeVisible(tone); addAndMakeVisible(motion); addAndMakeVisible(mix); addAndMakeVisible(shape); addAndMakeVisible(remove);
-        effect.addItem("Select effect",1); for(int n=0;n<200;n++) effect.addItem(juce::String(n+1)+"  "+juce::String(dm::featureNames[n].data()),n+2);
+        effect.addItem("Select effect",1); for(int n=0;n<200;n++) effect.addItem(juce::String(n+1)+"  "+juce::String(dm::featureNames[n].data(), (int) dm::featureNames[n].size()),n+2);
         for(auto*s:{&amount,&tone,&motion,&mix,&shape}){s->setRange(0,1,0.001);s->setTextBoxStyle(juce::Slider::TextBoxRight,false,48,18);}
         remove.setButtonText("×"); remove.onClick=[this]{auto*editor=&ed; auto i=index; juce::MessageManager::callAsync([editor,i]{editor->proc.removeFxSlot(i); editor->rebuildFxRows();});};
         effect.onChange=[this]{auto c=ed.proc.fxChain();if(index<c.size()){c[index].effect=effect.getSelectedId()-2;ed.proc.setFxChainSlot(index,c[index]);if(!ed.proc.isExpertMode()&&index<KyotoSpxritProcessor::fxSlots)ed.proc.setFxIndex((int)index,c[index].effect);}};
@@ -138,7 +138,7 @@ KyotoSpxritEditor::KyotoSpxritEditor(KyotoSpxritProcessor&p):AudioProcessorEdito
     canvas=std::make_unique<BuilderCanvas>(*this);addAndMakeVisible(*canvas); canvas->setVisible(false);
     moduleModel=std::make_unique<ModuleModel>(*this);modules.setModel(moduleModel.get());communityModel=std::make_unique<CommunityModel>(*this);communityList.setModel(communityModel.get());
     expert.setToggleState(proc.isExpertMode(),juce::dontSendNotification);
-    populateThemes();refreshFeed();refreshCommunity();syncBuilderFromProcessor();startTimer(12000);show(Home);
+    populateThemes();syncBuilderFromProcessor();startTimer(12000);show(Home);
 }
 KyotoSpxritEditor::~KyotoSpxritEditor(){stopTimer();}
 void KyotoSpxritEditor::style(juce::Button&b){b.setColour(juce::TextButton::buttonColourId,proc.theme().panel);b.setColour(juce::TextButton::textColourOffId,proc.theme().accent);b.setColour(juce::TextButton::buttonOnColourId,proc.theme().accentDim);}

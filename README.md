@@ -1,5 +1,30 @@
 # KyotoSpxrit
 
+Native VST3 instrument and FX. Version 0.2.4 is the FL Studio Windows fix.
+
+## Open this in FL Studio (Windows)
+
+The plugin was crashing FL on load. 0.2.4 fixes the three host-killers:
+
+- Every automatable parameter now has a unique name. FL aborts if two parameters share a name, and 0.2.3 still named 200 controls "Amount", "Tone", "Motion", "Mix" and "Shape".
+- Both plugins accept the disabled / mono / stereo input layouts FL probes while scanning. The instrument previously had no input bus, so that probe failed inside the host.
+- The Windows artifact is a real `.vst3` bundle. Do not flatten the folder.
+
+Build it by pushing this folder to GitHub. The Actions workflow `Build KyotoSpxrit` uploads `KyotoSpxrit-Windows-VST3.zip`.
+
+Install:
+
+1. Quit FL Studio.
+2. Delete any older `KyotoSpxrit.vst3` and `KyotoSpxritFX.vst3` from `C:\Program Files\Common Files\VST3` and from FL's extra search paths.
+3. Unzip the Actions artifact. You must end up with folders named `KyotoSpxrit.vst3` and `KyotoSpxritFX.vst3`, each containing `Contents\x86_64-win\`.
+4. Copy those two folders into `C:\Program Files\Common Files\VST3`.
+5. In FL: Options > Manage plugins. Remove the old KyotoSpxrit entries (a failed scan stays cached). Then Find more plugins, or rescan.
+6. Load **KyotoSpxrit** as a generator. Load **KyotoSpxrit FX** on a mixer slot.
+
+If FL still opens the old binary, the database entry is stale. Remove it and rescan. Do not put the zip itself on the plugin path.
+
+
+
 KyotoSpxrit is a native, modular VST3 platform for **FL Studio and Ableton on Windows and macOS**. It is intentionally split into a stable native audio core and updateable/community content.
 
 ## What ships in this build

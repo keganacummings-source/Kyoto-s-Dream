@@ -49,13 +49,13 @@ public:
     juce::String themeId() const { return dreamTheme; }
     void setUiVariant(kyoto::UiVariant v); kyoto::UiVariant uiVariant() const { return uiMode; }
     const kyoto::BuilderLayout& uiLayout() const { return builderLayout; } void setUiLayout(const kyoto::BuilderLayout& l) { builderLayout=l; }
-    void setExpertMode(bool b) { expertMode=b; } bool isExpertMode() const { return expertMode; }
+    void setExpertMode(bool b) { expertMode.store(b, std::memory_order_release); } bool isExpertMode() const { return expertMode.load(std::memory_order_acquire); }
     void addCustomTheme(const kyoto::ThemePalette& t);
     const std::vector<kyoto::ThemePalette>& customThemes() const { return userThemes; }
 
     static constexpr int fxSlots=8;
     static constexpr int expertSnapshotBuffers=3;
-    static constexpr const char* version="0.2.3";
+    static constexpr const char* version="0.2.4";
 private:
     static constexpr bool isFxBuild =
     #if defined(KYOTO_IS_FX)
@@ -72,10 +72,11 @@ private:
     std::atomic<int> activeExpertSnapshot{0};
     std::array<std::atomic<int>, expertSnapshotBuffers> expertSnapshotReaders{};
     void publishExpertSnapshot();
-    kyoto::ThemePalette activeTheme; kyoto::BuilderLayout builderLayout=kyoto::defaultLayout(); kyoto::UiVariant uiMode=kyoto::UiVariant::Classic; bool expertMode=false; std::vector<kyoto::ThemePalette> userThemes;
+    kyoto::ThemePalette activeTheme; kyoto::BuilderLayout builderLayout=kyoto::defaultLayout(); kyoto::UiVariant uiMode=kyoto::UiVariant::Classic; std::atomic<bool> expertMode{false}; std::vector<kyoto::ThemePalette> userThemes;
     std::map<std::string,kyoto::InstrumentPreset> modulePresets;
     std::array<std::atomic<float>*,kyoto::kNumEffects> enabled{}; std::array<std::atomic<float>*,kyoto::kNumEffects> amount{},tone{},motion{},mix{},shape{};
     std::array<std::atomic<float>*,fxSlots> fxSelect{};
+    bool prepared = false;
     std::vector<kyoto::FxSlot> expertFxChain;
     juce::StringArray modules; juce::String currentModule=""; juce::String dreamToken,dreamUser,dreamRole,dreamTheme;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(KyotoSpxritProcessor)

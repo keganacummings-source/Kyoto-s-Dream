@@ -64,8 +64,11 @@ void InstrumentEngine::renderSample(float&l,float&r){
     l=std::tanh(l*0.8f);r=std::tanh(r*0.8f);
 }
 void InstrumentEngine::render(juce::AudioBuffer<float>&buffer,juce::MidiBuffer&midi){
+    if (sr < 8000.0 || buffer.getNumChannels() <= 0 || buffer.getNumSamples() <= 0)
+        return;
     for(const auto metadata:midi){auto m=metadata.getMessage();if(m.isNoteOn())noteOn(m.getNoteNumber(),m.getFloatVelocity());else if(m.isNoteOff())noteOff(m.getNoteNumber());else if(m.isAllNotesOff()||m.isAllSoundOff())allNotesOff();}
-    auto*L=buffer.getWritePointer(0);auto*R=buffer.getNumChannels()>1?buffer.getWritePointer(1):nullptr;
-    for(int i=0;i<buffer.getNumSamples();++i){float l,r;renderSample(l,r);L[i]+=l;if(R)R[i]+=r;}
+    auto*L=buffer.getWritePointer(0); if (L == nullptr) return;
+    auto*R=buffer.getNumChannels()>1?buffer.getWritePointer(1):nullptr;
+    for(int i=0;i<buffer.getNumSamples();++i){float l,r;renderSample(l,r); if(!std::isfinite(l)) l=0; if(!std::isfinite(r)) r=0; L[i]+=l;if(R)R[i]+=r;}
 }
 }
