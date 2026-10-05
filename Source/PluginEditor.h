@@ -53,6 +53,7 @@ public:
     ~KyotoAudioProcessorEditor() override;
     void paint(juce::Graphics&) override;
     void resized() override;
+    void mouseDown(const juce::MouseEvent&) override;
 
 private:
     void timerCallback() override;
@@ -75,7 +76,12 @@ private:
     void loadWav();
     void saveEffect();
     void publishEffect();
+    void addSpecialChainStep(int type, const juce::String& name);
     void refreshEffectBox();
+    void updateFxControls();
+    void selectFxStep(int index);
+    void writeFxStepFromControls();
+    void randomizeFxControls();
     juce::File sessionFile() const;
     juce::File moduleDir() const;
     juce::File effectDir() const;
@@ -103,10 +109,12 @@ private:
 
     juce::TextEditor nameBox, effectNameBox;
     juce::ComboBox gridStyleBox, localBox, kindBox, effectBox;
-    juce::TextButton addBtn { "ADD NEXT" }, saveBtn { "SAVE" }, upBtn { "UPLOAD" }, wavBtn { "LOAD WAV" };
+    juce::TextButton addBtn { "ADD NEXT" }, saveBtn { "SAVE" }, upBtn { "UPLOAD" }, wavBtn { "LOAD WAV" }, chainBreakBtn { "BREAK" }, chainMixBtn { "MIX" };
     juce::TextButton fxAddBtn { "STACK FX" }, fxSaveBtn { "SAVE EFFECT" }, fxUpBtn { "UPLOAD EFFECT" };
-    juce::Slider fxAmount;
-    juce::Label stackLabel;
+    juce::Slider fxAmount, fxTone, fxMotion, fxMix, fxShape;
+    juce::Label fxAmountLabel, fxToneLabel, fxMotionLabel, fxMixLabel, fxShapeLabel, stackLabel;
+    juce::TextButton fxBreakBtn { "CHAIN BREAK" }, fxMixBtn { "MASTER MIX" }, fxRandomBtn { "RANDOMIZE" }, fxClearBtn { "CLEAR" };
+    int selectedFxStep = -1;
     juce::Component panel;
     std::unique_ptr<FxBrowser> fxBrowser;
     juce::OwnedArray<CanvasWidget> widgets;

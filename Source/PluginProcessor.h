@@ -1,11 +1,16 @@
 #pragma once
 #include <JuceHeader.h>
+#include <array>
 #include <atomic>
 #include <vector>
 
 class KyotoAudioProcessor : public juce::AudioProcessor
 {
 public:
+    static constexpr int kMaxSlots = 32;
+    static constexpr int kMixType = 200;
+    static constexpr int kBreakType = 201;
+
     KyotoAudioProcessor();
     ~KyotoAudioProcessor() override;
 
@@ -33,7 +38,7 @@ public:
     void setStateInformation(const void* data, int sizeInBytes) override;
 
     bool isFx() const;
-    int slotCount() const { return isFx() ? 12 : 8; }
+    int slotCount() const { return isFx() ? 32 : 16; }
 
     void noteOn(int note, float vel);
     void noteOff(int note);
@@ -54,19 +59,54 @@ private:
         float phase = 0.f, sub = 0.f, env = 0.f, vel = 0.8f;
         int stage = 3;
     };
+
     struct SlotDsp
     {
         float lp[2] {}, hp[2] {}, bp[2] {}, lfo = 0.f;
         std::vector<float> delay[2];
-        int w = 0;
+        int write = 0;
     };
 
+    struct SlotParams
+    {
+        std::atomic<float>* on = nullptr;
+        std::atomic<float>* type = nullptr;
+        std::atomic<float>* amount = nullptr;
+        std::atomic<float>* tone = nullptr;
+        std::atomic<float>* motion = nullptr;
+        std::atomic<float>* mix = nullptr;
+        std::atomic<float>* shape = nullptr;
+    };
+
+    struct BlockSlotConfig
+    {
+        bool on = false;
+        int type = 0;
+        float amount = 0.45f, tone = 0.5f, motion = 0.35f, mix = 0.4f, shape = 0.5f;
+    };
+
+    static juce::String slotId(int i, const char* tail);
+    void cacheParameters();
     float renderVoice(Voice& v);
-    float applySlot(int slot, int ch, float x);
+    void applySlotStereo(int slot, float& left, float& right);
+    void processChain(float& left, float& right, float original);
 
     Voice voices[8];
-    SlotDsp slotDsp[12];
+    SlotDsp slotDsp[kMaxSlots];
+    SlotParams slotParams[kMaxSlots];
+    BlockSlotConfig blockConfig[kMaxSlots];
+
+    std::atomic<float>* oscParam = nullptr;
+    std::atomic<float>* cutoffParam = nullptr;
+    std::atomic<float>* attackParam = nullptr;
+    std::atomic<float>* decayParam = nullptr;
+    std::atomic<float>* sustainParam = nullptr;
+    std::atomic<float>* releaseParam = nullptr;
+    std::atomic<float>* subParam = nullptr;
+    std::atomic<float>* noiseParam = nullptr;
+
     double sampleRateHz = 44100.0;
+    int maxDelaySamples = 0;
 
     static constexpr int scopeN = 256;
     float scope[scopeN] {};
@@ -76,6 +116,7 @@ private:
     double sampleRateFile = 44100.0;
     std::atomic<int> samplePos { -1 };
     juce::CriticalSection sampleLock;
+    juce::Random noiseRng;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(KyotoAudioProcessor)
 };

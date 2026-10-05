@@ -2,6 +2,8 @@
 #include "DreamApi.h"
 #include "FxCatalog.h"
 #include <thread>
+#include <array>
+#include <initializer_list>
 
 namespace
 {
@@ -210,7 +212,7 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     setResizeLimits(900, 560, 1600, 1000);
 
     for (auto* b : { &shareBtn, &chainBtn, &fxBtn, &logoutBtn, &loginBtn, &sendBtn, &feedBtn,
-                     &addBtn, &saveBtn, &upBtn, &wavBtn, &fxAddBtn, &fxSaveBtn, &fxUpBtn, &chatRefreshBtn, &threadsBtn, &socialBtn, &dmBtn, &adminDeleteBtn })
+                     &addBtn, &saveBtn, &upBtn, &wavBtn, &chainBreakBtn, &chainMixBtn, &fxAddBtn, &fxSaveBtn, &fxUpBtn, &fxBreakBtn, &fxMixBtn, &fxRandomBtn, &fxClearBtn, &chatRefreshBtn, &threadsBtn, &socialBtn, &dmBtn, &adminDeleteBtn })
     {
         addAndMakeVisible(b);
         b->setClickingTogglesState(false);
@@ -229,6 +231,8 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     adminDeleteBtn.onClick = [this] { if (selectedCatalogId.isNotEmpty()) deleteCatalogId(selectedCatalogId); };
     utilityGoBtn.onClick = [this] { chatUtility(utilityActionBox.getText()); };
     addBtn.onClick = [this] { addSeriesStep(); };
+    chainBreakBtn.onClick = [this] { addSpecialChainStep(KyotoAudioProcessor::kBreakType, "CHAIN BREAK"); };
+    chainMixBtn.onClick = [this] { addSpecialChainStep(KyotoAudioProcessor::kMixType, "MASTER MIX"); };
     saveBtn.onClick = [this] { saveLocal(); };
     upBtn.onClick = [this] { publish(); };
     wavBtn.onClick = [this] { loadWav(); };
@@ -238,11 +242,36 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
         step.setProperty("fx", type, nullptr);
         step.setProperty("name", kt::kFx[juce::jlimit(0, kt::kFxCount - 1, type)].name, nullptr);
         step.setProperty("amount", (double) fxAmount.getValue(), nullptr);
+        step.setProperty("tone", (double)fxTone.getValue(), nullptr);
+        step.setProperty("motion", (double)fxMotion.getValue(), nullptr);
+        step.setProperty("mix", (double)fxMix.getValue(), nullptr);
+        step.setProperty("shape", (double)fxShape.getValue(), nullptr);
         fxStack.appendChild(step, nullptr);
+        selectFxStep(fxStack.getNumChildren() - 1);
         stackLabel.setText("Stack " + juce::String(fxStack.getNumChildren()) + " effects — themed signal chain", juce::dontSendNotification);
     };
     fxSaveBtn.onClick = [this] { saveEffect(); };
     fxUpBtn.onClick = [this] { publishEffect(); };
+    fxBreakBtn.onClick = [this] {
+        auto step = juce::ValueTree("step");
+        step.setProperty("fx", KyotoAudioProcessor::kBreakType, nullptr);
+        step.setProperty("name", "CHAIN BREAK", nullptr);
+        step.setProperty("amount", 1.0, nullptr);
+        step.setProperty("tone", 0.5, nullptr); step.setProperty("motion", 0.5, nullptr);
+        step.setProperty("mix", 1.0, nullptr); step.setProperty("shape", 0.5, nullptr);
+        fxStack.appendChild(step, nullptr); selectFxStep(fxStack.getNumChildren() - 1);
+    };
+    fxMixBtn.onClick = [this] {
+        auto step = juce::ValueTree("step");
+        step.setProperty("fx", KyotoAudioProcessor::kMixType, nullptr);
+        step.setProperty("name", "MASTER MIX", nullptr);
+        step.setProperty("amount", 1.0, nullptr);
+        step.setProperty("tone", 0.5, nullptr); step.setProperty("motion", 0.5, nullptr);
+        step.setProperty("mix", 1.0, nullptr); step.setProperty("shape", 0.5, nullptr);
+        fxStack.appendChild(step, nullptr); selectFxStep(fxStack.getNumChildren() - 1);
+    };
+    fxRandomBtn.onClick = [this] { randomizeFxControls(); };
+    fxClearBtn.onClick = [this] { fxStack.removeAllChildren(nullptr); selectedFxStep = -1; stackLabel.setText("Empty effect — build something worth saving", juce::dontSendNotification); };
 
     addAndMakeVisible(status);
     addAndMakeVisible(whoLabel);
@@ -262,6 +291,9 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     addAndMakeVisible(kindBox);
     addAndMakeVisible(effectBox);
     addAndMakeVisible(fxAmount);
+    addAndMakeVisible(fxTone); addAndMakeVisible(fxMotion); addAndMakeVisible(fxMix); addAndMakeVisible(fxShape);
+    addAndMakeVisible(fxAmountLabel); addAndMakeVisible(fxToneLabel); addAndMakeVisible(fxMotionLabel); addAndMakeVisible(fxMixLabel); addAndMakeVisible(fxShapeLabel);
+    addAndMakeVisible(fxBreakBtn); addAndMakeVisible(fxMixBtn); addAndMakeVisible(fxRandomBtn); addAndMakeVisible(fxClearBtn);
     addAndMakeVisible(stackLabel);
     addAndMakeVisible(panel);
 
@@ -281,6 +313,12 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     fxAmount.setValue(0.55);
     fxAmount.setSliderStyle(juce::Slider::LinearHorizontal);
     fxAmount.setTextBoxStyle(juce::Slider::TextBoxRight, false, 48, 18);
+    auto setupFx = [](juce::Slider& s) { s.setRange(0.0, 1.0, 0.001); s.setValue(0.5); s.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag); s.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 52, 16); };
+    setupFx(fxTone); setupFx(fxMotion); setupFx(fxMix); setupFx(fxShape);
+    auto setupLabel = [](juce::Label& l, const juce::String& text) { l.setText(text, juce::dontSendNotification); l.setJustificationType(juce::Justification::centred); };
+    setupLabel(fxAmountLabel, "AMOUNT"); setupLabel(fxToneLabel, "TONE"); setupLabel(fxMotionLabel, "MOTION"); setupLabel(fxMixLabel, "MIX"); setupLabel(fxShapeLabel, "SHAPE");
+    for (auto* s : { &fxTone, &fxMotion, &fxMix, &fxShape }) s->onValueChange = [this] { writeFxStepFromControls(); };
+    fxAmount.onValueChange = [this] { writeFxStepFromControls(); };
 
     for (int i = 0; i < 10; ++i)
         gridStyleBox.addItem(kGrids[i], i + 1);
@@ -311,7 +349,9 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     };
 
     fxBrowser = std::make_unique<FxBrowser>(proc);
+    fxBrowser->onSelect = [this](int) { updateFxControls(); };
     addAndMakeVisible(*fxBrowser);
+    updateFxControls();
     catalogView.setViewedComponent(&catalogHolder, false);
 
     auto session = juce::JSON::parse(sessionFile().loadFileAsString());
@@ -327,7 +367,7 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
         setLoggedIn(false);
     applyTheme(proc.uiState.getProperty("theme", "trippah").toString());
     refreshEffectBox();
-    startTimerHz(12);
+    startTimerHz(8);
 }
 
 KyotoAudioProcessorEditor::~KyotoAudioProcessorEditor() { catalogView.setViewedComponent(nullptr, false); }
@@ -375,54 +415,76 @@ void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
     g.fillRoundedRectangle(0, 0, (float)getWidth(), 44.f, 10.f);
     g.setColour(kt::c(theme.accent));
     g.setFont(juce::FontOptions(16.f).withStyle("Bold"));
-    g.drawText(proc.getName(), 12, 8, 180, 26, juce::Justification::centredLeft);
+    g.drawText("DREAMSHARE", 18, 6, 170, 22, juce::Justification::centredLeft);
+    g.setColour(kt::c(theme.muted));
+    g.setFont(juce::FontOptions(9.f));
+    g.drawText("KYOTRIPPAH FX  /  BUILD • PLAY • SHARE", 18, 27, 260, 12, juce::Justification::left);
 
-    if (tab == 2)
+    if (tab == 0 && loggedIn)
     {
-        auto a = panel.getBounds().toFloat();
-        if (!a.isEmpty())
-        {
-            a = juce::Rectangle<float>((float)(getWidth()/3 + 20), 118.f, (float)(getWidth() - getWidth()/3 - 40), (float)(getHeight()-150));
-            g.setColour(kt::c(theme.panel).withAlpha(0.90f)); g.fillRoundedRectangle(a, 14.f);
-            g.setColour(kt::c(theme.border)); g.drawRoundedRectangle(a,14.f,1.f);
-            g.setColour(kt::c(theme.accent)); g.setFont(juce::FontOptions(13.f).withStyle("Bold"));
-            g.drawText("EFFECT STACK", a.getX()+18.f, a.getY()+12.f, 180.f, 22.f, juce::Justification::left);
-            const int cols=4; const float cw=(a.getWidth()-36.f)/cols, ch=82.f;
-            for(int i=0;i<fxStack.getNumChildren();++i)
-            {
-                auto st=fxStack.getChild(i); int col=i%cols,row=i/cols;
-                auto r=juce::Rectangle<float>(a.getX()+12.f+col*cw,a.getY()+42.f+row*(ch+10.f),cw-8.f,ch);
-                g.setColour(kt::c(theme.panel).brighter(0.10f)); g.fillRoundedRectangle(r,9.f);
-                g.setColour(kt::c(theme.accent).withAlpha(0.55f)); g.drawRoundedRectangle(r,9.f,1.2f);
-                g.setColour(kt::c(theme.text)); g.setFont(juce::FontOptions(11.f).withStyle("Bold"));
-                g.drawText(juce::String(i+1)+"  "+st.getProperty("name").toString(),r.getX()+8,r.getY()+8,r.getWidth()-16,24,juce::Justification::left);
-                g.setColour(kt::c(theme.muted)); g.setFont(juce::FontOptions(10.f));
-                g.drawText("AMOUNT  "+juce::String((double)st.getProperty("amount"),2),r.getX()+8,r.getBottom()-24,r.getWidth()-16,16,juce::Justification::left);
-                if(i+1<fxStack.getNumChildren()) { g.setColour(kt::c(theme.accent).withAlpha(0.55f)); g.drawLine(r.getRight()-2,r.getCentreY(),r.getRight()+8,r.getCentreY(),2.f); }
-            }
-        }
+        auto rail = juce::Rectangle<float>(12.f, 62.f, 188.f, (float)getHeight() - 74.f);
+        auto main = juce::Rectangle<float>(214.f, 62.f, (float)getWidth() - 226.f, (float)getHeight() - 74.f);
+        g.setColour(kt::c(theme.panel).withAlpha(0.93f)); g.fillRoundedRectangle(rail, 14.f);
+        g.setColour(kt::c(theme.border)); g.drawRoundedRectangle(rail, 14.f, 1.f);
+        g.setColour(kt::c(theme.panel).withAlpha(0.82f)); g.fillRoundedRectangle(main, 16.f);
+        g.setColour(kt::c(theme.border)); g.drawRoundedRectangle(main, 16.f, 1.f);
+        g.setColour(kt::c(theme.accent)); g.setFont(juce::FontOptions(20.f).withStyle("Bold"));
+        g.drawText("THE ROOM", rail.getX()+16.f, rail.getY()+18.f, 150.f, 28.f, juce::Justification::left);
+        g.setColour(kt::c(theme.text)); g.setFont(juce::FontOptions(13.f).withStyle("Bold"));
+        g.drawText("A listening room.
+Not another timeline.", rail.getX()+16.f, rail.getY()+54.f, 150.f, 52.f, juce::Justification::left);
+        g.setColour(kt::c(theme.muted)); g.setFont(juce::FontOptions(10.f));
+        g.drawText("LIVE FEED", rail.getX()+16.f, rail.getBottom()-86.f, 150.f, 16.f, juce::Justification::left);
+        g.drawText("CATALOG", rail.getX()+16.f, rail.getBottom()-62.f, 150.f, 16.f, juce::Justification::left);
+        g.drawText("BUILDER", rail.getX()+16.f, rail.getBottom()-38.f, 150.f, 16.f, juce::Justification::left);
+        g.setColour(kt::c(theme.accent).withAlpha(0.25f));
+        g.fillRoundedRectangle(main.getX()+16.f, main.getY()+14.f, main.getWidth()-32.f, 34.f, 8.f);
+        g.setColour(kt::c(theme.text)); g.setFont(juce::FontOptions(12.f).withStyle("Bold"));
+        g.drawText("THE FLOOR", main.getX()+28.f, main.getY()+22.f, 120.f, 18.f, juce::Justification::left);
+        g.setColour(kt::c(theme.muted)); g.setFont(juce::FontOptions(9.f));
+        g.drawText("DreamShare activity + your module shelf", main.getX()+145.f, main.getY()+23.f, main.getWidth()-170.f, 16.f, juce::Justification::left);
     }
 
     if (tab == 2)
     {
-        auto a = panel.getBounds().toFloat();
-        a = juce::Rectangle<float>((float)(getWidth()/3 + 20), 118.f, (float)(getWidth() - getWidth()/3 - 40), (float)(getHeight()-150));
-        g.setColour(kt::c(theme.panel).withAlpha(0.90f)); g.fillRoundedRectangle(a, 14.f);
-        g.setColour(kt::c(theme.border)); g.drawRoundedRectangle(a,14.f,1.f);
-        g.setColour(kt::c(theme.accent)); g.setFont(juce::FontOptions(13.f).withStyle("Bold"));
-        g.drawText("EFFECT STACK", a.getX()+18.f, a.getY()+12.f, 180.f, 22.f, juce::Justification::left);
-        const int cols=4; const float cw=(a.getWidth()-36.f)/cols, ch=82.f;
-        for(int i=0;i<fxStack.getNumChildren();++i)
+        auto a = juce::Rectangle<float>((float)(getWidth() * 0.38f), 112.f,
+                                        (float)(getWidth() * 0.60f), (float)(getHeight() - 132.f));
+        g.setColour(kt::c(theme.panel).withAlpha(0.94f));
+        g.fillRoundedRectangle(a, 16.f);
+        g.setColour(kt::c(theme.border));
+        g.drawRoundedRectangle(a, 16.f, 1.0f);
+        g.setColour(kt::c(theme.accent));
+        g.setFont(juce::FontOptions(14.f).withStyle("Bold"));
+        g.drawText("EFFECT DESIGN LAB", a.getX() + 18.f, a.getY() + 12.f, 240.f, 22.f, juce::Justification::left);
+        g.setColour(kt::c(theme.muted));
+        g.setFont(juce::FontOptions(10.f));
+        g.drawText("Deep controls live here — chains stay simple.", a.getX() + 18.f, a.getY() + 34.f, 280.f, 18.f, juce::Justification::left);
+
+        const int cols = 4;
+        const float cw = (a.getWidth() - 38.f) / cols;
+        const float ch = 74.f;
+        for (int i = 0; i < fxStack.getNumChildren(); ++i)
         {
-            auto st=fxStack.getChild(i); int col=i%cols,row=i/cols;
-            auto r=juce::Rectangle<float>(a.getX()+12.f+col*cw,a.getY()+42.f+row*(ch+10.f),cw-8.f,ch);
-            g.setColour(kt::c(theme.panel).brighter(0.10f)); g.fillRoundedRectangle(r,9.f);
-            g.setColour(kt::c(theme.accent).withAlpha(0.55f)); g.drawRoundedRectangle(r,9.f,1.2f);
-            g.setColour(kt::c(theme.text)); g.setFont(juce::FontOptions(11.f).withStyle("Bold"));
-            g.drawText(juce::String(i+1)+"  "+st.getProperty("name").toString(),r.getX()+8,r.getY()+8,r.getWidth()-16,24,juce::Justification::left);
-            g.setColour(kt::c(theme.muted)); g.setFont(juce::FontOptions(10.f));
-            g.drawText("AMOUNT  "+juce::String((double)st.getProperty("amount"),2),r.getX()+8,r.getBottom()-24,r.getWidth()-16,16,juce::Justification::left);
-            if(i+1<fxStack.getNumChildren()) { g.setColour(kt::c(theme.accent).withAlpha(0.55f)); g.drawLine(r.getRight()-2,r.getCentreY(),r.getRight()+8,r.getCentreY(),2.f); }
+            auto st = fxStack.getChild(i);
+            const int col = i % cols, row = i / cols;
+            auto r = juce::Rectangle<float>(a.getX() + 10.f + col * cw, a.getY() + 62.f + row * (ch + 8.f), cw - 7.f, ch);
+            const bool selected = i == selectedFxStep;
+            g.setColour(selected ? kt::c(theme.accent).withAlpha(0.20f) : kt::c(theme.panel).brighter(0.08f));
+            g.fillRoundedRectangle(r, 9.f);
+            g.setColour(kt::c(theme.accent).withAlpha(selected ? 0.95f : 0.38f));
+            g.drawRoundedRectangle(r, 9.f, selected ? 2.0f : 1.0f);
+            g.setColour(kt::c(theme.text));
+            g.setFont(juce::FontOptions(11.f).withStyle("Bold"));
+            g.drawText(juce::String(i + 1) + "  " + st.getProperty("name").toString(), r.getX() + 8.f, r.getY() + 7.f, r.getWidth() - 16.f, 20.f, juce::Justification::left);
+            g.setColour(kt::c(theme.muted));
+            g.setFont(juce::FontOptions(9.f));
+            g.drawText("A " + juce::String((double)st.getProperty("amount"), 2) + "  T " + juce::String((double)st.getProperty("tone"), 2) +
+                       "  M " + juce::String((double)st.getProperty("motion"), 2), r.getX() + 8.f, r.getBottom() - 25.f, r.getWidth() - 16.f, 16.f, juce::Justification::left);
+            if (i + 1 < fxStack.getNumChildren())
+            {
+                g.setColour(kt::c(theme.accent).withAlpha(0.40f));
+                g.drawLine(r.getRight() - 1.f, r.getCentreY(), r.getRight() + 7.f, r.getCentreY(), 1.5f);
+            }
         }
     }
 
@@ -454,6 +516,22 @@ void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
     }
 }
 
+void KyotoAudioProcessorEditor::mouseDown(const juce::MouseEvent& e)
+{
+    if (tab != 2) return;
+    auto a = juce::Rectangle<float>((float)(getWidth() * 0.38f), 112.f,
+                                    (float)(getWidth() * 0.60f), (float)(getHeight() - 132.f));
+    const int cols = 4;
+    const float cw = (a.getWidth() - 38.f) / cols;
+    const float ch = 74.f;
+    for (int i = 0; i < fxStack.getNumChildren(); ++i)
+    {
+        const int col = i % cols, row = i / cols;
+        auto r = juce::Rectangle<float>(a.getX() + 10.f + col * cw, a.getY() + 62.f + row * (ch + 8.f), cw - 7.f, ch);
+        if (r.contains(e.position)) { selectFxStep(i); return; }
+    }
+}
+
 void KyotoAudioProcessorEditor::showTab(int next)
 {
     tab = loggedIn ? next : 0;
@@ -473,6 +551,8 @@ void KyotoAudioProcessorEditor::showTab(int next)
     panel.setVisible(chain);
     if (fxBrowser) fxBrowser->setVisible(chain || fx);
     addBtn.setVisible(chain);
+    chainBreakBtn.setVisible(chain);
+    chainMixBtn.setVisible(chain);
     gridStyleBox.setVisible(chain);
     nameBox.setVisible(chain);
     localBox.setVisible(chain);
@@ -485,7 +565,9 @@ void KyotoAudioProcessorEditor::showTab(int next)
     fxAddBtn.setVisible(fx);
     fxSaveBtn.setVisible(fx);
     fxUpBtn.setVisible(fx);
-    fxAmount.setVisible(fx);
+    fxAmount.setVisible(fx); fxTone.setVisible(fx); fxMotion.setVisible(fx); fxMix.setVisible(fx); fxShape.setVisible(fx);
+    fxAmountLabel.setVisible(fx); fxToneLabel.setVisible(fx); fxMotionLabel.setVisible(fx); fxMixLabel.setVisible(fx); fxShapeLabel.setVisible(fx);
+    fxBreakBtn.setVisible(fx); fxMixBtn.setVisible(fx); fxRandomBtn.setVisible(fx); fxClearBtn.setVisible(fx);
     stackLabel.setVisible(fx);
     shareBtn.setToggleState(share, juce::dontSendNotification);
     chainBtn.setToggleState(chain, juce::dontSendNotification);
@@ -517,21 +599,24 @@ void KyotoAudioProcessorEditor::resized()
     }
     if (tab == 0)
     {
-        auto top = area.removeFromTop(34);
-        themeBox.setBounds(top.removeFromLeft(170)); top.removeFromLeft(6);
-        feedBtn.setBounds(top.removeFromLeft(72)); top.removeFromLeft(4);
+        auto top = area.removeFromTop(36);
+        themeBox.setBounds(top.removeFromLeft(150)); top.removeFromLeft(6);
+        feedBtn.setBounds(top.removeFromLeft(66)); top.removeFromLeft(4);
         chatRefreshBtn.setBounds(top.removeFromLeft(58)); top.removeFromLeft(4);
-        threadsBtn.setBounds(top.removeFromLeft(72)); top.removeFromLeft(4);
-        socialBtn.setBounds(top.removeFromLeft(72)); top.removeFromLeft(4);
-        dmBtn.setBounds(top.removeFromLeft(52)); top.removeFromLeft(4);
-        if (isAdmin) adminDeleteBtn.setBounds(top.removeFromLeft(72));
+        threadsBtn.setBounds(top.removeFromLeft(70)); top.removeFromLeft(4);
+        socialBtn.setBounds(top.removeFromLeft(70)); top.removeFromLeft(4);
+        dmBtn.setBounds(top.removeFromLeft(50));
+        if (isAdmin) { top.removeFromLeft(5); adminDeleteBtn.setBounds(top.removeFromLeft(70)); }
         auto bottom = area.removeFromBottom(38);
-        msgBox.setBounds(bottom.removeFromLeft(bottom.getWidth() - 104)); sendBtn.setBounds(bottom);
-        auto util = area.removeFromBottom(30); utilityBox.setBounds(util.removeFromLeft(util.getWidth()-170)); util.removeFromLeft(6); utilityActionBox.setBounds(util.removeFromLeft(120)); util.removeFromLeft(6); utilityGoBtn.setBounds(util);
-        auto left = area.removeFromLeft(juce::jmax(340, area.getWidth() / 2));
-        logBox.setBounds(left.reduced(0, 6));
-        catalogView.setBounds(area.reduced(6, 6));
-        catalogHolder.setSize(area.getWidth() - 20, juce::jmax(area.getHeight(), (catalog.size() + 1) / 2 * 100));
+        msgBox.setBounds(bottom.removeFromLeft(bottom.getWidth() - 100)); sendBtn.setBounds(bottom);
+        auto util = area.removeFromBottom(30);
+        utilityBox.setBounds(util.removeFromLeft(util.getWidth() - 165)); util.removeFromLeft(5);
+        utilityActionBox.setBounds(util.removeFromLeft(115)); util.removeFromLeft(5); utilityGoBtn.setBounds(util);
+        area.removeFromLeft(190);
+        auto main = area;
+        logBox.setBounds(main.getX()+12, main.getY()+54, (int)(main.getWidth()*0.60f)-18, main.getHeight()-60);
+        catalogView.setBounds(main.getX() + (int)(main.getWidth()*0.60f) + 4, main.getY()+54, (int)(main.getWidth()*0.40f)-12, main.getHeight()-60);
+        catalogHolder.setSize(catalogView.getWidth()-18, juce::jmax(catalogView.getHeight(), (catalog.size()+1)/2*96));
     }
     else if (tab == 1)
     {
@@ -544,9 +629,13 @@ void KyotoAudioProcessorEditor::resized()
         top.removeFromLeft(6);
         effectBox.setBounds(top.removeFromLeft(140));
         top.removeFromLeft(6);
-        addBtn.setBounds(top.removeFromLeft(90));
-        top.removeFromLeft(6);
-        wavBtn.setBounds(top.removeFromLeft(90));
+        addBtn.setBounds(top.removeFromLeft(84));
+        top.removeFromLeft(5);
+        chainBreakBtn.setBounds(top.removeFromLeft(76));
+        top.removeFromLeft(5);
+        chainMixBtn.setBounds(top.removeFromLeft(62));
+        top.removeFromLeft(5);
+        wavBtn.setBounds(top.removeFromLeft(82));
         top.removeFromLeft(6);
         saveBtn.setBounds(top.removeFromLeft(70));
         upBtn.setBounds(top.removeFromLeft(80));
@@ -560,13 +649,22 @@ void KyotoAudioProcessorEditor::resized()
     }
     else
     {
-        auto top = area.removeFromTop(40);
-        effectNameBox.setBounds(top.removeFromLeft(230)); top.removeFromLeft(8);
-        fxAmount.setBounds(top.removeFromLeft(240)); top.removeFromLeft(8);
-        fxAddBtn.setBounds(top.removeFromLeft(100)); top.removeFromLeft(6);
-        fxSaveBtn.setBounds(top.removeFromLeft(110)); top.removeFromLeft(6);
-        fxUpBtn.setBounds(top.removeFromLeft(120));
-        stackLabel.setBounds(area.removeFromTop(30));
+        auto top = area.removeFromTop(54);
+        effectNameBox.setBounds(top.removeFromLeft(180)); top.removeFromLeft(6);
+        fxAmount.setBounds(top.removeFromLeft(90)); top.removeFromLeft(4);
+        fxTone.setBounds(top.removeFromLeft(70)); top.removeFromLeft(4);
+        fxMotion.setBounds(top.removeFromLeft(70)); top.removeFromLeft(4);
+        fxMix.setBounds(top.removeFromLeft(70)); top.removeFromLeft(4);
+        fxShape.setBounds(top.removeFromLeft(70)); top.removeFromLeft(6);
+        fxAddBtn.setBounds(top.removeFromLeft(78)); top.removeFromLeft(4);
+        fxBreakBtn.setBounds(top.removeFromLeft(86)); top.removeFromLeft(4);
+        fxMixBtn.setBounds(top.removeFromLeft(82));
+        auto labels = juce::Rectangle<int>(area.getX(), area.getY() - 3, 420, 18);
+        fxAmountLabel.setBounds(labels.removeFromLeft(90)); fxToneLabel.setBounds(labels.removeFromLeft(74)); fxMotionLabel.setBounds(labels.removeFromLeft(74)); fxMixLabel.setBounds(labels.removeFromLeft(74)); fxShapeLabel.setBounds(labels.removeFromLeft(74));
+        auto tools = area.removeFromTop(34);
+        effectNameBox.setAlwaysOnTop(true);
+        fxSaveBtn.setBounds(tools.removeFromLeft(94)); tools.removeFromLeft(5); fxUpBtn.setBounds(tools.removeFromLeft(94)); tools.removeFromLeft(5); fxRandomBtn.setBounds(tools.removeFromLeft(100)); tools.removeFromLeft(5); fxClearBtn.setBounds(tools.removeFromLeft(80));
+        stackLabel.setBounds(area.removeFromTop(28));
         if (fxBrowser) fxBrowser->setBounds(area.removeFromLeft(300));
     }
 }
@@ -684,7 +782,15 @@ void KyotoAudioProcessorEditor::addSeriesStep()
             if (auto* on = proc.apvts.getParameter(prefix + "on"))
                 on->setValueNotifyingHost(1.f);
             if (auto* a = proc.apvts.getParameter(prefix + "amt"))
-                a->setValueNotifyingHost(a->convertTo0to1((float) s->getProperty("amount")));
+                a->setValueNotifyingHost(a->convertTo0to1((float) s->getProperty("amount", 0.5)));
+            if (auto* a = proc.apvts.getParameter(prefix + "tone"))
+                a->setValueNotifyingHost(a->convertTo0to1((float) s->getProperty("tone", 0.5)));
+            if (auto* a = proc.apvts.getParameter(prefix + "mot"))
+                a->setValueNotifyingHost(a->convertTo0to1((float) s->getProperty("motion", 0.35)));
+            if (auto* a = proc.apvts.getParameter(prefix + "mix"))
+                a->setValueNotifyingHost(a->convertTo0to1((float) s->getProperty("mix", 0.4)));
+            if (auto* a = proc.apvts.getParameter(prefix + "shp"))
+                a->setValueNotifyingHost(a->convertTo0to1((float) s->getProperty("shape", 0.5)));
         }
         place(first, "amt", effectBox.getText(), "stack", -1);
     }
@@ -705,6 +811,8 @@ void KyotoAudioProcessorEditor::addSeriesStep()
             t->setValueNotifyingHost(t->convertTo0to1((float) type));
         if (auto* on = proc.apvts.getParameter(prefix + "on"))
             on->setValueNotifyingHost(1.f);
+        auto setValue = [this, &prefix](const juce::String& suffix, float value) { if (auto* p = proc.apvts.getParameter(prefix + suffix)) p->setValueNotifyingHost(p->convertTo0to1(value)); };
+        setValue("amt", (float) fxAmount.getValue()); setValue("tone", (float) fxTone.getValue()); setValue("mot", (float) fxMotion.getValue()); setValue("mix", (float) fxMix.getValue()); setValue("shp", (float) fxShape.getValue());
         place(slot, "amt", kt::kFx[type].name, kind, -1);
     }
     rebuildCanvas();
@@ -890,10 +998,30 @@ void KyotoAudioProcessorEditor::loadCatalogId(const juce::String& id, const juce
             if (obj->getProperty("face").toString() == "effect" || obj->getProperty("format").toString() == "kyoteppah-effect-1")
             {
                 fxStack.removeAllChildren(nullptr);
-                if (auto* steps=obj->getProperty("steps").getArray()) for(auto& v:*steps) if(auto* so=v.getDynamicObject()){auto st=juce::ValueTree("step");st.setProperty("fx",(int)so->getProperty("fx"),nullptr);st.setProperty("name",so->getProperty("name").toString(),nullptr);st.setProperty("amount",(double)so->getProperty("amount"),nullptr);fxStack.appendChild(st,nullptr);}
-                effectNameBox.setText(obj->getProperty("name").toString(), juce::dontSendNotification); showTab(2); return;
+                if (auto* steps=obj->getProperty("steps").getArray()) for(auto& v:*steps) if(auto* so=v.getDynamicObject()){auto st=juce::ValueTree("step");st.setProperty("fx",(int)so->getProperty("fx"),nullptr);st.setProperty("name",so->getProperty("name").toString(),nullptr);st.setProperty("amount",(double)so->getProperty("amount",0.5),nullptr);st.setProperty("tone",(double)so->getProperty("tone",0.5),nullptr);st.setProperty("motion",(double)so->getProperty("motion",0.35),nullptr);st.setProperty("mix",(double)so->getProperty("mix",0.4),nullptr);st.setProperty("shape",(double)so->getProperty("shape",0.5),nullptr);fxStack.appendChild(st,nullptr);}
+                effectNameBox.setText(obj->getProperty("name").toString(), juce::dontSendNotification); if (fxStack.getNumChildren() > 0) selectFxStep(0); showTab(2); return;
             }
             nameBox.setText(obj->getProperty("name").toString(), juce::dontSendNotification);
+            if (auto* slots = obj->getProperty("slots").getArray())
+            {
+                for (int i = 0; i < proc.slotCount(); ++i)
+                {
+                    const auto prefix = "s" + juce::String(i + 1).paddedLeft('0', 2);
+                    if (auto* on = proc.apvts.getParameter(prefix + "on")) on->setValueNotifyingHost(0.f);
+                }
+                for (int i = 0; i < juce::jmin(proc.slotCount(), slots->size()); ++i)
+                {
+                    auto* src = slots->getReference(i).getDynamicObject(); if (!src) continue;
+                    const auto prefix = "s" + juce::String(i + 1).paddedLeft('0', 2);
+                    if (auto* p = proc.apvts.getParameter(prefix + "on")) p->setValueNotifyingHost(src->getProperty("on", true) ? 1.f : 0.f);
+                    if (auto* p = proc.apvts.getParameter(prefix + "type")) p->setValueNotifyingHost(p->convertTo0to1((float)src->getProperty("fx", 0)));
+                    if (auto* p = proc.apvts.getParameter(prefix + "amt")) p->setValueNotifyingHost(p->convertTo0to1((float)src->getProperty("amount", 0.5)));
+                    if (auto* p = proc.apvts.getParameter(prefix + "tone")) p->setValueNotifyingHost(p->convertTo0to1((float)src->getProperty("tone", 0.5)));
+                    if (auto* p = proc.apvts.getParameter(prefix + "mot")) p->setValueNotifyingHost(p->convertTo0to1((float)src->getProperty("motion", 0.35)));
+                    if (auto* p = proc.apvts.getParameter(prefix + "mix")) p->setValueNotifyingHost(p->convertTo0to1((float)src->getProperty("mix", 0.4)));
+                    if (auto* p = proc.apvts.getParameter(prefix + "shp")) p->setValueNotifyingHost(p->convertTo0to1((float)src->getProperty("shape", 0.5)));
+                }
+            }
             if (auto* warr = obj->getProperty("widgets").getArray())
             {
                 proc.uiState.removeAllChildren(nullptr);
@@ -927,8 +1055,8 @@ void KyotoAudioProcessorEditor::loadCatalogId(const juce::String& id, const juce
             {
                 fxStack.removeAllChildren(nullptr);
                 if (auto* steps = mo->getProperty("steps").getArray()) for (auto& v : *steps)
-                { if (auto* so=v.getDynamicObject()) { auto st=juce::ValueTree("step"); st.setProperty("fx",(int)so->getProperty("fx"),nullptr); st.setProperty("name",so->getProperty("name").toString(),nullptr); st.setProperty("amount",(double)so->getProperty("amount"),nullptr); fxStack.appendChild(st,nullptr); } }
-                effectNameBox.setText(modName, juce::dontSendNotification); showTab(2);
+                { if (auto* so=v.getDynamicObject()) { auto st=juce::ValueTree("step"); st.setProperty("fx",(int)so->getProperty("fx"),nullptr); st.setProperty("name",so->getProperty("name").toString(),nullptr); st.setProperty("amount",(double)so->getProperty("amount",0.5),nullptr); st.setProperty("tone",(double)so->getProperty("tone",0.5),nullptr); st.setProperty("motion",(double)so->getProperty("motion",0.35),nullptr); st.setProperty("mix",(double)so->getProperty("mix",0.4),nullptr); st.setProperty("shape",(double)so->getProperty("shape",0.5),nullptr); fxStack.appendChild(st,nullptr); } }
+                effectNameBox.setText(modName, juce::dontSendNotification); if (fxStack.getNumChildren() > 0) selectFxStep(0); showTab(2);
                 status.setText("Loaded effect: " + modName, juce::dontSendNotification);
             }
             else
@@ -947,6 +1075,20 @@ void KyotoAudioProcessorEditor::applyTheme(const juce::String& id)
         if (id == t.id) { theme = t; break; }
     proc.uiState.setProperty("theme", id, nullptr);
     if (fxBrowser) fxBrowser->setTheme(theme);
+    for (auto* e : { &logBox, &msgBox, &utilityBox, &userBox, &passBox, &nameBox, &effectNameBox })
+    {
+        e->setColour(juce::TextEditor::backgroundColourId, kt::c(theme.bg).brighter(0.03f));
+        e->setColour(juce::TextEditor::textColourId, kt::c(theme.text));
+        e->setColour(juce::TextEditor::outlineColourId, kt::c(theme.border));
+        e->setColour(juce::TextEditor::focusedOutlineColourId, kt::c(theme.accent).withAlpha(0.75f));
+    }
+    for (auto* b : { &shareBtn, &chainBtn, &fxBtn, &logoutBtn, &feedBtn, &chatRefreshBtn, &threadsBtn, &socialBtn, &dmBtn, &adminDeleteBtn, &sendBtn, &utilityGoBtn, &addBtn, &chainBreakBtn, &chainMixBtn, &saveBtn, &upBtn, &wavBtn, &fxAddBtn, &fxBreakBtn, &fxMixBtn, &fxRandomBtn, &fxClearBtn, &fxSaveBtn, &fxUpBtn })
+    {
+        b->setColour(juce::TextButton::buttonColourId, kt::c(theme.panel).brighter(0.08f));
+        b->setColour(juce::TextButton::buttonOnColourId, kt::c(theme.accent).withAlpha(0.30f));
+        b->setColour(juce::TextButton::textColourOffId, kt::c(theme.text));
+        b->setColour(juce::TextButton::textColourOnId, kt::c(theme.text));
+    }
     repaint();
 }
 
@@ -1001,7 +1143,11 @@ void KyotoAudioProcessorEditor::saveEffect()
         auto* o = new juce::DynamicObject();
         o->setProperty("fx", (int) s.getProperty("fx"));
         o->setProperty("name", s.getProperty("name").toString());
-        o->setProperty("amount", (double) s.getProperty("amount"));
+        o->setProperty("amount", (double) s.getProperty("amount", 0.5));
+        o->setProperty("tone", (double) s.getProperty("tone", 0.5));
+        o->setProperty("motion", (double) s.getProperty("motion", 0.35));
+        o->setProperty("mix", (double) s.getProperty("mix", 0.4));
+        o->setProperty("shape", (double) s.getProperty("shape", 0.5));
         steps.add(juce::var(o));
     }
     obj->setProperty("steps", steps);
@@ -1023,13 +1169,125 @@ void KyotoAudioProcessorEditor::publishEffect()
     }).detach();
 }
 
+void KyotoAudioProcessorEditor::updateFxControls()
+{
+    const int type = fxBrowser ? fxBrowser->getSelectedFx() : 0;
+    const int fam = (type >= 0 && type < kt::kFxCount) ? kt::kFx[type].family : 0;
+    if (fam == 0) { fxAmountLabel.setText("TIME", juce::dontSendNotification); fxToneLabel.setText("TONE", juce::dontSendNotification); fxMotionLabel.setText("FEEDBACK", juce::dontSendNotification); fxMixLabel.setText("MIX", juce::dontSendNotification); fxShapeLabel.setText("SPREAD", juce::dontSendNotification); }
+    else if (fam == 1) { fxAmountLabel.setText("SIZE", juce::dontSendNotification); fxToneLabel.setText("TONE", juce::dontSendNotification); fxMotionLabel.setText("DECAY", juce::dontSendNotification); fxMixLabel.setText("MIX", juce::dontSendNotification); fxShapeLabel.setText("DIFFUSION", juce::dontSendNotification); }
+    else if (fam == 2 || fam == 3) { fxAmountLabel.setText("DEPTH", juce::dontSendNotification); fxToneLabel.setText("COLOR", juce::dontSendNotification); fxMotionLabel.setText("RATE", juce::dontSendNotification); fxMixLabel.setText("MIX", juce::dontSendNotification); fxShapeLabel.setText("WIDTH", juce::dontSendNotification); }
+    else if (fam == 4) { fxAmountLabel.setText("CUTOFF", juce::dontSendNotification); fxToneLabel.setText("RESONANCE", juce::dontSendNotification); fxMotionLabel.setText("SWEEP", juce::dontSendNotification); fxMixLabel.setText("MIX", juce::dontSendNotification); fxShapeLabel.setText("SLOPE", juce::dontSendNotification); }
+    else if (fam == 5) { fxAmountLabel.setText("DRIVE", juce::dontSendNotification); fxToneLabel.setText("TONE", juce::dontSendNotification); fxMotionLabel.setText("BIAS", juce::dontSendNotification); fxMixLabel.setText("MIX", juce::dontSendNotification); fxShapeLabel.setText("SHAPE", juce::dontSendNotification); }
+    else if (fam == 6) { fxAmountLabel.setText("THRESH", juce::dontSendNotification); fxToneLabel.setText("RATIO", juce::dontSendNotification); fxMotionLabel.setText("ATTACK", juce::dontSendNotification); fxMixLabel.setText("MIX", juce::dontSendNotification); fxShapeLabel.setText("RELEASE", juce::dontSendNotification); }
+    else { fxAmountLabel.setText("AMOUNT", juce::dontSendNotification); fxToneLabel.setText("TONE", juce::dontSendNotification); fxMotionLabel.setText("MOTION", juce::dontSendNotification); fxMixLabel.setText("MIX", juce::dontSendNotification); fxShapeLabel.setText("SHAPE", juce::dontSendNotification); }
+}
+
+void KyotoAudioProcessorEditor::selectFxStep(int index)
+{
+    if (index < 0 || index >= fxStack.getNumChildren()) return;
+    selectedFxStep = index;
+    auto s = fxStack.getChild(index);
+    fxAmount.setValue((double)s.getProperty("amount", 0.5), juce::dontSendNotification);
+    fxTone.setValue((double)s.getProperty("tone", 0.5), juce::dontSendNotification);
+    fxMotion.setValue((double)s.getProperty("motion", 0.35), juce::dontSendNotification);
+    fxMix.setValue((double)s.getProperty("mix", 0.4), juce::dontSendNotification);
+    fxShape.setValue((double)s.getProperty("shape", 0.5), juce::dontSendNotification);
+    repaint();
+}
+
+void KyotoAudioProcessorEditor::writeFxStepFromControls()
+{
+    if (selectedFxStep < 0 || selectedFxStep >= fxStack.getNumChildren()) return;
+    auto s = fxStack.getChild(selectedFxStep);
+    s.setProperty("amount", fxAmount.getValue(), nullptr);
+    s.setProperty("tone", fxTone.getValue(), nullptr);
+    s.setProperty("motion", fxMotion.getValue(), nullptr);
+    s.setProperty("mix", fxMix.getValue(), nullptr);
+    s.setProperty("shape", fxShape.getValue(), nullptr);
+    repaint();
+}
+
+void KyotoAudioProcessorEditor::randomizeFxControls()
+{
+    juce::Random rng;
+    fxAmount.setValue(rng.nextFloat(), juce::sendNotificationSync);
+    fxTone.setValue(rng.nextFloat(), juce::sendNotificationSync);
+    fxMotion.setValue(rng.nextFloat(), juce::sendNotificationSync);
+    fxMix.setValue(0.25f + rng.nextFloat() * 0.7f, juce::sendNotificationSync);
+    fxShape.setValue(rng.nextFloat(), juce::sendNotificationSync);
+}
+
+void KyotoAudioProcessorEditor::addSpecialChainStep(int type, const juce::String& name)
+{
+    int slot = -1;
+    for (int i = 0; i < proc.slotCount(); ++i)
+        if (auto* on = proc.apvts.getParameter("s" + juce::String(i + 1).paddedLeft('0', 2) + "on"); on != nullptr && on->getValue() < 0.5f) { slot = i; break; }
+    if (slot < 0) { status.setText("Chain is full", juce::dontSendNotification); return; }
+    const auto prefix = "s" + juce::String(slot + 1).paddedLeft('0', 2);
+    auto setFloat = [this, &prefix](const juce::String& suffix, float value) { if (auto* p = proc.apvts.getParameter(prefix + suffix)) p->setValueNotifyingHost(p->convertTo0to1(value)); };
+    if (auto* p = proc.apvts.getParameter(prefix + "type")) p->setValueNotifyingHost(p->convertTo0to1((float)type));
+    if (auto* p = proc.apvts.getParameter(prefix + "on")) p->setValueNotifyingHost(1.f);
+    setFloat("amt", type == KyotoAudioProcessor::kMixType ? 1.f : 0.5f);
+    setFloat("mix", 1.f);
+    auto node = juce::ValueTree("w");
+    node.setProperty("slot", slot, nullptr);
+    node.setProperty("param", "amt", nullptr);
+    node.setProperty("label", name, nullptr);
+    node.setProperty("kind", "stack", nullptr);
+    node.setProperty("series", proc.uiState.getNumChildren(), nullptr);
+    proc.uiState.appendChild(node, nullptr);
+    rebuildCanvas();
+}
+
 void KyotoAudioProcessorEditor::refreshEffectBox()
 {
+    auto writeEffectPreset = [this](const juce::String& name, std::initializer_list<std::array<double, 6>> rows)
+    {
+        const auto file = effectDir().getChildFile(name + ".json");
+        if (file.existsAsFile()) return;
+        auto* obj = new juce::DynamicObject();
+        obj->setProperty("format", "kyoteppah-effect-1");
+        obj->setProperty("face", "effect");
+        obj->setProperty("name", name);
+        juce::Array<juce::var> steps;
+        for (const auto& row : rows)
+        {
+            auto* step = new juce::DynamicObject();
+            step->setProperty("fx", (int) row[0]);
+            step->setProperty("name", row[0] >= 0 && row[0] < kt::kFxCount ? kt::kFx[(int) row[0]].name : "Utility");
+            step->setProperty("amount", row[1]); step->setProperty("tone", row[2]); step->setProperty("motion", row[3]); step->setProperty("mix", row[4]); step->setProperty("shape", row[5]);
+            steps.add(juce::var(step));
+        }
+        obj->setProperty("steps", steps);
+        file.replaceWithText(juce::JSON::toString(juce::var(obj)));
+    };
+    writeEffectPreset("Velvet Glue", {{20,0.48,0.62,0.25,0.55,0.40},{21,0.34,0.70,0.18,0.42,0.35},{30,0.28,0.78,0.12,0.30,0.55}});
+    writeEffectPreset("Ghost Corridor", {{2,0.42,0.52,0.58,0.48,0.40},{3,0.55,0.64,0.72,0.42,0.62},{59,0.38,0.70,0.35,0.34,0.72}});
+    writeEffectPreset("Neon Damage", {{0,0.64,0.42,0.22,0.58,0.72},{1,0.46,0.70,0.38,0.46,0.68},{11,0.55,0.38,0.66,0.52,0.82}});
+
+    auto writeChainPreset = [this](const juce::String& name, std::initializer_list<std::array<double, 6>> rows)
+    {
+        const auto dir = sessionFile().getParentDirectory().getChildFile("kyoto");
+        dir.createDirectory();
+        const auto file = dir.getChildFile(name + ".json");
+        if (file.existsAsFile()) return;
+        auto* obj = new juce::DynamicObject();
+        obj->setProperty("format", "kyoteppah-module-1"); obj->setProperty("face", "chain"); obj->setProperty("name", name); obj->setProperty("grid", 0); obj->setProperty("theme", proc.uiState.getProperty("theme", "trippah"));
+        juce::Array<juce::var> slots;
+        for (const auto& row : rows) { auto* step = new juce::DynamicObject(); step->setProperty("on", true); step->setProperty("fx", (int)row[0]); step->setProperty("amount", row[1]); step->setProperty("tone", row[2]); step->setProperty("motion", row[3]); step->setProperty("mix", row[4]); step->setProperty("shape", row[5]); slots.add(juce::var(step)); }
+        obj->setProperty("slots", slots); obj->setProperty("widgets", juce::var(juce::Array<juce::var>()));
+        file.replaceWithText(juce::JSON::toString(juce::var(obj)));
+    };
+    writeChainPreset("Midnight Bloom", {{3,0.52,0.60,0.62,0.42,0.58},{1,0.42,0.72,0.38,0.40,0.62},{30,0.30,0.78,0.18,0.28,0.55},{20,0.38,0.60,0.22,0.44,0.40}});
+    writeChainPreset("Tape Prayer", {{15,0.40,0.62,0.52,0.46,0.50},{2,0.36,0.54,0.45,0.38,0.46},{21,0.32,0.72,0.20,0.40,0.38},{200,1.0,0.5,0.5,1.0,0.5}});
+    writeChainPreset("Wide Dream", {{4,0.55,0.50,0.32,0.50,0.78},{1,0.35,0.70,0.28,0.40,0.72},{59,0.32,0.68,0.40,0.34,0.70},{200,0.82,0.5,0.5,1.0,0.5}});
+
     effectBox.clear();
     int id = 1;
     for (auto f : effectDir().findChildFiles(juce::File::findFiles, false, "*.json"))
         effectBox.addItem(f.getFileNameWithoutExtension(), id++);
     if (effectBox.getNumItems() > 0) effectBox.setSelectedId(1);
+
     localBox.clear();
     id = 1;
     for (auto f : moduleDir().findChildFiles(juce::File::findFiles, false, "*.json"))
@@ -1045,7 +1303,7 @@ void KyotoAudioProcessorEditor::saveLocal()
     obj->setProperty("name", name);
     obj->setProperty("grid", gridStyleBox.getSelectedId() - 1);
     obj->setProperty("theme", proc.uiState.getProperty("theme", "trippah"));
-    juce::Array<juce::var> widgetsArr, slots;
+    juce::Array<juce::var> widgetsArr, slots, steps;
     for (int i = 0; i < proc.slotCount(); ++i)
     {
         auto* s = new juce::DynamicObject();
@@ -1053,7 +1311,24 @@ void KyotoAudioProcessorEditor::saveLocal()
         s->setProperty("on", proc.apvts.getRawParameterValue(prefix + "on")->load() >= 0.5f);
         s->setProperty("fx", (int) proc.apvts.getRawParameterValue(prefix + "type")->load());
         s->setProperty("amount", proc.apvts.getRawParameterValue(prefix + "amt")->load());
+        s->setProperty("tone", proc.apvts.getRawParameterValue(prefix + "tone")->load());
+        s->setProperty("motion", proc.apvts.getRawParameterValue(prefix + "mot")->load());
+        s->setProperty("mix", proc.apvts.getRawParameterValue(prefix + "mix")->load());
+        s->setProperty("shape", proc.apvts.getRawParameterValue(prefix + "shp")->load());
         slots.add(juce::var(s));
+        if (proc.apvts.getRawParameterValue(prefix + "on")->load() >= 0.5f)
+        {
+            auto* step = new juce::DynamicObject();
+            const int fx = (int) proc.apvts.getRawParameterValue(prefix + "type")->load();
+            step->setProperty("fx", fx);
+            step->setProperty("name", fx == KyotoAudioProcessor::kMixType ? "MASTER MIX" : (fx == KyotoAudioProcessor::kBreakType ? "CHAIN BREAK" : (fx >= 0 && fx < kt::kFxCount ? kt::kFx[fx].name : "FX")));
+            step->setProperty("amount", proc.apvts.getRawParameterValue(prefix + "amt")->load());
+            step->setProperty("tone", proc.apvts.getRawParameterValue(prefix + "tone")->load());
+            step->setProperty("motion", proc.apvts.getRawParameterValue(prefix + "mot")->load());
+            step->setProperty("mix", proc.apvts.getRawParameterValue(prefix + "mix")->load());
+            step->setProperty("shape", proc.apvts.getRawParameterValue(prefix + "shp")->load());
+            steps.add(juce::var(step));
+        }
     }
     for (int i = 0; i < proc.uiState.getNumChildren(); ++i)
     {
@@ -1070,6 +1345,7 @@ void KyotoAudioProcessorEditor::saveLocal()
         widgetsArr.add(juce::var(o));
     }
     obj->setProperty("slots", slots);
+    obj->setProperty("steps", steps);
     obj->setProperty("widgets", widgetsArr);
     moduleDir().getChildFile(name + ".json").replaceWithText(juce::JSON::toString(juce::var(obj)));
     refreshEffectBox();
