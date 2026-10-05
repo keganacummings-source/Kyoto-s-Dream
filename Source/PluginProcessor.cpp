@@ -261,3 +261,9 @@ void KyotosDreamProcessor::setFxChain(const std::vector<kyoto::FxSlot>& c){ expe
 void KyotosDreamProcessor::addFxSlot(int effect){ kyoto::FxSlot f; f.effect=juce::jlimit(0,199,effect); expertFxChain.push_back(f); }
 void KyotosDreamProcessor::removeFxSlot(size_t index){ if(index<expertFxChain.size()) expertFxChain.erase(expertFxChain.begin()+static_cast<std::ptrdiff_t>(index)); }
 void KyotosDreamProcessor::setFxChainSlot(size_t index,const kyoto::FxSlot& f){ if(index>=expertFxChain.size()) return; expertFxChain[index]=f; }
+
+
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new KyotosDreamProcessor();
+}
