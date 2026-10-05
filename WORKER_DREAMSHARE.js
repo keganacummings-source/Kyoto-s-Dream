@@ -1,3 +1,8 @@
+// Compatibility copy of the canonical DreamShare Worker.
+// Deploy worker.js; this file exists only for older project references.
+// Canonical DreamShare Worker entry point. Deploy this file as worker.js.
+import { handleKyotoModule } from "./module-rules.js";
+
 /**
  * DREAMSHARE Wifi Bridge — Cloudflare Worker (durable threads)
  *
@@ -1045,101 +1050,14 @@ async function handleAudioPartB64(env, body, user) {
 }
 
 
-/**
- * Splice into the authenticated action switch of the DreamShare worker.
- * Binding: DREAMSHARE_KV. Stores layout and parameter state only.
- * Keys: module:{id}  module-index  user-modules:{name}
- */
-async function handleKyotoModule(action, body, sess, env) {
-  const kv = env.DREAMSHARE_KV;
-  if (!kv) return { ok: false, error: "DREAMSHARE_KV missing", code: "no-kv" };
-
-  if (action === "module_list" || action === "community" || action === "catalog") {
-    const face = String(body.face || body.filter || "").toLowerCase();
-    let list = JSON.parse((await kv.get("module-index")) || "[]");
-    if (face) list = list.filter((m) => String(m.face || "").toLowerCase() === face);
-    try {
-      const ci = await communityIndex(env);
-      for (const p of (ci || []).slice(0, 80)) {
-        if (!list.some(x => x.id === p.id)) list.push({ id:p.id, name:p.name, face:"kyoto", author:p.author, at:p.updated||p.created||0, community:true });
-      }
-    } catch (_) {}
-    list = list.sort((a,b) => (b.at||0) - (a.at||0)).slice(0, 100);
-    return { ok:true, modules:list, community:list, storage:STORAGE, kyotoApi:KYOTO_API_VERSION };
-  }
-
-  if (action === "module_get" || action === "community_get") {
-    const id = String(body.id || body.community || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48);
-    if (!id) return { ok:false, error:"missing id" };
-    const raw = await kv.get("module:" + id);
-    if (!raw) {
-      const ci = await kv.get("community-instrument:" + id, "json");
-      if (ci) return { ok:true, module:ci, instrument:ci };
-      return { ok:false, error:"not found" };
-    }
-    return { ok:true, module:JSON.parse(raw) };
-  }
-
-  if (action === "module_delete" || action === "catalog_delete" || action === "module_remove") {
-    if (!isSuper(sess.user) || sess.role !== "super")
-      return { ok:false, error:"admin only" };
-    const id = String(body.id || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48);
-    if (!id) return { ok:false, error:"missing id" };
-    const raw = await kv.get("module:" + id);
-    if (!raw) return { ok:false, error:"not found" };
-    const doc = JSON.parse(raw);
-    await kv.delete("module:" + id);
-    const index = JSON.parse((await kv.get("module-index")) || "[]").filter(m => m && m.id !== id);
-    await kv.put("module-index", JSON.stringify(index.slice(-200)));
-    const ownerKey = "user-modules:" + String(doc.author || "").toLowerCase();
-    if (ownerKey !== "user-modules:") {
-      const owned = JSON.parse((await kv.get(ownerKey)) || "[]").filter(x => x !== id);
-      await kv.put(ownerKey, JSON.stringify(owned.slice(-100)));
-    }
-    return { ok:true, deleted:id };
-  }
-
-  if (action === "module_publish" || action === "community_publish") {
-    let mod = body.module;
-    if (!mod && body.state) {
-      mod = typeof body.state === "string" ? JSON.parse(body.state) : body.state;
-      if (mod && typeof mod === "object") {
-        mod.name = mod.name || body.name;
-        mod.face = mod.face || "kyoto";
-        mod.format = mod.format || KYOTO_MODULE_FORMAT;
-      }
-    }
-    if (typeof mod === "string") { try { mod = JSON.parse(mod); } catch (_) { return {ok:false,error:"bad module json"}; } }
-    if (!mod || typeof mod !== "object") return {ok:false,error:"module required"};
-    const format = mod.format || KYOTO_MODULE_FORMAT;
-    const okFormat = format === "kyoteppah-module-1" || format === "kyoteppah-effect-1";
-    const face = String(mod.face || body.face || "kyoto").toLowerCase();
-    const okFace = ["kyoto","fx","chain","effect"].includes(face);
-    if (!okFormat || !okFace) return {ok:false,error:"bad module"};
-    const id = Date.now().toString(36) + Math.random().toString(36).slice(2,6);
-    const theme = String(mod.theme || body.theme || "trippah").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0,32) || "trippah";
-    const doc = {
-      format, id,
-      name:String(mod.name || body.name || "untitled").replace(/[<>]/g,"").trim().slice(0,48)||"untitled",
-      face, author:sess.user, theme, grid:Number(mod.grid)||0, free:!!mod.free,
-      steps:Array.isArray(mod.steps)?mod.steps.slice(0,12):[],
-      slots:Array.isArray(mod.slots)?mod.slots.slice(0,12):[],
-      widgets:Array.isArray(mod.widgets)?mod.widgets.slice(0,80):[],
-      instrument:face === "kyoto" ? (mod.instrument || null) : null,
-      description:String(body.description||mod.description||"").replace(/[<>]/g,"").trim().slice(0,280),
-      at:Date.now()
-    };
-    if (JSON.stringify(doc).length > 180000) return {ok:false,error:"too large"};
-    await kv.put("module:"+id, JSON.stringify(doc));
-    const index=JSON.parse((await kv.get("module-index"))||"[]");
-    index.push({id,name:doc.name,face:doc.face,author:doc.author,at:doc.at});
-    await kv.put("module-index", JSON.stringify(index.slice(-200)));
-    const ownedKey="user-modules:"+String(sess.user||"").toLowerCase();
-    const owned=JSON.parse((await kv.get(ownedKey))||"[]"); owned.push(id);
-    await kv.put(ownedKey, JSON.stringify(owned.slice(-100)));
-    return {ok:true,id,module:doc};
-  }
-  return null;
+function runKyotoModule(action, body, sess, env) {
+  return handleKyotoModule(action, body, sess, env, {
+    STORAGE,
+    KYOTO_API_VERSION,
+    KYOTO_MODULE_FORMAT,
+    isSuper,
+    communityIndex
+  });
 }
 
 export default {
@@ -1398,40 +1316,38 @@ export default {
       if (!sess) return json({ ok: false, error: 'Login required', code: 'auth' }, 401);
       const user = sess.user;
 
-      // ---- Public Community Instruments + Kyoto modules ----
-      if (action === 'community_publish' || action === 'module_publish') {
+      // ---- Kyoto / Community module router ----
+      // Keep every Kyoto action in this single authenticated block, before the
+      // normal feed/action switch. This prevents duplicate handlers and makes
+      // module_get/upload failures deterministic.
+      const kyotoActions = [
+        'module_list', 'module_get', 'module_publish', 'module_delete',
+        'module_remove', 'catalog', 'catalog_delete', 'community',
+        'community_get', 'community_publish'
+      ];
+      if (kyotoActions.indexOf(action) >= 0) {
         try {
-          // Prefer Kyoto module handler when payload looks like a Kyoto instrument/FX
-          const looksKyoto = !!(body.module || body.format === 'kyoteppah-module-1' ||
-            (body.state && (body.state.widgets || body.state.slots || body.state.format === 'kyoteppah-module-1')));
-          if (looksKyoto) {
-            const r = await handleKyotoModule(action === 'module_publish' ? 'module_publish' : 'community_publish', body, sess, env);
-            if (r) return json(r);
+          if (action === 'community_publish') {
+            const looksKyoto = !!(body.module || body.format === 'kyoteppah-module-1' ||
+              body.format === 'kyoteppah-effect-1' ||
+              (body.state && (body.state.widgets || body.state.slots ||
+               body.state.steps || body.state.format === 'kyoteppah-module-1' ||
+               body.state.format === 'kyoteppah-effect-1')));
+            if (!looksKyoto) return json(await communityPublish(env, user, body), 200);
           }
-          return json(await communityPublish(env, user, body), 200);
-        } catch (err) {
-          return json({ ok: false, error: String(err && err.message || err) }, 502);
-        }
-      }
-      if (action === 'module_delete' || action === 'catalog_delete' || action === 'module_remove') {
-        try {
-          const r = await handleKyotoModule(action, body, sess, env);
-          if (r) return json(r);
-        } catch (err) {
-          return json({ ok:false, error:String(err && err.message || err) }, 502);
-        }
-      }
-      if (action === 'community' || action === 'catalog' || action === 'module_list') {
-        try {
-          const r = await handleKyotoModule('module_list', body, sess, env);
-          if (r) return json(r);
+          const r = await runKyotoModule(action, body, sess, env);
+          if (r != null) return json(r);
+          return json({ ok: false, error: 'unsupported Kyoto action', action: action }, 400);
         } catch (err) {
           return json({ ok: false, error: String(err && err.message || err) }, 502);
         }
       }
 
       if (action === 'list_threads' || action === 'threads') {
-        const threads = Array.isArray(feed.threads) ? feed.threads.slice(-80).reverse() : [];
+        let threadFeed;
+        try { threadFeed = await loadFeed(env); }
+        catch (err) { return json({ ok:false, error:'store read failed' }, 502); }
+        const threads = Array.isArray(threadFeed.threads) ? threadFeed.threads.slice(-80).reverse() : [];
         return json({ ok:true, storage:STORAGE, threads:threads, count:threads.length });
       }
 
@@ -2023,15 +1939,6 @@ export default {
           });
         }
 
-                // --- Kyoto module handler (non-destructive splice) ---
-        if (action === 'module_list' || action === 'module_get' || action === 'module_publish') {
-          try {
-            const r = await handleKyotoModule(action, body, sess, env);
-            if (r) return json(r);
-          } catch (err) {
-            return json({ ok: false, error: String(err && err.message || err) }, 502);
-          }
-        }
 return json({ ok: false, error: 'unknown action', action: action }, 400);
       } catch (err) {
         return json({ ok: false, error: String(err && err.message || err) }, 502);

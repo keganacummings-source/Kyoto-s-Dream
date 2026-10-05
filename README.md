@@ -10,7 +10,7 @@ First open asks for DreamShare username and password. The session token and user
 ### DreamShare
 Chat uses the live worker actions `chat_list` and `chat_send` on `https://dreamshare-api.keganacummings.workers.dev`. Catalog is a card browser (name, face, author, load), not a combo box. Upload uses `module_publish` / `module_list` / `module_get`.
 
-Those catalog actions are in `worker/module-rules.js`. Paste that handler into the worker's authenticated action switch and bind `DREAMSHARE_KV`. Until that splice is deployed, Save still writes locally and Upload reports the worker error.
+The Cloudflare Worker entry point is `worker.js`. It imports the single Kyoto module/catalog implementation from `module-rules.js`. Bind `DREAMSHARE_KV` for durable module/catalog storage. The old `WORKER_DREAMSHARE.js` names are retained only as compatibility copies; deploy `worker.js` so there is one canonical entry point.
 
 ### FX Builder
 Stacks effects into **one** saved effect (`kyoteppah-effect-1`), not a chain. Saved effects can be dropped into the Chain builder as a single linked block. Upload catalogues them on the API as face `effect`.
@@ -30,6 +30,9 @@ Renamed from the free-peg builder. Each ADD NEXT links to the previous step. The
 10. Split Bay
 
 Widget kinds: Dial, Fader, Key, WAV view, Saved effect. LOAD WAV decodes a real file, draws its peaks, and plays it from a Key. Live WAV views read the output scope, not a fake sine.
+
+### Worker / API routing
+The authenticated Kyoto route is centralized in one block and covers `module_list`, `module_get`, `module_publish`, `module_delete`, `catalog`, `catalog_delete`, `community`, `community_get`, and `community_publish`. `list_threads` loads its feed independently so it does not depend on a later feed variable. Kyoto effects accept `kyoteppah-effect-1` and preserve up to 16 FX Builder steps.
 
 ## Build
 

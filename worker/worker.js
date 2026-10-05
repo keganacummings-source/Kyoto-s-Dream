@@ -1,5 +1,3 @@
-// Compatibility copy of the canonical DreamShare Worker.
-// Deploy ../worker.js; this file exists only for older project references.
 // Canonical DreamShare Worker entry point. Deploy this file as worker.js.
 import { handleKyotoModule } from "./module-rules.js";
 
