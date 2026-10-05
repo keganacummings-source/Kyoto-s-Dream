@@ -87,12 +87,8 @@ void KyotoSpxritProcessor::getStateInformation(juce::MemoryBlock&dest){
 }
 void KyotoSpxritProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
-    // Hosts are allowed to call this with an empty, foreign, or legacy state.
-    // Never feed an arbitrary XML root into APVTS: VST3 hosts (including FL
-    // Studio/Audacity) may probe a plugin with state that was not produced by
-    // this processor.  Replacing the APVTS tree with such a root can leave
-    // parameter pointers/state objects inconsistent and crash during wrapper
-    // state loading.
+    // Hosts may call this with empty, foreign, legacy, or malformed state.
+    // Never pass an arbitrary XML root into APVTS::replaceState().
     if (data == nullptr || sizeInBytes <= 0)
         return;
 
@@ -108,33 +104,6 @@ void KyotoSpxritProcessor::setStateInformation(const void* data, int sizeInBytes
     if (!root.isValid() || root.getType() != state.state.getType())
         return;
 
-    // Reject malformed/legacy parameter trees before APVTS sees them.  The
-    // previous build accidentally reused mix1/mix2/mix3 for both FX and
-    // oscillator parameters.  That produced duplicate APVTS parameter IDs
-    // and could crash VST3 hosts while they enumerated/restored the plugin.
-    // The oscillator IDs are now oscMix1/oscMix2/oscMix3.
-    bool hasOscMix1 = false, hasOscMix2 = false, hasOscMix3 = false;
-    juce::StringArray ids;
-    for (int i = 0; i < root.getNumChildren(); ++i)
-    {
-        const auto id = root.getChild(i).getProperty("id").toString();
-        if (id.isEmpty())
-            continue;
-
-        if (ids.contains(id))
-            return; // duplicate parameter ID: never hand it to APVTS
-        ids.add(id);
-
-        hasOscMix1 |= id == "oscMix1";
-        hasOscMix2 |= id == "oscMix2";
-        hasOscMix3 |= id == "oscMix3";
-    }
-
-    if (!hasOscMix1 || !hasOscMix2 || !hasOscMix3)
-        return;
-
-    // Restore APVTS only after the root has been positively identified as our
-    // own parameter tree.  This is the important crash-safety boundary.
     state.replaceState(root);
 
     modules = splitModuleString(root.getProperty("modules").toString());
@@ -146,8 +115,6 @@ void KyotoSpxritProcessor::setStateInformation(const void* data, int sizeInBytes
         0, 3, (int) root.getProperty("uiVariant", 0));
     expertMode = (bool) root.getProperty("expertMode", false);
 
-    // Optional custom fields are deliberately treated as optional so older
-    // projects/presets remain loadable.
     builderLayout = kyoto::defaultLayout();
     const auto layoutJson = root.getProperty("builderLayout").toString();
     if (layoutJson.isNotEmpty())
@@ -214,17 +181,15 @@ void KyotoSpxritProcessor::setStateInformation(const void* data, int sizeInBytes
         }
     }
 
-    // Apply the restored synth state last, after all optional module/UI state
-    // has been decoded. This avoids loading a partially restored preset.
     synth.setPreset(getInstrumentPreset());
 }
 
 std::vector<juce::String> KyotoSpxritProcessor::installedModules()const{std::vector<juce::String> out;for(auto&m:modules)out.push_back(m);return out;}
 void KyotoSpxritProcessor::addModule(const juce::String&id){ if(id.isEmpty())return; if(!modules.contains(id))modules.add(id); currentModule=id; auto it=modulePresets.find(id.toStdString()); if(it!=modulePresets.end()){setInstrumentPreset(it->second);return;} kyoto::InstrumentPreset p=getInstrumentPreset();p.id=id;p.name=id.toUpperCase();auto n=id.toLowerCase();if(n.contains("bass")||n.contains("sub")){p.osc1=1;p.osc2=2;p.osc3=0;p.octave=-1;p.cutoff=.34f;p.resonance=.12f;p.attack=.005f;p.decay=.22f;p.sustain=.65f;p.release=.18f;p.drive=.18f;}else if(n.contains("bell")||n.contains("marimba")){p.osc1=0;p.osc2=3;p.osc3=4;p.cutoff=.78f;p.resonance=.28f;p.attack=.003f;p.decay=.7f;p.sustain=.25f;p.release=1.1f;}else if(n.contains("pad")||n.contains("choir")||n.contains("organ")){p.osc1=0;p.osc2=4;p.osc3=0;p.cutoff=.58f;p.attack=.35f;p.decay=.8f;p.sustain=.72f;p.release=1.4f;p.detune2=11;p.detune3=-11;}else if(n.contains("pluck")||n.contains("keys")||n.contains("clav")){p.osc1=3;p.osc2=2;p.osc3=0;p.cutoff=.7f;p.attack=.002f;p.decay=.24f;p.sustain=.18f;p.release=.28f;}else if(n.contains("noise")){p.osc1=5;p.osc2=5;p.osc3=5;p.noise=.7f;p.cutoff=.9f;p.attack=.01f;p.decay=.25f;p.sustain=.45f;p.release=.35f;}else if(n.contains("drone")){p.osc1=0;p.osc2=0;p.osc3=1;p.cutoff=.42f;p.attack=.7f;p.decay=.5f;p.sustain=.9f;p.release=2.0f;}else if(n.contains("saw")||n.contains("lead")||n.contains("analog")){p.osc1=1;p.osc2=1;p.osc3=0;p.detune2=6;p.detune3=-6;p.cutoff=.66f;p.resonance=.22f;p.attack=.005f;p.decay=.16f;p.sustain=.7f;p.release=.22f;p.drive=.08f;}else {p.osc1=0;p.osc2=3;p.osc3=2;p.cutoff=.72f;p.attack=.01f;p.decay=.18f;p.sustain=.72f;p.release=.25f;}setInstrumentPreset(p);}
-void KyotoSpxritProcessor::saveModule(const juce::String&name){auto p=getInstrumentPreset(); p.uiLayout=kyoto::layoutToVar(builderLayout); p.uiTheme=kyoto::ThemeManager::toVar(activeTheme);p.name=name.trim().isEmpty()?"Kyoto Instrument":name.trim();p.id=p.name.toLowerCase().replaceCharacters(" ","-");if(!modules.contains(p.id))modules.add(p.id);currentModule=p.id;modulePresets[p.id.toStdString()]=p;}
+void KyotoSpxritProcessor::saveModule(const juce::String&name){auto p=getInstrumentPreset(); p.uiLayout=kyoto::layoutToVar(builderLayout); p.uiTheme=kyoto::ThemeManager::toVar(activeTheme);p.name=name.trim().isEmpty()?"KyotoSpxrit Instrument":name.trim();p.id=p.name.toLowerCase().replaceCharacters(" ","-");if(!modules.contains(p.id))modules.add(p.id);currentModule=p.id;modulePresets[p.id.toStdString()]=p;}
 bool KyotoSpxritProcessor::loadModule(const juce::String&id){auto it=modulePresets.find(id.toStdString());if(it==modulePresets.end())return false;currentModule=id;setInstrumentPreset(it->second);return true;}
 bool KyotoSpxritProcessor::hasModules()const{return modules.size()>0;} juce::String KyotoSpxritProcessor::activeModule()const{return currentModule;} void KyotoSpxritProcessor::setActiveModule(const juce::String&id){currentModule=id;loadModule(id);}
-kyoto::InstrumentPreset KyotoSpxritProcessor::getInstrumentPreset()const{kyoto::InstrumentPreset p;p.id=currentModule.isEmpty()?"custom":currentModule;p.name=currentModule.isEmpty()?"Spxrit Init":currentModule;p.osc1=(int)state.getRawParameterValue("osc1")->load();p.osc2=(int)state.getRawParameterValue("osc2")->load();p.osc3=(int)state.getRawParameterValue("osc3")->load();p.mix1=state.getRawParameterValue("oscMix1")->load();p.mix2=state.getRawParameterValue("oscMix2")->load();p.mix3=state.getRawParameterValue("oscMix3")->load();p.detune2=state.getRawParameterValue("detune2")->load();p.detune3=state.getRawParameterValue("detune3")->load();p.octave=(int)state.getRawParameterValue("octave")->load();p.cutoff=state.getRawParameterValue("cutoff")->load();p.resonance=state.getRawParameterValue("resonance")->load();p.attack=state.getRawParameterValue("attack")->load();p.decay=state.getRawParameterValue("decay")->load();p.sustain=state.getRawParameterValue("sustain")->load();p.release=state.getRawParameterValue("release")->load();p.noise=state.getRawParameterValue("noise")->load();p.drive=state.getRawParameterValue("drive")->load();p.lfoRate=state.getRawParameterValue("lfoRate")->load();p.lfoDepth=state.getRawParameterValue("lfoDepth")->load();p.arp=state.getRawParameterValue("arp")->load()>0.5f;p.arpRate=state.getRawParameterValue("arpRate")->load();for(int i=0;i<fxSlots;i++){p.fx[i]=fxIndex(i);p.fxAmount[i]=amount[p.fx[i]]->load();} p.expertFxChain=expertFxChain; p.uiLayout=kyoto::layoutToVar(builderLayout); p.uiTheme=kyoto::ThemeManager::toVar(activeTheme); return p;}
+kyoto::InstrumentPreset KyotoSpxritProcessor::getInstrumentPreset()const{kyoto::InstrumentPreset p;p.id=currentModule.isEmpty()?"custom":currentModule;p.name=currentModule.isEmpty()?"KyotoSpxrit Init":currentModule;p.osc1=(int)state.getRawParameterValue("osc1")->load();p.osc2=(int)state.getRawParameterValue("osc2")->load();p.osc3=(int)state.getRawParameterValue("osc3")->load();p.mix1=state.getRawParameterValue("oscMix1")->load();p.mix2=state.getRawParameterValue("oscMix2")->load();p.mix3=state.getRawParameterValue("oscMix3")->load();p.detune2=state.getRawParameterValue("detune2")->load();p.detune3=state.getRawParameterValue("detune3")->load();p.octave=(int)state.getRawParameterValue("octave")->load();p.cutoff=state.getRawParameterValue("cutoff")->load();p.resonance=state.getRawParameterValue("resonance")->load();p.attack=state.getRawParameterValue("attack")->load();p.decay=state.getRawParameterValue("decay")->load();p.sustain=state.getRawParameterValue("sustain")->load();p.release=state.getRawParameterValue("release")->load();p.noise=state.getRawParameterValue("noise")->load();p.drive=state.getRawParameterValue("drive")->load();p.lfoRate=state.getRawParameterValue("lfoRate")->load();p.lfoDepth=state.getRawParameterValue("lfoDepth")->load();p.arp=state.getRawParameterValue("arp")->load()>0.5f;p.arpRate=state.getRawParameterValue("arpRate")->load();for(int i=0;i<fxSlots;i++){p.fx[i]=fxIndex(i);p.fxAmount[i]=amount[p.fx[i]]->load();} p.expertFxChain=expertFxChain; p.uiLayout=kyoto::layoutToVar(builderLayout); p.uiTheme=kyoto::ThemeManager::toVar(activeTheme); return p;}
 void KyotoSpxritProcessor::setInstrumentPreset(const kyoto::InstrumentPreset& p)
 {
     auto setFloat = [&](const char* name, float value)

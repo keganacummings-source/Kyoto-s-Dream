@@ -77,7 +77,7 @@ const STORAGE = 'durable-v4';
 const THEME_API_VERSION = 'v1';
 const VST_PATCH_VERSION = '0.4.0';
 const VST_RELEASE = {
-  version: '0.2.1',
+  version: '0.2.2',
   name: 'DreamShare-Windows-VST3.zip',
   label: 'DreamShare VST3 (Windows x64)',
   r2Key: 'releases/DreamShare-Windows-VST3.zip',

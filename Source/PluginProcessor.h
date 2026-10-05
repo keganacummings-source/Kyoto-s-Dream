@@ -54,7 +54,7 @@ public:
     const std::vector<kyoto::ThemePalette>& customThemes() const { return userThemes; }
 
     static constexpr int fxSlots=8;
-    static constexpr const char* version="0.2.1";
+    static constexpr const char* version="0.2.2";
 private:
     static constexpr bool isFxBuild =
     #if defined(KYOTO_IS_FX)
