@@ -94,7 +94,10 @@ struct MachineDesign
         o->setProperty("playgroundMode", (int) playgroundMode); o->setProperty("playgroundWidth", playgroundWidth); o->setProperty("playgroundHeight", playgroundHeight);
         o->setProperty("aspectRatio", aspectRatio); o->setProperty("theme", theme); o->setProperty("bodyDesign", bodyDesign);
         juce::Array<juce::var> ds, ms, cs, mac;
-        for (const auto& p : decals) ds.add(p.toVar()); for (const auto& p : modules) ms.add(p.toVar()); for (const auto& c : connections) cs.add(c.toVar()); for (const auto& m : macros) mac.add(m);
+        for (const auto& p : decals) ds.add(p.toVar());
+        for (const auto& p : modules) ms.add(p.toVar());
+        for (const auto& c : connections) cs.add(c.toVar());
+        for (const auto& m : macros) mac.add(m);
         o->setProperty("decals", ds); o->setProperty("modules", ms); o->setProperty("connections", cs); o->setProperty("macros", mac);
         return juce::var(o);
     }
@@ -144,7 +147,7 @@ struct MachineDesign
             d.playgroundWidth = juce::jmax(1, (int)o->getProperty("playgroundWidth")); d.playgroundHeight = juce::jmax(1, (int)o->getProperty("playgroundHeight"));
             d.aspectRatio = o->getProperty("aspectRatio").toString(); d.theme = o->getProperty("theme").toString(); d.bodyDesign = o->getProperty("bodyDesign").toString();
             auto readParts = [](const juce::var& a, juce::Array<Part>& out) {
-                if (auto* arr = a.getArray()) for (auto& v : *arr) if (auto* po = v.getDynamicObject()) {
+                if (auto* arr = a.getArray()) for (auto& e : *arr) if (auto* po = e.getDynamicObject()) {
                     Part p; p.id = po->getProperty("id").toString(); p.type = po->getProperty("type").toString(); p.themeFamily = po->getProperty("themeFamily").toString();
                     p.bounds = juce::Rectangle<float>((float)po->getProperty("x"), (float)po->getProperty("y"), (float)po->getProperty("w"), (float)po->getProperty("h"));
                     p.zLayer = (int)po->getProperty("zLayer"); p.interactive = (bool)po->getProperty("interactive"); out.add(p);

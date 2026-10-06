@@ -22,7 +22,7 @@ class KyotoLookAndFeel final : public juce::LookAndFeel_V4
 public:
     void setTheme(const kt::ThemePalette& t) { theme = t; }
 
-    juce::Font getTextButtonFont(juce::TextButton& button, int buttonHeight) override
+    juce::Font getTextButtonFont(juce::TextButton&, int buttonHeight) override
     {
         return kt::font(theme, buttonHeight < 30 ? 12.5f : 13.5f, true);
     }
@@ -650,6 +650,32 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     addAndMakeVisible(stackLabel); addAndMakeVisible(panel);
     panel.setInterceptsMouseClicks(false, true);
 
+    // QOL: hover hints on the main controls.
+    shareBtn.setTooltip("DreamShare: live chat, threads, catalog and uploads");
+    chainBtn.setTooltip("Plugin Builder: lay out the chain, slots and widgets");
+    fxBtn.setTooltip("FX Builder: stack up to 16 effects into one saved effect");
+    loginBtn.setTooltip("Sign in (a new name creates an account)");
+    logoutBtn.setTooltip("Log out of DreamShare");
+    sendBtn.setTooltip("Send chat message (Enter also sends)");
+    feedBtn.setTooltip("Refresh the feed");
+    wavBtn.setTooltip("Load a WAV file onto the chain");
+    saveBtn.setTooltip("Save this build locally");
+    upBtn.setTooltip("Publish this build to the catalog");
+    addBtn.setTooltip("Place the selected widget");
+    chainUndoBtn.setTooltip("Undo the last builder step");
+    fxAddBtn.setTooltip("Add the selected effect");
+    fxRandomBtn.setTooltip("Randomize the effect controls");
+    fxClearBtn.setTooltip("Clear all effect steps");
+    pluginViewBtn.setTooltip("Show the built plugin full-screen (Esc to exit)");
+    pluginBackBtn.setTooltip("Back to the editor");
+    newMachineBtn.setTooltip("Pick a new machine aspect ratio");
+    randomMachineBtn.setTooltip("Randomize the machine design");
+    catalogModeBtn.setTooltip("Show the catalog card browser");
+    threadsModeBtn.setTooltip("Show community threads");
+    railChatBtn.setTooltip("Show the side chat");
+    railOnlineBtn.setTooltip("Show friends and who is online");
+    proToggleBtn.setTooltip("Toggle pro machine editing");
+
     userBox.setTextToShowWhenEmpty("Username", juce::Colours::grey);
     passBox.setTextToShowWhenEmpty("Password", juce::Colours::grey);
     passBox.setPasswordCharacter((juce::juce_wchar) 0x2022);
@@ -657,6 +683,11 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     effectNameBox.setTextToShowWhenEmpty("Custom effect name", juce::Colours::grey);
     msgBox.setTextToShowWhenEmpty("Message  -  shared FX links appear as clickable cards", juce::Colours::grey);
     utilityBox.setTextToShowWhenEmpty("Target / ID / thread ID", juce::Colours::grey);
+
+    // QOL: Enter sends the chat message, Enter on the login card signs in.
+    msgBox.onReturnKey = [this] { sendChat(); };
+    userBox.onReturnKey = [this] { if (! userBox.getText().trim().isEmpty() && ! passBox.getText().isEmpty()) login(); };
+    passBox.onReturnKey = userBox.onReturnKey;
     const char* utilityItems[] = {
         "Chat list", "Threads", "Friends", "Direct messages", "Send DM",
         "Friend request", "Accept friend", "Decline friend", "Remove friend",
@@ -1172,6 +1203,16 @@ void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
     }
 }
 
+bool KyotoAudioProcessorEditor::keyPressed(const juce::KeyPress& key)
+{
+    if (pluginView && key == juce::KeyPress::escapeKey)
+    {
+        setPluginView(false);
+        return true;
+    }
+    return false;
+}
+
 void KyotoAudioProcessorEditor::mouseDown(const juce::MouseEvent& e)
 {
     if (tab != 2) return;
@@ -1241,7 +1282,7 @@ void KyotoAudioProcessorEditor::showTab(int next)
 
 void KyotoAudioProcessorEditor::resized()
 {
-    const int W = getWidth(), H = getHeight();
+    const int W = getWidth();
     if (pluginView)
     {
         pluginBackBtn.setBounds(24, 20, 104, 34);

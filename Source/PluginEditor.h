@@ -107,6 +107,7 @@ public:
     void resized() override;
     void mouseDown(const juce::MouseEvent&) override;
     void parentHierarchyChanged() override;
+    bool keyPressed(const juce::KeyPress&) override;
     bool inPluginView() const { return pluginView; }
 
 private:
@@ -180,6 +181,7 @@ private:
     juce::String deriveCategoriesFromStack() const;
 
     KyotoAudioProcessor& proc;
+    juce::TooltipWindow tooltipWindow { this, 500 };
     int tab = 0;
     bool loggedIn = false;
     bool isAdmin = false;
