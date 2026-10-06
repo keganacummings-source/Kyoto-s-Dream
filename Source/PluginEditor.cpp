@@ -174,6 +174,11 @@ CanvasWidget::CanvasWidget(KyotoAudioProcessor& p, juce::ValueTree n)
         addAndMakeVisible(slider);
         if (proc.apvts.getParameter(id) != nullptr)
             attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(proc.apvts, id, slider);
+        // Modular pieces: quirks bend how the bound option responds.
+        const auto quirk = node.getProperty("quirk").toString();
+        if (quirk == "snap") slider.setRange(0.0, 1.0, 0.125);                       // 8 repeatable steps
+        else if (quirk == "lens") slider.setRotaryParameters(juce::MathConstants<float>::pi * 0.7f,
+                                                             juce::MathConstants<float>::pi * 1.3f, false); // 4x finer drag
         slider.onDragStart = [this] { if (onSelect) onSelect(); };
     }
 }
@@ -188,6 +193,16 @@ void CanvasWidget::setTheme(const kt::ThemePalette& t)
     slider.setColour(juce::Slider::thumbColourId, kt::c(theme.accent));
     slider.setColour(juce::Slider::trackColourId, kt::c(theme.border));
     slider.setColour(juce::Slider::backgroundColourId, kt::c(theme.panel));
+    // Modular piece skins override the theme accent for this part only.
+    if (auto* skin = kt::partSkinById(node.getProperty("skin").toString()))
+    {
+        if (skin->accentHex != nullptr)
+        {
+            const auto accent = juce::Colour::fromString(skin->accentHex);
+            slider.setColour(juce::Slider::rotarySliderFillColourId, accent);
+            slider.setColour(juce::Slider::thumbColourId, accent);
+        }
+    }
     if (waveDisplay) waveDisplay->setTheme(theme);
     repaint();
 }
@@ -706,6 +721,16 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     fxAmount.onValueChange = [this] { writeFxStepFromControls(); };
 
     kindBox.addItem("Knob / Arc", 1); kindBox.addItem("Knob / Pointer", 2); kindBox.addItem("Fader", 3); kindBox.addItem("Slide", 4); kindBox.addItem("Button", 5); kindBox.addItem("Screen", 6); kindBox.addItem("Vent", 7); kindBox.addItem("Badge", 8); kindBox.addItem("Rail", 9); kindBox.setSelectedId(1);
+    // Modular parts prototype: bind a placed dial/fader to any FX option, and
+    // arm a modular piece (skin + special quirk) from the first batch.
+    for (int i = 0; i < kt::kControlParamCount; ++i) paramBox.addItem(juce::String("Option: ") + kt::kControlParams[i].name, i + 1);
+    paramBox.setSelectedId(1);
+    pieceBox.addItem("Stock Part", 1);
+    for (int i = 0; i < kt::kModPieceCount; ++i) pieceBox.addItem(juce::String(kt::kModPieces[i].name) + "  -  " + kt::kModPieces[i].quirk, i + 2);
+    pieceBox.setSelectedId(1);
+    addAndMakeVisible(paramBox); addAndMakeVisible(pieceBox);
+    paramBox.setTooltip("FX option the placed control is bound to (Mix %, Tone, Motion...)");
+    pieceBox.setTooltip("Modular pieces - each ships with a skin and a special quirk");
     shellLabel.setText("TEMPLATE", juce::dontSendNotification);
     playgroundThemeLabel.setText("THEME", juce::dontSendNotification);
     for (auto* l : { &shellLabel, &playgroundThemeLabel })
@@ -1261,7 +1286,7 @@ void KyotoAudioProcessorEditor::showTab(int next)
     panel.setVisible(chain);
     if (fxBrowser) fxBrowser->setVisible(builderReady || fx);
     addBtn.setVisible(builderReady); chainBreakBtn.setVisible(builderReady); chainMixBtn.setVisible(builderReady); chainRemoveBtn.setVisible(builderReady); chainUndoBtn.setVisible(builderReady);
-    nameBox.setVisible(builderReady); presetBox.setVisible(builderReady); saveBtn.setVisible(builderReady); upBtn.setVisible(builderReady); kindBox.setVisible(builderReady); wavBtn.setVisible(builderReady);
+    nameBox.setVisible(builderReady); presetBox.setVisible(builderReady); saveBtn.setVisible(builderReady); upBtn.setVisible(builderReady); kindBox.setVisible(builderReady); paramBox.setVisible(builderReady); pieceBox.setVisible(builderReady); wavBtn.setVisible(builderReady);
     gridStyleBox.setVisible(false); effectBox.setVisible(false);
     newMachineBtn.setVisible(share && loggedIn && !pluginView); randomMachineBtn.setVisible(share && loggedIn && !pluginView);
 
@@ -1425,6 +1450,8 @@ void KyotoAudioProcessorEditor::resized()
         playgroundThemeBox.setBounds(top.removeFromLeft(138)); top.removeFromLeft(6);
         nameBox.setBounds(top.removeFromLeft(120)); top.removeFromLeft(6);
         kindBox.setBounds(top.removeFromLeft(128)); top.removeFromLeft(6);
+        paramBox.setBounds(top.removeFromLeft(128)); top.removeFromLeft(6);
+        pieceBox.setBounds(top.removeFromLeft(196)); top.removeFromLeft(6);
         addBtn.setBounds(top.removeFromLeft(68)); top.removeFromLeft(5);
         chainBreakBtn.setBounds(top.removeFromLeft(68)); top.removeFromLeft(5);
         chainMixBtn.setBounds(top.removeFromLeft(68)); top.removeFromLeft(5);
@@ -1601,10 +1628,14 @@ void KyotoAudioProcessorEditor::armPlacement()
     pendingLabel = (pendingFx >= 0 && pendingFx < kt::kFxCount) ? kt::kFx[pendingFx].name : "Part";
     if (pb::styleSlot(armedStyle) == pb::SlotKind::Cosmetic)
         pendingLabel = kindBox.getText();
+    const int pieceId = pieceBox.getSelectedId();
+    pendingPiece = (pieceId >= 2 && pieceId - 2 < kt::kModPieceCount) ? &kt::kModPieces[pieceId - 2] : nullptr;
     placing = true;
     panel.placing = true;
     panel.armedStyle = armedStyle;
-    status.setText("Theme is " + juce::String(theme.name) + ". Click a glowing " + kindBox.getText() + " bay.", juce::dontSendNotification);
+    status.setText(pendingPiece != nullptr
+        ? juce::String(pendingPiece->name) + " armed: " + pendingPiece->quirk + ". Click a glowing bay."
+        : "Theme is " + juce::String(theme.name) + ". Click a glowing " + kindBox.getText() + " bay.", juce::dontSendNotification);
     panel.repaint();
 }
 
@@ -1636,11 +1667,18 @@ void KyotoAudioProcessorEditor::placeInSlot(int slot)
     auto node = juce::ValueTree("w");
     node.setProperty("slot", dsp, nullptr);
     node.setProperty("shellSlot", slot, nullptr);
-    node.setProperty("param", "amt", nullptr);
-    node.setProperty("label", pendingLabel, nullptr);
+    const int paramId = juce::jlimit(0, kt::kControlParamCount - 1, paramBox.getSelectedId() - 1);
+    const auto paramToken = juce::String(kt::kControlParams[paramId].token);
+    node.setProperty("param", paramToken, nullptr);
+    node.setProperty("label", paramId == 0 ? pendingLabel : pendingLabel + " " + kt::kControlParams[paramId].name, nullptr);
     const auto slotKind = shell.slots[slot].kind;
     node.setProperty("kind", slotKind == pb::SlotKind::Fader ? "slider" : slotKind == pb::SlotKind::Key ? "key" : slotKind == pb::SlotKind::Screen ? "wave" : slotKind == pb::SlotKind::Cosmetic ? "cosmetic" : "dial", nullptr);
     node.setProperty("style", armedStyle, nullptr);
+    if (pendingPiece != nullptr)
+    {
+        node.setProperty("skin", pendingPiece->skin, nullptr);
+        node.setProperty("quirk", pendingPiece->id, nullptr);
+    }
     node.setProperty("series", proc.uiState.getNumChildren(), nullptr);
     proc.uiState.appendChild(node, nullptr);
     placing = false;
@@ -1831,7 +1869,18 @@ void KyotoAudioProcessorEditor::addSeriesStep()
         if (auto* on = proc.apvts.getParameter(prefix + "on")) on->setValueNotifyingHost(1.f);
         auto setValue = [this, &prefix](const juce::String& suffix, float value) { if (auto* p = proc.apvts.getParameter(prefix + suffix)) p->setValueNotifyingHost(p->convertTo0to1(value)); };
         setValue("amt", (float)fxAmount.getValue()); setValue("tone", (float)fxTone.getValue()); setValue("mot", (float)fxMotion.getValue()); setValue("mix", (float)fxMix.getValue()); setValue("shp", (float)fxShape.getValue());
-        auto node = juce::ValueTree("w"); node.setProperty("slot", slot, nullptr); node.setProperty("param", "amt", nullptr); node.setProperty("label", kt::kFx[type].name, nullptr); node.setProperty("kind", kind, nullptr); node.setProperty("series", proc.uiState.getNumChildren(), nullptr); node.setProperty("slotCount", 1, nullptr); proc.uiState.appendChild(node, nullptr);
+        auto node = juce::ValueTree("w"); node.setProperty("slot", slot, nullptr);
+        const int paramId = juce::jlimit(0, kt::kControlParamCount - 1, paramBox.getSelectedId() - 1);
+        node.setProperty("param", kt::kControlParams[paramId].token, nullptr);
+        node.setProperty("label", paramId == 0 ? juce::String(kt::kFx[type].name) : juce::String(kt::kFx[type].name) + " " + kt::kControlParams[paramId].name, nullptr);
+        node.setProperty("kind", kind, nullptr);
+        const int pieceId = pieceBox.getSelectedId();
+        if (pieceId >= 2 && pieceId - 2 < kt::kModPieceCount)
+        {
+            node.setProperty("skin", kt::kModPieces[pieceId - 2].skin, nullptr);
+            node.setProperty("quirk", kt::kModPieces[pieceId - 2].id, nullptr);
+        }
+        node.setProperty("series", proc.uiState.getNumChildren(), nullptr); node.setProperty("slotCount", 1, nullptr); proc.uiState.appendChild(node, nullptr);
     }
     rebuildCanvas();
     status.setText("Added safely - " + juce::String(widgets.size()) + " control" + (widgets.size() == 1 ? "" : "s"), juce::dontSendNotification);
