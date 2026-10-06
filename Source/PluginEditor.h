@@ -1,10 +1,12 @@
 #pragma once
 #include "PluginProcessor.h"
+#include "ChainLevelControls.h"
 #include "Themes.h"
 #include "MachineDesign.h"
 #include "ModularParts.h"
 #include "WaveDisplay.h"
 #include "PluginShells.h"
+#include "FlexLayout.h"
 #include <vector>
 
 struct CanvasWidget : public juce::Component
@@ -126,6 +128,7 @@ private:
     void armPlacement();
     void placeInSlot(int slot);
     void ensureMotherboard();
+    void syncPanelMouse();
     void applyShell(int index);
     bool slotOccupied(int slot) const;
     juce::Point<float> slotAnchor(int slot) const;
@@ -191,7 +194,7 @@ private:
     float geekReveal = 0.f;
     int geekHotPart = -1;
     bool proMode = false;
-    int builderWizardStep = 0; // 0=done/builder, 1=theme, 2=shell
+    int builderWizardStep = 0; // 0=builder, 1=shell, 2=theme, 3=pick/place FX, 4=controls
     kt::ThemePalette playgroundTheme = kt::kThemes[0];
     MachineDesign machineDesign;
     float animPhase = 0.f;
@@ -220,6 +223,7 @@ private:
     juce::TextButton catalogModeBtn { "CATALOG" }, threadsModeBtn { "THREADS" }, railChatBtn { "CHAT" }, railOnlineBtn { "ONLINE" };
     int centerMode = 0;
     int railMode = 0;
+    bool scrollChatOnRefresh = true;
     juce::String selectedThreadId;
     struct ThreadItem { juce::String id, user, title, text, themeId; int comments = 0; };
     juce::Array<ThreadItem> threads;
@@ -243,6 +247,7 @@ private:
     bool pendingSpecial = false;
     int pendingSpecialType = 0;
     juce::String pendingLabel;
+    ChainLevelControls chainLevels { proc };
     pb::BuilderCanvas panel;
     std::unique_ptr<FxBrowser> fxBrowser;
     std::unique_ptr<WaveDisplay> waveDisplay;

@@ -26,6 +26,21 @@ docker exec kyoto-build ninja -C /tmp/build -j"$(nproc)" \
 ```
 Compiling just those objects needs JUCE headers only (Fetched at configure) — no full JUCE build. ~3 min. Past CI failures were undeclared `kt::kFx` usage in PluginViewScreen.h (fixed by including FxCatalog.h) and rail buttons missing from PluginEditor.h.
 
+## Auto-adjusting builder toolbars
+- Plugin Builder and FX Builder toolbars use `flx::row()` (Source/FlexLayout.h) to flex-distribute buttons and dropdowns across any window width. Fixed-width items (buttons) get their natural size; flex items (dropdowns) share the remaining space. No hardcoded pixel widths that overflow on narrow windows.
+- The sidebar (effects list) and FX inspector now scale proportionally via `juce::jlimit(min, max, width/fraction)` instead of fixed pixel widths.
+- The builder wizard step 3 ("YOUR FIRST EFFECT") now allows manual NEXT advance if at least one widget has been placed, in addition to the auto-advance in `placeInSlot()`.
+
+## Per-chain mixer compatibility
+- Plugin Builder's mixer uses chain ordinals separated by active BREAK slots, not individual effect wet/dry parameters. New sessions sum these gains without automatic normalization; older DAW states and module files keep legacy balanced summing until the user enables PER-CHAIN LEVELS.
+- Mixer parameters are appended to the APVTS layout to preserve existing parameter order/type ranges. DAW state and undo retain them; module JSON carries `chainLevels: { enabled, levels }`. Keep `module-rules.js` and `worker/module-rules.js` in sync so catalog publishing does not strip the gains.
+- Native controls cannot be interaction-tested in the browser preview (which serves only the Worker API). Compile-check both plugin variants and test the pure `Source/ChainMix.h` accumulator for gain/mute/legacy balance.
+
+## Native UI guide and chat
+- The builder guide now has four states: shell, playground theme, built-in FX selection/placement, then control practice. Advance with `showTab(1)`, not just `resized()`, so control visibility updates on every transition. Step 3 unlocks only after a successful bay placement.
+- JUCE ComboBox owns a child Label: never draw its text again in `drawComboBox`. Key/board/cosmetic canvas widgets paint their captions themselves.
+- Chat feed order is oldest-to-newest. Opening the chat follows the bottom; refreshing preserves history browsing unless already near the bottom. These native behaviors require a DAW check; Worker HTTP checks do not verify them.
+
 ## Verify it works
 ```bash
 curl -s http://localhost:3000/ | head -c 300          # feed JSON, "storage":"durable-v4"

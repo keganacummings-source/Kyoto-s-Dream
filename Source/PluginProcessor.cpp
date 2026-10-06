@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "FxCatalog.h"
+#include "ChainMix.h"
 #include <cmath>
 
 namespace
@@ -19,6 +20,44 @@ inline float safeMix(float v) noexcept
 juce::String KyotoAudioProcessor::slotId(int i, const char* tail)
 {
     return "s" + juce::String(i + 1).paddedLeft('0', 2) + tail;
+}
+
+juce::String KyotoAudioProcessor::chainLevelId(int chain)
+{
+    return "chain" + juce::String(chain + 1) + "Level";
+}
+
+juce::var KyotoAudioProcessor::exportChainLevels() const
+{
+    auto* state = new juce::DynamicObject();
+    state->setProperty("enabled", apvts.getRawParameterValue("perChainLevels")->load() >= 0.5f);
+    juce::Array<juce::var> levels;
+    for (int i = 0; i < kMaxChains; ++i)
+        levels.add(apvts.getRawParameterValue(chainLevelId(i))->load());
+    state->setProperty("levels", levels);
+    return juce::var(state);
+}
+
+void KyotoAudioProcessor::restoreChainLevels(const juce::var& state)
+{
+    auto* object = state.getDynamicObject();
+    auto* levels = object != nullptr ? object->getProperty("levels").getArray() : nullptr;
+    auto set = [this](const juce::String& id, float value)
+    {
+        if (auto* p = apvts.getParameter(id))
+        {
+            p->beginChangeGesture();
+            p->setValueNotifyingHost(p->convertTo0to1(value));
+            p->endChangeGesture();
+        }
+    };
+    // Older module files have no mixer settings: preserve their original balance.
+    set("perChainLevels", object != nullptr && (bool) object->getProperty("enabled") ? 1.f : 0.f);
+    for (int i = 0; i < kMaxChains; ++i)
+    {
+        const float value = levels != nullptr && i < levels->size() ? (float) levels->getReference(i) : 1.f;
+        set(chainLevelId(i), std::isfinite(value) ? safeMix(value) : 1.f);
+    }
 }
 
 KyotoAudioProcessor::KyotoAudioProcessor()
@@ -83,11 +122,19 @@ juce::AudioProcessorValueTreeState::ParameterLayout KyotoAudioProcessor::createL
         layout.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID { slotId(i, "mix"), 1 }, "Slot " + juce::String(i + 1) + " Mix", 0.f, 1.f, 0.4f));
         layout.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID { slotId(i, "shp"), 1 }, "Slot " + juce::String(i + 1) + " Shape", 0.f, 1.f, 0.5f));
     }
+    // Append new parameters so existing parameter order and type ranges stay stable.
+    layout.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID { "perChainLevels", 1 }, "Per-chain levels", true));
+    for (int i = 0; i < kMaxChains; ++i)
+        layout.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID { chainLevelId(i), 1 },
+            "Chain " + juce::String(i + 1) + " Level", 0.f, 1.f, 1.f));
     return layout;
 }
 
 void KyotoAudioProcessor::cacheParameters()
 {
+    perChainLevelsParam = apvts.getRawParameterValue("perChainLevels");
+    for (int i = 0; i < kMaxChains; ++i)
+        chainLevelParams[i] = apvts.getRawParameterValue(chainLevelId(i));
     oscParam = apvts.getRawParameterValue("osc");
     cutoffParam = apvts.getRawParameterValue("cutoff");
     attackParam = apvts.getRawParameterValue("attack");
@@ -308,14 +355,20 @@ void KyotoAudioProcessor::processChain(float& left, float& right, float original
 {
     juce::ignoreUnused(original);
     if (! anyActiveSlot)
+    {
+        if (blockPerChainLevels)
+        {
+            left *= blockChainLevels[0];
+            right *= blockChainLevels[0];
+        }
         return;
+    }
 
     float dryL = left, dryR = right;
     float segmentL = left, segmentR = right;
-    float accumulatedL = 0.f, accumulatedR = 0.f;
+    kt::ChainMix branches;
     float chainMix = 1.f;
-    bool hasBreak = false;
-    int segments = 1;
+    int chain = 0;
 
     // Walk only the compact active list — O(active) not O(maxSlots) per sample.
     for (int ai = 0; ai < activeSlotCount; ++ai)
@@ -331,10 +384,8 @@ void KyotoAudioProcessor::processChain(float& left, float& right, float original
         }
         if (type == kBreakType)
         {
-            accumulatedL += segmentL;
-            accumulatedR += segmentR;
-            hasBreak = true;
-            ++segments;
+            branches.add(segmentL, segmentR, blockPerChainLevels ? blockChainLevels[chain] : 1.f);
+            ++chain;
             segmentL = dryL;
             segmentR = dryR;
             continue;
@@ -347,19 +398,8 @@ void KyotoAudioProcessor::processChain(float& left, float& right, float original
         segmentR = right;
     }
 
-    if (hasBreak)
-    {
-        accumulatedL += segmentL;
-        accumulatedR += segmentR;
-        const float branches = 1.f / std::sqrt((float) juce::jmax(1, segments));
-        left = accumulatedL * branches;
-        right = accumulatedR * branches;
-    }
-    else
-    {
-        left = segmentL;
-        right = segmentR;
-    }
+    branches.add(segmentL, segmentR, blockPerChainLevels ? blockChainLevels[chain] : 1.f);
+    branches.output(left, right, blockPerChainLevels);
 
     left = dryL + (left - dryL) * chainMix;
     right = dryR + (right - dryR) * chainMix;
@@ -411,6 +451,9 @@ void KyotoAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     // Build the compact active-slot list once. Extreme custom-FX expansions
     // that fill many slots still only walk the live ones per sample.
     rebuildActiveSlots();
+    blockPerChainLevels = loadParam(perChainLevelsParam, 1.f) >= 0.5f;
+    for (int chain = 0; chain < kMaxChains; ++chain)
+        blockChainLevels[chain] = safeMix(loadParam(chainLevelParams[chain], 1.f));
     auto* writeL = nOut > 0 ? buffer.getWritePointer(0) : nullptr;
     auto* writeR = nOut > 1 ? buffer.getWritePointer(1) : writeL;
     const auto* readL = nIn > 0 ? buffer.getReadPointer(0) : nullptr;
@@ -509,6 +552,21 @@ void KyotoAudioProcessor::setStateInformation(const void* data, int size)
         auto tree = juce::ValueTree::fromXml(*xml);
         auto ui = tree.getChildWithName("ui");
         if (ui.isValid()) { uiState = ui; tree.removeChild(ui, nullptr); }
+        // Backfill old DAW states explicitly rather than inheriting the current
+        // session's gains. Old sessions retain the original balanced summing.
+        auto ensureParameter = [&tree](const juce::String& id, float value)
+        {
+            if (! tree.getChildWithProperty("id", id).isValid())
+            {
+                juce::ValueTree parameter("PARAM");
+                parameter.setProperty("id", id, nullptr);
+                parameter.setProperty("value", value, nullptr);
+                tree.appendChild(parameter, nullptr);
+            }
+        };
+        ensureParameter("perChainLevels", 0.f);
+        for (int i = 0; i < kMaxChains; ++i)
+            ensureParameter(chainLevelId(i), 1.f);
         apvts.replaceState(tree);
         cacheParameters();
     }
