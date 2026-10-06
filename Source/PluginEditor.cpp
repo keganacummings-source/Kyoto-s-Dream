@@ -584,8 +584,8 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     addBtn.onClick = [this] { armPlacement(); };
     chainRemoveBtn.onClick = [this] { removeSelectedChainStep(); };
     chainUndoBtn.onClick = [this] { undoLast(); };
-    chainBreakBtn.onClick = [this] { pendingSpecial = true; pendingSpecialType = KyotoAudioProcessor::kBreakType; pendingLabel = "CHAIN BREAK"; armedStyle = "dial"; placing = true; status.setText("Break is a knob part - click a glowing knob bay.", juce::dontSendNotification); panel.placing = true; panel.armedStyle = armedStyle; panel.repaint(); };
-    chainMixBtn.onClick = [this] { pendingSpecial = true; pendingSpecialType = KyotoAudioProcessor::kMixType; pendingLabel = "MASTER MIX"; armedStyle = "fader"; placing = true; status.setText("Mix is a fader part - click a glowing fader bay.", juce::dontSendNotification); panel.placing = true; panel.armedStyle = armedStyle; panel.repaint(); };
+    chainBreakBtn.onClick = [this] { pendingSpecial = true; pendingSpecialType = KyotoAudioProcessor::kBreakType; pendingLabel = "CHAIN BREAK"; armedStyle = "dial"; placing = true; status.setText("Break is a knob part - click a glowing knob bay.", juce::dontSendNotification); panel.placing = true; panel.armedStyle = armedStyle; syncPanelMouse(); panel.repaint(); };
+    chainMixBtn.onClick = [this] { pendingSpecial = true; pendingSpecialType = KyotoAudioProcessor::kMixType; pendingLabel = "MASTER MIX"; armedStyle = "fader"; placing = true; status.setText("Mix is a fader part - click a glowing fader bay.", juce::dontSendNotification); panel.placing = true; panel.armedStyle = armedStyle; syncPanelMouse(); panel.repaint(); };
     saveBtn.onClick = [this] { saveLocal(); };
     upBtn.onClick = [this] { publish(); };
     wavBtn.onClick = [this] { loadWav(); };
@@ -1325,6 +1325,7 @@ void KyotoAudioProcessorEditor::showTab(int next)
     resized();
     if (openingChat) chatView.setViewPosition(0, socialRail.getHeight());
     if (chain) { ensureMotherboard(); rebuildCanvas(); }
+    syncPanelMouse();
     repaint();
 }
 
@@ -1653,6 +1654,14 @@ void KyotoAudioProcessorEditor::ensureMotherboard()
     proc.setHardwareColour(shell.hiddenFx, colour);
 }
 
+void KyotoAudioProcessorEditor::syncPanelMouse()
+{
+    // When armed for placement the panel must intercept clicks so bay hits reach
+    // BuilderCanvas::mouseDown. When idle, let clicks pass through to widgets
+    // (children) and the parent editor.
+    panel.setInterceptsMouseClicks(placing, true);
+}
+
 void KyotoAudioProcessorEditor::armPlacement()
 {
     armedStyle = pb::styleToken(kindBox.getSelectedId());
@@ -1666,6 +1675,7 @@ void KyotoAudioProcessorEditor::armPlacement()
     placing = true;
     panel.placing = true;
     panel.armedStyle = armedStyle;
+    syncPanelMouse();
     status.setText(pendingPiece != nullptr
         ? juce::String(pendingPiece->name) + " armed: " + pendingPiece->quirk + ". Click a glowing bay."
         : "Theme is " + juce::String(theme.name) + ". Click a glowing " + kindBox.getText() + " bay.", juce::dontSendNotification);
@@ -1717,6 +1727,7 @@ void KyotoAudioProcessorEditor::placeInSlot(int slot)
     placing = false;
     pendingSpecial = false;
     panel.placing = false;
+    syncPanelMouse();
     rebuildCanvas();
     ensureMotherboard();
     status.setText("Snapped " + pendingLabel + " into " + juce::String(shell.slots[slot].name) + ". Wired from the motherboard.", juce::dontSendNotification);
@@ -2410,7 +2421,7 @@ void KyotoAudioProcessorEditor::enterBuilderWizard()
     builderWizardStep = 1;
     applyShell(shellBox.getSelectedId() - 1);
     showTab(1);
-    status.setText("Step 1 of 2 - pick a hardware template. Preview updates as you change the shell.", juce::dontSendNotification);
+    status.setText("Step 1 of 4 - pick a hardware template. Preview updates as you change the shell.", juce::dontSendNotification);
     resized();
     repaint();
 }
@@ -2431,6 +2442,7 @@ void KyotoAudioProcessorEditor::advanceBuilderWizard()
             applyPlaygroundTheme(kt::kThemes[i].id);
         builderWizardStep = 3;
         placing = false;
+        syncPanelMouse();
         if (fxBrowser) fxBrowser->showCustom(false);
         showTab(1);
         status.setText("Step 3 of 4 - select an effect, then place it in a glowing knob bay.", juce::dontSendNotification);

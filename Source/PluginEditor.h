@@ -127,6 +127,7 @@ private:
     void armPlacement();
     void placeInSlot(int slot);
     void ensureMotherboard();
+    void syncPanelMouse();
     void applyShell(int index);
     bool slotOccupied(int slot) const;
     juce::Point<float> slotAnchor(int slot) const;
