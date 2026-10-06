@@ -675,6 +675,13 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     fxAmount.onValueChange = [this] { writeFxStepFromControls(); };
 
     kindBox.addItem("Knob / Arc", 1); kindBox.addItem("Knob / Pointer", 2); kindBox.addItem("Fader", 3); kindBox.addItem("Slide", 4); kindBox.addItem("Button", 5); kindBox.addItem("Screen", 6); kindBox.addItem("Vent", 7); kindBox.addItem("Badge", 8); kindBox.addItem("Rail", 9); kindBox.setSelectedId(1);
+    shellLabel.setText("TEMPLATE", juce::dontSendNotification);
+    playgroundThemeLabel.setText("THEME", juce::dontSendNotification);
+    for (auto* l : { &shellLabel, &playgroundThemeLabel })
+    {
+        l->setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(*l);
+    }
     addAndMakeVisible(shellBox);
     for (int i = 0; i < pb::kShellCount; ++i) shellBox.addItem(pb::kShells[i].name, i + 1);
     shellBox.setSelectedId(1);
@@ -787,17 +794,11 @@ void KyotoAudioProcessorEditor::syncMachineDesignToUi()
 
 void KyotoAudioProcessorEditor::startNewMachine(int mode)
 {
-    machineDesign = MachineDesign{};
-    machineDesign.choosePlayground((MachineDesign::PlaygroundMode) juce::jlimit(0, 3, mode));
     machineDesign.theme = theme.id;
-    machineDesign.bodyDesign = "Bare Frame";
+    machineDesign.choosePlayground((MachineDesign::PlaygroundMode) juce::jlimit(0, 3, mode));
     syncMachineDesignToUi();
-    proc.uiState.removeAllChildren(nullptr);
-    fxStack.removeAllChildren(nullptr);
-    widgets.clear();
-    selectedFxStep = -1;
-    status.setText("New machine: " + machineDesign.aspectRatio + " playground", juce::dontSendNotification);
-    showTab(1);
+    status.setText("Aspect ratio: " + machineDesign.aspectRatio + " playground", juce::dontSendNotification);
+    repaint();
 }
 
 void KyotoAudioProcessorEditor::randomizeMachine()
@@ -1041,25 +1042,6 @@ struct BoardCard : public juce::Component
 void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
 {
     g.fillAll(kt::c(theme.bg));
-    if (pluginView)
-    {
-        auto r = getLocalBounds().reduced(18).toFloat();
-        g.setColour(kt::c(theme.panel)); g.fillRoundedRectangle(r, 18.f);
-        g.setColour(kt::c(theme.border)); g.drawRoundedRectangle(r, 18.f, 1.f);
-        g.setColour(kt::c(theme.accent)); g.setFont(kt::font(theme, 18.f, true));
-        g.drawText(machineDesign.bodyDesign.toUpperCase(), r.getX()+26, r.getY()+52, r.getWidth()-52, 28, juce::Justification::centred);
-        g.setColour(kt::c(theme.muted)); g.setFont(kt::font(theme, 10.f));
-        g.drawText(machineDesign.aspectRatio + "  -  " + machineDesign.bodyDesign + "  -  " + theme.name, r.getX()+26, r.getY()+82, r.getWidth()-52, 18, juce::Justification::centred);
-        for (const auto& part : machineDesign.modules)
-        {
-            auto q = juce::Rectangle<float>(r.getX()+part.bounds.getX()*0.72f, r.getY()+part.bounds.getY()*0.72f+112.f, part.bounds.getWidth()*0.72f, part.bounds.getHeight()*0.72f);
-            q.setPosition(juce::jlimit(r.getX()+16.f, r.getRight()-q.getWidth()-16.f, q.getX()), juce::jlimit(r.getY()+112.f, r.getBottom()-q.getHeight()-24.f, q.getY()));
-            g.setColour(kt::c(theme.panel).brighter(0.08f)); g.fillRoundedRectangle(q, 10.f);
-            g.setColour(kt::c(theme.accent).withAlpha(0.72f)); g.drawRoundedRectangle(q, 10.f, 1.5f);
-            g.setColour(kt::c(theme.text)); g.setFont(kt::font(theme, 9.f, true)); g.drawFittedText(part.type, q.reduced(7.f).toNearestInt(), juce::Justification::centred, 1);
-        }
-        return;
-    }
     drawThemeField(g, theme, getLocalBounds().toFloat().reduced(10.f), animPhase);
     for (int i=0;i<2;i++)
     {
@@ -1224,6 +1206,8 @@ void KyotoAudioProcessorEditor::showTab(int next)
     // Step 1 = shell template, Step 2 = playground theme; both stay available after the guide.
     shellBox.setVisible(chain && loggedIn && (builderWizardStep == 0 || builderWizardStep == 1));
     playgroundThemeBox.setVisible(chain && loggedIn && (builderWizardStep == 0 || builderWizardStep == 2));
+    shellLabel.setVisible(shellBox.isVisible());
+    playgroundThemeLabel.setVisible(playgroundThemeBox.isVisible());
     wizardNextBtn.setVisible(wizard);
     wizardSkipBtn.setVisible(wizard);
     proToggleBtn.setVisible(share && loggedIn);
@@ -1238,7 +1222,7 @@ void KyotoAudioProcessorEditor::showTab(int next)
     addBtn.setVisible(builderReady); chainBreakBtn.setVisible(builderReady); chainMixBtn.setVisible(builderReady); chainRemoveBtn.setVisible(builderReady); chainUndoBtn.setVisible(builderReady);
     nameBox.setVisible(builderReady); presetBox.setVisible(builderReady); saveBtn.setVisible(builderReady); upBtn.setVisible(builderReady); kindBox.setVisible(builderReady); wavBtn.setVisible(builderReady);
     gridStyleBox.setVisible(false); effectBox.setVisible(false);
-    newMachineBtn.setVisible(builderReady && !pluginView); randomMachineBtn.setVisible(builderReady && !pluginView);
+    newMachineBtn.setVisible(share && loggedIn && !pluginView); randomMachineBtn.setVisible(share && loggedIn && !pluginView);
 
     effectNameBox.setVisible(fx); fxAddBtn.setVisible(fx); fxSaveBtn.setVisible(fx); fxUpBtn.setVisible(fx); fxShareChatBtn.setVisible(fx); fxShareThreadBtn.setVisible(fx); fxRemoveBtn.setVisible(fx); fxUndoBtn.setVisible(fx);
     fxAmount.setVisible(fx); fxTone.setVisible(fx); fxMotion.setVisible(fx); fxMix.setVisible(fx); fxShape.setVisible(fx);
@@ -1302,6 +1286,8 @@ void KyotoAudioProcessorEditor::resized()
         threadsModeBtn.setBounds(top.removeFromLeft(92)); top.removeFromLeft(6);
         feedBtn.setBounds(top.removeFromLeft(84));
         if (isAdmin && top.getWidth() > 84) { top.removeFromLeft(6); adminDeleteBtn.setBounds(top.removeFromLeft(78)); }
+        if (top.getWidth() > 116) { top.removeFromLeft(10); newMachineBtn.setBounds(top.removeFromLeft(106)); }
+        if (top.getWidth() > 152) { top.removeFromLeft(8); randomMachineBtn.setBounds(top.removeFromLeft(136)); }
         const int railW = juce::jlimit(236, 286, getWidth() / 5);
         auto rail = area.removeFromRight(railW);
         area.removeFromRight(10);
@@ -1367,11 +1353,17 @@ void KyotoAudioProcessorEditor::resized()
             panel.setBounds(area.reduced(2));
 
             // Reserve space matching the painted title + guide text.
-            left.removeFromTop(120);
+            left.removeFromTop(106);
             if (builderWizardStep == 1)
-                shellBox.setBounds(left.removeFromTop(36));
+            {
+                shellLabel.setBounds(left.removeFromTop(14));
+                shellBox.setBounds(left.removeFromTop(34));
+            }
             else
-                playgroundThemeBox.setBounds(left.removeFromTop(36));
+            {
+                playgroundThemeLabel.setBounds(left.removeFromTop(14));
+                playgroundThemeBox.setBounds(left.removeFromTop(34));
+            }
             left.removeFromTop(14);
             auto row = left.removeFromTop(36);
             wizardNextBtn.setBounds(row.removeFromLeft(120));
@@ -1383,9 +1375,13 @@ void KyotoAudioProcessorEditor::resized()
             return;
         }
 
-        auto top = area.removeFromTop(48);
-        playgroundThemeBox.setBounds(top.removeFromLeft(138)); top.removeFromLeft(6);
+        auto top = area.removeFromTop(62);
+        auto labelRow = top.removeFromTop(15);
+        shellLabel.setBounds(labelRow.removeFromLeft(138)); labelRow.removeFromLeft(6);
+        playgroundThemeLabel.setBounds(labelRow.removeFromLeft(138));
+        top.removeFromTop(2);
         shellBox.setBounds(top.removeFromLeft(138)); top.removeFromLeft(6);
+        playgroundThemeBox.setBounds(top.removeFromLeft(138)); top.removeFromLeft(6);
         nameBox.setBounds(top.removeFromLeft(120)); top.removeFromLeft(6);
         kindBox.setBounds(top.removeFromLeft(128)); top.removeFromLeft(6);
         addBtn.setBounds(top.removeFromLeft(68)); top.removeFromLeft(5);
@@ -1396,8 +1392,6 @@ void KyotoAudioProcessorEditor::resized()
 
         auto actions = area.removeFromTop(40);
         presetBox.setBounds(actions.removeFromLeft(238)); actions.removeFromLeft(8);
-        newMachineBtn.setBounds(actions.removeFromLeft(96)); actions.removeFromLeft(6);
-        randomMachineBtn.setBounds(actions.removeFromLeft(128)); actions.removeFromLeft(6);
         wavBtn.setBounds(actions.removeFromLeft(58)); actions.removeFromLeft(6);
         saveBtn.setBounds(actions.removeFromLeft(68)); actions.removeFromLeft(6);
         upBtn.setBounds(actions.removeFromLeft(78));
@@ -1745,73 +1739,26 @@ void KyotoAudioProcessorEditor::addSeriesStep()
         auto* obj = parsed.getDynamicObject();
         auto* steps = obj != nullptr ? obj->getProperty("steps").getArray() : nullptr;
         if (steps == nullptr || steps->isEmpty()) { status.setText("Custom effect has no steps.", juce::dontSendNotification); return; }
-        // Hard limits under extreme use: expand only to primitive stages
-        // (no recursive custom-in-custom in the DSP path). Cap so one placement
-        // cannot exhaust the machine or create a CPU rabbit hole.
-        const int maxExpand = juce::jmin(16, proc.slotCount());
-        int needed = 0;
-        for (auto& value : *steps)
-        {
-            auto* so = value.getDynamicObject();
-            if (so == nullptr) continue;
-            const int fxId = (int) propertyOr(so, "fx", -1);
-            if (fxId < 0 || fxId >= kt::kFxCount) continue;
-            if (++needed > maxExpand) break;
-        }
-        if (needed <= 0) { status.setText("Custom effect has no usable primitive stages.", juce::dontSendNotification); return; }
-        int freeSlots = 0;
-        for (int i = 0; i < proc.slotCount(); ++i)
-            if (auto* on = proc.apvts.getParameter("s" + juce::String(i + 1).paddedLeft('0', 2) + "on"); on && on->getValue() < 0.5f)
-                ++freeSlots;
-        if (freeSlots < needed)
-        {
-            status.setText("Need " + juce::String(needed) + " free DSP slots (have " + juce::String(freeSlots)
-                           + "). Clear stages or build a smaller custom FX.", juce::dontSendNotification);
-            return;
-        }
         juce::Rectangle<int> room;
         if (! findAutoCell(widgets.size(), "stack", room)) { status.setText("No room left. Build a custom FX to keep the chain compact.", juce::dontSendNotification); return; }
         captureSnapshot();
         int first = -1;
-        int placed = 0;
         for (auto& value : *steps)
         {
-            if (placed >= needed) break;
             auto* src = value.getDynamicObject();
-            if (src == nullptr) continue;
-            const int fxId = (int) propertyOr(src, "fx", -1);
-            if (fxId < 0 || fxId >= kt::kFxCount) continue; // primitives only
+            if (!src) continue;
             int slot = -1;
             for (int i = 0; i < proc.slotCount(); ++i)
                 if (auto* on = proc.apvts.getParameter("s" + juce::String(i + 1).paddedLeft('0', 2) + "on"); on && on->getValue() < 0.5f) { slot = i; break; }
             if (slot < 0) { status.setText("Not enough DSP slots for this custom effect.", juce::dontSendNotification); undoLast(); return; }
             if (first < 0) first = slot;
             const auto prefix = "s" + juce::String(slot + 1).paddedLeft('0', 2);
-            auto setP = [&](const juce::String& key, float v)
-            {
-                if (auto* p = proc.apvts.getParameter(prefix + key))
-                    p->setValueNotifyingHost(p->convertTo0to1(v));
-            };
-            setP("type", (float) fxId);
-            setP("amt", (float) propertyOr(src, "amount", 0.5));
-            setP("tone", (float) propertyOr(src, "tone", 0.5));
-            setP("mot", (float) propertyOr(src, "motion", 0.35));
-            setP("mix", (float) propertyOr(src, "mix", 0.4));
-            setP("shp", (float) propertyOr(src, "shape", 0.5));
+            auto setP = [&](const juce::String& key, float v) { if (auto* p = proc.apvts.getParameter(prefix + key)) p->setValueNotifyingHost(p->convertTo0to1(v)); };
+            setP("type", (float)(int)propertyOr(src, "fx", 0)); setP("amt", (float)propertyOr(src, "amount", 0.5)); setP("tone", (float)propertyOr(src, "tone", 0.5)); setP("mot", (float)propertyOr(src, "motion", 0.35)); setP("mix", (float)propertyOr(src, "mix", 0.4)); setP("shp", (float)propertyOr(src, "shape", 0.5));
             if (auto* p = proc.apvts.getParameter(prefix + "on")) p->setValueNotifyingHost(1.f);
-            ++placed;
         }
-        auto node = juce::ValueTree("w");
-        node.setProperty("slot", first, nullptr);
-        node.setProperty("param", "amt", nullptr);
-        node.setProperty("label", name, nullptr);
-        node.setProperty("kind", "stack", nullptr);
-        node.setProperty("series", proc.uiState.getNumChildren(), nullptr);
-        node.setProperty("slotCount", placed, nullptr);
-        proc.uiState.appendChild(node, nullptr);
-        rebuildCanvas();
-        status.setText("Added custom effect: " + name + " (" + juce::String(placed) + " stages)", juce::dontSendNotification);
-        return;
+        auto node = juce::ValueTree("w"); node.setProperty("slot", first, nullptr); node.setProperty("param", "amt", nullptr); node.setProperty("label", name, nullptr); node.setProperty("kind", "stack", nullptr); node.setProperty("series", proc.uiState.getNumChildren(), nullptr); node.setProperty("slotCount", (int)steps->size(), nullptr); proc.uiState.appendChild(node, nullptr);
+        rebuildCanvas(); status.setText("Added custom effect: " + name, juce::dontSendNotification); return;
     }
 
     juce::Rectangle<int> room;
@@ -2268,6 +2215,11 @@ void KyotoAudioProcessorEditor::applyTheme(const juce::String& id)
         e->setColour(juce::TextEditor::highlightedTextColourId, kt::c(theme.text));
         e->setColour(juce::TextEditor::shadowColourId, juce::Colours::transparentBlack);
         e->setFont(kt::font(theme, 13.f));
+    }
+    for (auto* l : { &shellLabel, &playgroundThemeLabel })
+    {
+        l->setFont(kt::font(theme, 10.f, true));
+        l->setColour(juce::Label::textColourId, kt::c(theme.muted));
     }
     for (auto* l : { &status, &whoLabel, &fxAmountLabel, &fxToneLabel, &fxMotionLabel, &fxMixLabel, &fxShapeLabel, &stackLabel })
     {
