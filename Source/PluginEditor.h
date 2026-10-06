@@ -6,6 +6,7 @@
 #include "ModularParts.h"
 #include "WaveDisplay.h"
 #include "PluginShells.h"
+#include "FlexLayout.h"
 #include <vector>
 
 struct CanvasWidget : public juce::Component

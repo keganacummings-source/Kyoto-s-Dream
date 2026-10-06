@@ -26,6 +26,11 @@ docker exec kyoto-build ninja -C /tmp/build -j"$(nproc)" \
 ```
 Compiling just those objects needs JUCE headers only (Fetched at configure) — no full JUCE build. ~3 min. Past CI failures were undeclared `kt::kFx` usage in PluginViewScreen.h (fixed by including FxCatalog.h) and rail buttons missing from PluginEditor.h.
 
+## Auto-adjusting builder toolbars
+- Plugin Builder and FX Builder toolbars use `flx::row()` (Source/FlexLayout.h) to flex-distribute buttons and dropdowns across any window width. Fixed-width items (buttons) get their natural size; flex items (dropdowns) share the remaining space. No hardcoded pixel widths that overflow on narrow windows.
+- The sidebar (effects list) and FX inspector now scale proportionally via `juce::jlimit(min, max, width/fraction)` instead of fixed pixel widths.
+- The builder wizard step 3 ("YOUR FIRST EFFECT") now allows manual NEXT advance if at least one widget has been placed, in addition to the auto-advance in `placeInSlot()`.
+
 ## Per-chain mixer compatibility
 - Plugin Builder's mixer uses chain ordinals separated by active BREAK slots, not individual effect wet/dry parameters. New sessions sum these gains without automatic normalization; older DAW states and module files keep legacy balanced summing until the user enables PER-CHAIN LEVELS.
 - Mixer parameters are appended to the APVTS layout to preserve existing parameter order/type ranges. DAW state and undo retain them; module JSON carries `chainLevels: { enabled, levels }`. Keep `module-rules.js` and `worker/module-rules.js` in sync so catalog publishing does not strip the gains.

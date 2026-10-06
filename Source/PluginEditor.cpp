@@ -1176,6 +1176,16 @@ void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
 
     if (tab == 1)
     {
+        // Toolbar background for the auto-adjusting builder bar.
+        if (loggedIn && builderWizardStep == 0)
+        {
+            auto tb = getLocalBounds().withTrimmedTop(52).reduced(12).removeFromTop(76);
+            g.setColour(kt::c(theme.panel).withAlpha(0.55f));
+            g.fillRoundedRectangle(tb.toFloat(), 10.f);
+            g.setColour(kt::c(theme.border).withAlpha(0.4f));
+            g.drawRoundedRectangle(tb.toFloat(), 10.f, 1.f);
+        }
+
         // Always drive the live template preview from playground theme + selected shell.
         panel.theme = playgroundTheme;
         panel.shellIndex = shellIndex;
@@ -1221,6 +1231,16 @@ void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
 
     if (tab == 2)
     {
+        // Toolbar background for the FX builder bar.
+        if (loggedIn)
+        {
+            auto tb = getLocalBounds().withTrimmedTop(52).reduced(12).removeFromTop(76);
+            g.setColour(kt::c(theme.panel).withAlpha(0.55f));
+            g.fillRoundedRectangle(tb.toFloat(), 10.f);
+            g.setColour(kt::c(theme.border).withAlpha(0.4f));
+            g.drawRoundedRectangle(tb.toFloat(), 10.f, 1.f);
+        }
+
         auto pb = panel.getBounds().toFloat();
         g.setColour(kt::c(theme.panel).withAlpha(0.96f)); g.fillRoundedRectangle(pb, 12.f); g.setColour(kt::c(theme.border)); g.drawRoundedRectangle(pb, 12.f, 1.f);
         g.setColour(kt::c(theme.accent)); g.setFont(kt::font(theme, 15.f, true)); g.drawText("CUSTOM EFFECT", pb.getX()+16, pb.getY()+12, 220, 20, juce::Justification::left);
@@ -1304,8 +1324,10 @@ void KyotoAudioProcessorEditor::showTab(int next)
     // Keep the live shell preview visible during the guide as well as in the full builder.
     panel.setVisible(chain);
     if (fxBrowser) fxBrowser->setVisible(builderReady || fx || (wizard && builderWizardStep == 3));
-    wizardNextBtn.setEnabled(builderWizardStep != 3);
-    wizardNextBtn.setButtonText(builderWizardStep == 4 ? "BUILD >" : "NEXT >");
+    // Step 3 advances once the user places a part (auto in placeInSlot), but also
+    // allow NEXT if they already have at least one widget on the template.
+    wizardNextBtn.setEnabled(builderWizardStep != 3 || widgets.size() > 0);
+    wizardNextBtn.setButtonText(builderWizardStep == 4 ? "BUILD >" : builderWizardStep == 3 ? "PLACE A PART >" : "NEXT >");
     chainLevels.setVisible(builderReady && ! pluginView);
     addBtn.setVisible(builderReady); chainBreakBtn.setVisible(builderReady); chainMixBtn.setVisible(builderReady); chainRemoveBtn.setVisible(builderReady); chainUndoBtn.setVisible(builderReady);
     nameBox.setVisible(builderReady); presetBox.setVisible(builderReady); saveBtn.setVisible(builderReady); upBtn.setVisible(builderReady); kindBox.setVisible(builderReady); paramBox.setVisible(builderReady); pieceBox.setVisible(builderReady); wavBtn.setVisible(builderReady);
@@ -1473,49 +1495,108 @@ void KyotoAudioProcessorEditor::resized()
             return;
         }
 
-        auto top = area.removeFromTop(62);
-        auto labelRow = top.removeFromTop(15);
-        shellLabel.setBounds(labelRow.removeFromLeft(138)); labelRow.removeFromLeft(6);
-        playgroundThemeLabel.setBounds(labelRow.removeFromLeft(138));
-        top.removeFromTop(2);
-        shellBox.setBounds(top.removeFromLeft(138)); top.removeFromLeft(6);
-        playgroundThemeBox.setBounds(top.removeFromLeft(138)); top.removeFromLeft(6);
-        nameBox.setBounds(top.removeFromLeft(120)); top.removeFromLeft(6);
-        kindBox.setBounds(top.removeFromLeft(128)); top.removeFromLeft(6);
-        paramBox.setBounds(top.removeFromLeft(128)); top.removeFromLeft(6);
-        pieceBox.setBounds(top.removeFromLeft(196)); top.removeFromLeft(6);
-        addBtn.setBounds(top.removeFromLeft(68)); top.removeFromLeft(5);
-        chainBreakBtn.setBounds(top.removeFromLeft(68)); top.removeFromLeft(5);
-        chainMixBtn.setBounds(top.removeFromLeft(68)); top.removeFromLeft(5);
-        chainRemoveBtn.setBounds(top.removeFromLeft(74)); top.removeFromLeft(5);
-        chainUndoBtn.setBounds(top.removeFromLeft(64));
+        // --- Auto-adjusting toolbar: flex-distributed, fits any window width ---
+        // Row 1: inline labels + dropdowns + action buttons
+        {
+            auto top = area.removeFromTop(34);
+            flx::row(top, 5, {
+                flx::Item { &shellLabel, 0.f, 58, true },
+                flx::Item { &shellBox, 1.5f, 90 },
+                flx::Item { &playgroundThemeLabel, 0.f, 48, true },
+                flx::Item { &playgroundThemeBox, 1.5f, 90 },
+                flx::Item { &nameBox, 1.2f, 70 },
+                flx::Item { &kindBox, 1.3f, 80 },
+                flx::Item { &paramBox, 1.3f, 80 },
+                flx::Item { &pieceBox, 1.8f, 100 },
+                flx::Item { &addBtn, 0.f, 54, true },
+                flx::Item { &chainBreakBtn, 0.f, 54, true },
+                flx::Item { &chainMixBtn, 0.f, 54, true },
+                flx::Item { &chainRemoveBtn, 0.f, 60, true },
+                flx::Item { &chainUndoBtn, 0.f, 50, true },
+            });
+        }
+        area.removeFromTop(4);
+        // Row 2: presets, file ops, per-chain levels
+        {
+            auto actions = area.removeFromTop(34);
+            flx::row(actions, 6, {
+                flx::Item { &presetBox, 2.5f, 120 },
+                flx::Item { &wavBtn, 0.f, 50, true },
+                flx::Item { &saveBtn, 0.f, 54, true },
+                flx::Item { &upBtn, 0.f, 62, true },
+                flx::spacer(6),
+                flx::Item { &chainLevels, 3.f, 100 },
+            });
+        }
 
-        auto actions = area.removeFromTop(40);
-        presetBox.setBounds(actions.removeFromLeft(238)); actions.removeFromLeft(8);
-        wavBtn.setBounds(actions.removeFromLeft(58)); actions.removeFromLeft(6);
-        saveBtn.setBounds(actions.removeFromLeft(68)); actions.removeFromLeft(6);
-        upBtn.setBounds(actions.removeFromLeft(78));
-        actions.removeFromLeft(10);
-        chainLevels.setBounds(actions.withHeight(32));
-
-        auto left = area.removeFromLeft(300);
+        const int sideW = juce::jlimit(230, 320, area.getWidth() / 4);
+        auto left = area.removeFromLeft(sideW);
         if (fxBrowser) fxBrowser->setBounds(left);
-        area.removeFromLeft(10);
+        area.removeFromLeft(8);
         panel.setBounds(area);
         reflowSeries();
     }
     else
     {
-        auto top = area.removeFromTop(58);
-        effectNameBox.setBounds(top.removeFromLeft(190)); top.removeFromLeft(7); fxAddBtn.setBounds(top.removeFromLeft(70)); top.removeFromLeft(5); fxBreakBtn.setBounds(top.removeFromLeft(60)); top.removeFromLeft(5); fxMixBtn.setBounds(top.removeFromLeft(92)); top.removeFromLeft(5); fxRemoveBtn.setBounds(top.removeFromLeft(70)); top.removeFromLeft(5); fxUndoBtn.setBounds(top.removeFromLeft(60)); top.removeFromLeft(5); fxSaveBtn.setBounds(top.removeFromLeft(62)); top.removeFromLeft(5); fxUpBtn.setBounds(top.removeFromLeft(74)); top.removeFromLeft(5); fxShareChatBtn.setBounds(top.removeFromLeft(54)); top.removeFromLeft(5); fxShareThreadBtn.setBounds(top.removeFromLeft(62));
-        auto left = area.removeFromLeft(282); if (fxBrowser) fxBrowser->setBounds(left); area.removeFromLeft(10);
-        auto inspector = area.removeFromRight(286);
-        stackLabel.setBounds(area.removeFromTop(34));
-        auto tools = inspector.removeFromTop(42); fxRandomBtn.setBounds(tools.removeFromLeft(92)); tools.removeFromLeft(6); fxClearBtn.setBounds(tools.removeFromLeft(72));
-        auto labels = inspector.removeFromTop(20);
-        fxAmountLabel.setBounds(labels.removeFromLeft(54)); fxToneLabel.setBounds(labels.removeFromLeft(54)); fxMotionLabel.setBounds(labels.removeFromLeft(54)); fxMixLabel.setBounds(labels.removeFromLeft(54)); fxShapeLabel.setBounds(labels.removeFromLeft(54));
-        auto knobs = inspector.removeFromTop(104);
-        fxAmount.setBounds(knobs.removeFromLeft(54)); fxTone.setBounds(knobs.removeFromLeft(54)); fxMotion.setBounds(knobs.removeFromLeft(54)); fxMix.setBounds(knobs.removeFromLeft(54)); fxShape.setBounds(knobs.removeFromLeft(54));
+        // --- Auto-adjusting FX Builder toolbar: two flex rows ---
+        // Row 1: name + build actions
+        {
+            auto top = area.removeFromTop(34);
+            flx::row(top, 5, {
+                flx::Item { &effectNameBox, 2.5f, 100 },
+                flx::Item { &fxAddBtn, 0.f, 60, true },
+                flx::Item { &fxBreakBtn, 0.f, 54, true },
+                flx::Item { &fxMixBtn, 0.f, 78, true },
+                flx::Item { &fxRemoveBtn, 0.f, 60, true },
+                flx::Item { &fxUndoBtn, 0.f, 50, true },
+            });
+        }
+        area.removeFromTop(4);
+        // Row 2: save/publish/share/randomize/clear
+        {
+            auto top = area.removeFromTop(34);
+            flx::row(top, 5, {
+                flx::Item { &fxSaveBtn, 0.f, 54, true },
+                flx::Item { &fxUpBtn, 0.f, 64, true },
+                flx::Item { &fxShareChatBtn, 0.f, 46, true },
+                flx::Item { &fxShareThreadBtn, 0.f, 54, true },
+                flx::Item { &fxRandomBtn, 0.f, 60, true },
+                flx::Item { &fxClearBtn, 0.f, 52, true },
+                flx::spacer(4),
+                flx::Item { &stackLabel, 2.f, 80 },
+            });
+        }
+        // Proportional sidebar + inspector (shrink/grow with window)
+        const int sideW = juce::jlimit(220, 320, area.getWidth() / 4);
+        auto left = area.removeFromLeft(sideW);
+        if (fxBrowser) fxBrowser->setBounds(left);
+        area.removeFromLeft(8);
+        auto inspector = area.removeFromRight(juce::jlimit(220, 300, area.getWidth() / 4));
+        stackLabel.setBounds(area.removeFromTop(30));
+        // Inspector: random/clear tools, then 5 knob columns (flex)
+        auto tools = inspector.removeFromTop(40);
+        flx::row(tools, 6, {
+            flx::Item { &fxRandomBtn, 1.f, 70 },
+            flx::spacer(4),
+            flx::Item { &fxClearBtn, 1.f, 56 },
+        });
+        inspector.removeFromTop(6);
+        auto labels = inspector.removeFromTop(18);
+        flx::row(labels, 4, {
+            flx::Item { &fxAmountLabel, 1.f, 40 },
+            flx::Item { &fxToneLabel, 1.f, 40 },
+            flx::Item { &fxMotionLabel, 1.f, 40 },
+            flx::Item { &fxMixLabel, 1.f, 40 },
+            flx::Item { &fxShapeLabel, 1.f, 40 },
+        });
+        auto knobs = inspector;
+        flx::row(knobs, 4, {
+            flx::Item { &fxAmount, 1.f, 44 },
+            flx::Item { &fxTone, 1.f, 44 },
+            flx::Item { &fxMotion, 1.f, 44 },
+            flx::Item { &fxMix, 1.f, 44 },
+            flx::Item { &fxShape, 1.f, 44 },
+        });
         panel.setBounds(area);
     }
 }
@@ -2446,6 +2527,20 @@ void KyotoAudioProcessorEditor::advanceBuilderWizard()
         if (fxBrowser) fxBrowser->showCustom(false);
         showTab(1);
         status.setText("Step 3 of 4 - select an effect, then place it in a glowing knob bay.", juce::dontSendNotification);
+    }
+    else if (builderWizardStep == 3)
+    {
+        // Allow manual advance from step 3 if at least one part was placed.
+        if (widgets.size() > 0)
+        {
+            builderWizardStep = 4;
+            showTab(1);
+            status.setText("Step 4 of 4 - try the effect knob, then enter the workshop.", juce::dontSendNotification);
+        }
+        else
+        {
+            status.setText("Select an effect on the left, then click a glowing bay on your template.", juce::dontSendNotification);
+        }
     }
     else if (builderWizardStep == 4)
     {
