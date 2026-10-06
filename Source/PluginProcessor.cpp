@@ -286,9 +286,30 @@ void KyotoAudioProcessor::applySlotStereo(int slot, float& left, float& right)
     right = right * (1.f - wet) + wetR * wet;
 }
 
+void KyotoAudioProcessor::rebuildActiveSlots() noexcept
+{
+    activeSlotCount = 0;
+    anyActiveSlot = false;
+    const int nSlots = slotCount();
+    for (int s = 0; s < nSlots; ++s)
+    {
+        if (! blockConfig[s].on)
+            continue;
+        // Hard cap: never process more than kMaxSlots live stages even if
+        // a pathological custom expansion tried to fill everything.
+        if (activeSlotCount >= kMaxSlots)
+            break;
+        activeSlots[activeSlotCount++] = s;
+        anyActiveSlot = true;
+    }
+}
+
 void KyotoAudioProcessor::processChain(float& left, float& right, float original)
 {
     juce::ignoreUnused(original);
+    if (! anyActiveSlot)
+        return;
+
     float dryL = left, dryR = right;
     float segmentL = left, segmentR = right;
     float accumulatedL = 0.f, accumulatedR = 0.f;
@@ -296,15 +317,16 @@ void KyotoAudioProcessor::processChain(float& left, float& right, float original
     bool hasBreak = false;
     int segments = 1;
 
-    for (int s = 0; s < slotCount(); ++s)
+    // Walk only the compact active list — O(active) not O(maxSlots) per sample.
+    for (int ai = 0; ai < activeSlotCount; ++ai)
     {
+        const int s = activeSlots[ai];
         const auto& cfg = blockConfig[s];
-        if (! cfg.on) continue;
         const int type = cfg.type;
 
         if (type == kMixType)
         {
-            chainMix = blockConfig[s].amount;
+            chainMix = cfg.amount;
             continue;
         }
         if (type == kBreakType)
@@ -373,6 +395,7 @@ void KyotoAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     const int nIn = getTotalNumInputChannels();
     const int nOut = getTotalNumOutputChannels();
     const int n = buffer.getNumSamples();
+    // Snapshot all slot parameters once per block (not per sample).
     for (int s = 0; s < slotCount(); ++s)
     {
         const auto& p = slotParams[s];
@@ -385,6 +408,9 @@ void KyotoAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
         cfg.mix = safeMix(loadParam(p.mix));
         cfg.shape = safeMix(loadParam(p.shape));
     }
+    // Build the compact active-slot list once. Extreme custom-FX expansions
+    // that fill many slots still only walk the live ones per sample.
+    rebuildActiveSlots();
     auto* writeL = nOut > 0 ? buffer.getWritePointer(0) : nullptr;
     auto* writeR = nOut > 1 ? buffer.getWritePointer(1) : writeL;
     const auto* readL = nIn > 0 ? buffer.getReadPointer(0) : nullptr;

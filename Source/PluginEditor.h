@@ -4,6 +4,7 @@
 #include "MachineDesign.h"
 #include "WaveDisplay.h"
 #include "PluginShells.h"
+#include "FxCatalog.h"
 #include <vector>
 
 struct CanvasWidget : public juce::Component
@@ -201,6 +202,7 @@ private:
     juce::TextButton proToggleBtn { "PRO  -  OFF" }, wizardNextBtn { "NEXT >" }, wizardSkipBtn { "SKIP TO BUILDER" };
     juce::ComboBox shellBox, playgroundThemeBox;
     juce::TextButton chatRefreshBtn { "CHAT" }, threadsBtn { "THREADS" }, socialBtn { "FRIENDS" }, dmBtn { "DM" }, adminDeleteBtn { "REMOVE" }, utilityGoBtn { "GO" };
+    juce::TextButton catalogModeBtn { "CATALOG" }, threadsModeBtn { "THREADS" }, railChatBtn { "CHAT" }, railOnlineBtn { "ONLINE" };
     juce::TextEditor utilityBox;
     juce::ComboBox utilityActionBox;
     juce::Label status, whoLabel;

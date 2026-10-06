@@ -91,11 +91,17 @@ private:
     float renderVoice(Voice& v);
     void applySlotStereo(int slot, float& left, float& right);
     void processChain(float& left, float& right, float original);
+    void rebuildActiveSlots() noexcept;
 
     Voice voices[8];
     SlotDsp slotDsp[kMaxSlots];
     SlotParams slotParams[kMaxSlots];
     BlockSlotConfig blockConfig[kMaxSlots];
+    // Compact ordered list of slots that process audio this block.
+    // Built once per block so the per-sample path never walks empty slots.
+    int activeSlots[kMaxSlots] {};
+    int activeSlotCount = 0;
+    bool anyActiveSlot = false;
 
     std::atomic<float>* oscParam = nullptr;
     std::atomic<float>* cutoffParam = nullptr;

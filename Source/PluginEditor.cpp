@@ -1745,26 +1745,73 @@ void KyotoAudioProcessorEditor::addSeriesStep()
         auto* obj = parsed.getDynamicObject();
         auto* steps = obj != nullptr ? obj->getProperty("steps").getArray() : nullptr;
         if (steps == nullptr || steps->isEmpty()) { status.setText("Custom effect has no steps.", juce::dontSendNotification); return; }
+        // Hard limits under extreme use: expand only to primitive stages
+        // (no recursive custom-in-custom in the DSP path). Cap so one placement
+        // cannot exhaust the machine or create a CPU rabbit hole.
+        const int maxExpand = juce::jmin(16, proc.slotCount());
+        int needed = 0;
+        for (auto& value : *steps)
+        {
+            auto* so = value.getDynamicObject();
+            if (so == nullptr) continue;
+            const int fxId = (int) propertyOr(so, "fx", -1);
+            if (fxId < 0 || fxId >= kt::kFxCount) continue;
+            if (++needed > maxExpand) break;
+        }
+        if (needed <= 0) { status.setText("Custom effect has no usable primitive stages.", juce::dontSendNotification); return; }
+        int freeSlots = 0;
+        for (int i = 0; i < proc.slotCount(); ++i)
+            if (auto* on = proc.apvts.getParameter("s" + juce::String(i + 1).paddedLeft('0', 2) + "on"); on && on->getValue() < 0.5f)
+                ++freeSlots;
+        if (freeSlots < needed)
+        {
+            status.setText("Need " + juce::String(needed) + " free DSP slots (have " + juce::String(freeSlots)
+                           + "). Clear stages or build a smaller custom FX.", juce::dontSendNotification);
+            return;
+        }
         juce::Rectangle<int> room;
         if (! findAutoCell(widgets.size(), "stack", room)) { status.setText("No room left. Build a custom FX to keep the chain compact.", juce::dontSendNotification); return; }
         captureSnapshot();
         int first = -1;
+        int placed = 0;
         for (auto& value : *steps)
         {
+            if (placed >= needed) break;
             auto* src = value.getDynamicObject();
-            if (!src) continue;
+            if (src == nullptr) continue;
+            const int fxId = (int) propertyOr(src, "fx", -1);
+            if (fxId < 0 || fxId >= kt::kFxCount) continue; // primitives only
             int slot = -1;
             for (int i = 0; i < proc.slotCount(); ++i)
                 if (auto* on = proc.apvts.getParameter("s" + juce::String(i + 1).paddedLeft('0', 2) + "on"); on && on->getValue() < 0.5f) { slot = i; break; }
             if (slot < 0) { status.setText("Not enough DSP slots for this custom effect.", juce::dontSendNotification); undoLast(); return; }
             if (first < 0) first = slot;
             const auto prefix = "s" + juce::String(slot + 1).paddedLeft('0', 2);
-            auto setP = [&](const juce::String& key, float v) { if (auto* p = proc.apvts.getParameter(prefix + key)) p->setValueNotifyingHost(p->convertTo0to1(v)); };
-            setP("type", (float)(int)propertyOr(src, "fx", 0)); setP("amt", (float)propertyOr(src, "amount", 0.5)); setP("tone", (float)propertyOr(src, "tone", 0.5)); setP("mot", (float)propertyOr(src, "motion", 0.35)); setP("mix", (float)propertyOr(src, "mix", 0.4)); setP("shp", (float)propertyOr(src, "shape", 0.5));
+            auto setP = [&](const juce::String& key, float v)
+            {
+                if (auto* p = proc.apvts.getParameter(prefix + key))
+                    p->setValueNotifyingHost(p->convertTo0to1(v));
+            };
+            setP("type", (float) fxId);
+            setP("amt", (float) propertyOr(src, "amount", 0.5));
+            setP("tone", (float) propertyOr(src, "tone", 0.5));
+            setP("mot", (float) propertyOr(src, "motion", 0.35));
+            setP("mix", (float) propertyOr(src, "mix", 0.4));
+            setP("shp", (float) propertyOr(src, "shape", 0.5));
             if (auto* p = proc.apvts.getParameter(prefix + "on")) p->setValueNotifyingHost(1.f);
+            ++placed;
         }
-        auto node = juce::ValueTree("w"); node.setProperty("slot", first, nullptr); node.setProperty("param", "amt", nullptr); node.setProperty("label", name, nullptr); node.setProperty("kind", "stack", nullptr); node.setProperty("series", proc.uiState.getNumChildren(), nullptr); node.setProperty("slotCount", (int)steps->size(), nullptr); proc.uiState.appendChild(node, nullptr);
-        rebuildCanvas(); status.setText("Added custom effect: " + name, juce::dontSendNotification); return;
+        auto node = juce::ValueTree("w");
+        node.setProperty("slot", first, nullptr);
+        node.setProperty("param", "amt", nullptr);
+        node.setProperty("label", name, nullptr);
+        node.setProperty("kind", "stack", nullptr);
+        node.setProperty("series", proc.uiState.getNumChildren(), nullptr);
+        node.setProperty("slotCount", placed, nullptr);
+        proc.uiState.appendChild(node, nullptr);
+        rebuildCanvas();
+        status.setText("Added custom effect: " + name + " (" + juce::String(placed) + " stages)", juce::dontSendNotification);
+        return;
     }
 
     juce::Rectangle<int> room;
