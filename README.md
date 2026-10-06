@@ -1,4 +1,4 @@
-# KYOTRIPPAH 0.4.1
+# KYOTRIPPAH 0.4.2
 
 Native VST3 instrument (**KYOTO**) and effect (**KYOTRIPPAH FX**).
 

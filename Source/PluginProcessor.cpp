@@ -328,9 +328,11 @@ void KyotoAudioProcessor::applySlotStereo(int slot, float& left, float& right)
         wetL = d.lp[0]; wetR = d.lp[1];
     }
 
-    const float wet = 0.15f + mix * 0.85f;
-    left = left * (1.f - wet) + wetL * wet;
-    right = right * (1.f - wet) + wetR * wet;
+    const float over = slotOvermax[slot] <= 0.f ? 1.f : slotOvermax[slot];
+    const float wet = juce::jlimit(0.f, 1.f, (0.15f + mix * 0.85f) * juce::jmin(1.6f, over));
+    const float drive = juce::jmax(1.f, over);
+    left = left * (1.f - wet) + std::tanh(wetL * drive) * wet;
+    right = right * (1.f - wet) + std::tanh(wetR * drive) * wet;
 }
 
 void KyotoAudioProcessor::rebuildActiveSlots() noexcept
@@ -528,6 +530,26 @@ void KyotoAudioProcessor::loadSample(juce::AudioBuffer<float> buffer, double fil
 void KyotoAudioProcessor::triggerSample()
 {
     if (! sample.empty()) samplePos.store(0, std::memory_order_relaxed);
+}
+
+double KyotoAudioProcessor::hostBpm() const
+{
+    if (auto* head = getPlayHead())
+        if (auto pos = head->getPosition())
+            if (auto bpm = pos->getBpm())
+                if (*bpm > 1.0) return *bpm;
+    return 120.0;
+}
+
+void KyotoAudioProcessor::setSlotOvermax(int slot, float over)
+{
+    if (slot >= 0 && slot < kMaxSlots) slotOvermax[slot] = juce::jlimit(0.25f, 4.f, over);
+}
+
+float KyotoAudioProcessor::getSlotOvermax(int slot) const
+{
+    if (slot < 0 || slot >= kMaxSlots) return 1.f;
+    return slotOvermax[slot] <= 0.f ? 1.f : slotOvermax[slot];
 }
 
 void KyotoAudioProcessor::copyScope(float* dest, int n) const

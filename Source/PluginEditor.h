@@ -7,11 +7,13 @@
 #include "WaveDisplay.h"
 #include "PluginShells.h"
 #include "FlexLayout.h"
+#include "BuilderFit.h"
 #include <vector>
 
 struct CanvasWidget : public juce::Component
 {
-    enum class Kind { Dial, Slider, Key, Wave, Stack, Board, Cosmetic };
+    enum class Kind { Dial, Slider, Key, Wave, Stack, Board, Cosmetic, Button, Sound };
+    std::function<void(CanvasWidget*, const juce::MouseEvent&)> onRightClick;
 
     CanvasWidget(KyotoAudioProcessor& p, juce::ValueTree n);
     void paint(juce::Graphics& g) override;
@@ -101,7 +103,7 @@ private:
 // pluggin live with only a Back and a Geek button, and nothing else, on screen.
 class PluginViewScreen;
 
-class KyotoAudioProcessorEditor : public juce::AudioProcessorEditor, private juce::Timer
+class KyotoAudioProcessorEditor : public juce::AudioProcessorEditor, private juce::Timer, public juce::FileDragAndDropTarget
 {
 public:
     explicit KyotoAudioProcessorEditor(KyotoAudioProcessor&);
@@ -109,6 +111,8 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent&) override;
+    bool isInterestedInFileDrag(const juce::StringArray& files) override;
+    void filesDropped(const juce::StringArray& files, int x, int y) override;
     void parentHierarchyChanged() override;
     bool keyPressed(const juce::KeyPress&) override;
     bool inPluginView() const { return pluginView; }
@@ -178,6 +182,12 @@ private:
     void setPluginView(bool on);
     void startNewMachine(int playgroundMode);
     void randomizeMachine();
+    void randomizeTemplate();
+    void persistEditorSession();
+    void restoreEditorSession();
+    void showSlotMenu(int slot, juce::Point<int> screenPos);
+    void editEffectPopup(int widgetIndex);
+    void placeKindInSlot(const juce::String& kind, int slot, int fxIndex, const juce::String& label);
     void syncMachineDesignToUi();
     void enterBuilderWizard();
     void advanceBuilderWizard();
@@ -233,7 +243,7 @@ private:
     juce::ComboBox gridStyleBox, presetBox, kindBox, effectBox;
     juce::ComboBox paramBox, pieceBox;
     const kt::ModPiece* pendingPiece = nullptr;
-    juce::TextButton addBtn { "PLACE" }, saveBtn { "SAVE" }, upBtn { "PUBLISH" }, wavBtn { "WAV" }, chainBreakBtn { "BREAK" }, chainMixBtn { "MIX" }, chainRemoveBtn { "REMOVE" }, chainUndoBtn { "UNDO" };
+    juce::TextButton addBtn { "PLACE" }, saveBtn { "SAVE" }, upBtn { "PUBLISH" }, wavBtn { "WAV" }, chainBreakBtn { "BREAK" }, chainMixBtn { "MIX" }, chainRemoveBtn { "REMOVE" }, chainUndoBtn { "UNDO" }, randomTemplateBtn { "RANDOMIZE" };
     juce::TextButton fxAddBtn { "ADD FX" }, fxSaveBtn { "SAVE" }, fxUpBtn { "PUBLISH" }, fxShareChatBtn { "CHAT" }, fxShareThreadBtn { "THREAD" }, fxRemoveBtn { "REMOVE" }, fxUndoBtn { "UNDO" };
     juce::Slider fxAmount, fxTone, fxMotion, fxMix, fxShape;
     juce::Label fxAmountLabel, fxToneLabel, fxMotionLabel, fxMixLabel, fxShapeLabel, stackLabel;

@@ -110,6 +110,8 @@ inline SlotKind styleSlot(const juce::String& style)
 
 inline bool styleFits(const juce::String& style, SlotKind slot)
 {
+    // Sound and toggle buttons can sit in any bay except the motherboard.
+    if (style == "sound" || style == "button") return slot != SlotKind::Board;
     return styleSlot(style) == slot;
 }
 
@@ -146,6 +148,7 @@ public:
     juce::String armedStyle;
     kt::ThemePalette theme = kt::kThemes[0];
     std::function<void(int)> onSlot;
+    std::function<void(int, juce::Point<int>)> onRightClick;
     std::function<bool(int)> occupied;
     std::function<juce::Point<float>(int)> anchor;
     int hoverSlot = -1;
@@ -296,6 +299,16 @@ public:
 
     void mouseDown(const juce::MouseEvent& e) override
     {
+        if (e.mods.isPopupMenu())
+        {
+            const auto& shell = kShells[juce::jlimit(0, kShellCount - 1, shellIndex)];
+            auto face = faceRect(getLocalBounds().toFloat());
+            int hit = -1;
+            for (int i = 0; i < shell.slotCount; ++i)
+                if (slotRect(face, shell.slots[i]).contains(e.position)) { hit = i; break; }
+            if (onRightClick) onRightClick(hit, e.getScreenPosition());
+            return;
+        }
         if (! placing || ! onSlot) return;
         const auto& shell = kShells[juce::jlimit(0, kShellCount - 1, shellIndex)];
         auto face = faceRect(getLocalBounds().toFloat());

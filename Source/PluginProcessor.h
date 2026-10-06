@@ -50,6 +50,9 @@ public:
     void noteOff(int note);
     void loadSample(juce::AudioBuffer<float> buffer, double fileRate);
     void triggerSample();
+    double hostBpm() const;
+    void setSlotOvermax(int slot, float over);
+    float getSlotOvermax(int slot) const;
     void copyScope(float* dest, int n) const;
 
     juce::AudioProcessorValueTreeState apvts;
@@ -135,6 +138,7 @@ private:
     juce::Random noiseRng;
     std::atomic<int> hardwareFx { -1 };
     std::atomic<float> hardwareAmt { 0.f };
+    float slotOvermax[kMaxSlots] {};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(KyotoAudioProcessor)
 };
