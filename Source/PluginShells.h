@@ -4,6 +4,8 @@
 
 // Hardware shells for the Plugin Builder. Slots are normalised inside the face plate.
 // The motherboard bay is always occupied first and is the start of the signal chain.
+// Each shell also carries its own internal hardware (see HardwareInternals.h) so the
+// selected template forms a distinct, special-looking machine.
 namespace pb
 {
 enum class SlotKind { Board, Knob, Fader, Key, Screen, Cosmetic };
@@ -130,6 +132,12 @@ inline juce::Rectangle<float> slotRect(juce::Rectangle<float> face, const Slot& 
              slot.w * face.getWidth(), slot.h * face.getHeight() };
 }
 
+inline float shellRadius(const Shell& shell)
+{
+    const auto s = juce::String(shell.silhouette);
+    return s == "pocket" ? 28.f : s == "tower" ? 8.f : 16.f;
+}
+
 class BuilderCanvas : public juce::Component
 {
 public:
@@ -140,49 +148,72 @@ public:
     std::function<void(int)> onSlot;
     std::function<bool(int)> occupied;
     std::function<juce::Point<float>(int)> anchor;
+    int hoverSlot = -1;
 
     void paint(juce::Graphics& g) override
     {
         auto bounds = getLocalBounds().toFloat();
+        const auto& shell = kShells[juce::jlimit(0, kShellCount - 1, shellIndex)];
+        const auto accent = kt::c(theme.accent);
+
         g.setColour(kt::c(theme.panel).withAlpha(0.96f));
         g.fillRoundedRectangle(bounds, 14.f);
         g.setColour(kt::c(theme.border));
         g.drawRoundedRectangle(bounds.reduced(0.5f), 14.f, 1.f);
 
-        const auto& shell = kShells[juce::jlimit(0, kShellCount - 1, shellIndex)];
-        g.setColour(kt::c(theme.accent));
+        // Clean header: template name on one line, chain hint below it.
+        g.setColour(accent);
         g.setFont(kt::font(theme, 15.f, true));
-        g.drawText("PLUGIN BUILDER", 16, 10, 220, 20, juce::Justification::left);
+        g.drawText("PLUGIN BUILDER", 18, 12, 220, 18, juce::Justification::left);
         g.setColour(kt::c(theme.muted));
-        g.setFont(kt::font(theme, 12.f));
-        g.drawText(juce::String(shell.name) + "  -  chain starts at the motherboard", 16, 30, getWidth() - 32, 16, juce::Justification::left);
+        g.setFont(kt::font(theme, 11.5f));
+        g.drawText(juce::String(shell.name) + "  -  chain starts at the motherboard", 18, 31, getWidth() - 36, 15, juce::Justification::left);
 
         auto face = faceRect(bounds);
+        const float radius = shellRadius(shell);
+
+        // Faceplate with a per-template tint so each hardware reads special.
         g.setColour(kt::c(theme.bg).withAlpha(0.88f));
-        const float radius = juce::String(shell.silhouette) == "pocket" ? 28.f : juce::String(shell.silhouette) == "tower" ? 8.f : 16.f;
         g.fillRoundedRectangle(face, radius);
-        g.setColour(kt::c(theme.accent).withAlpha(0.45f));
+        g.setColour(accent.withAlpha(0.45f));
         g.drawRoundedRectangle(face, radius, 1.4f);
 
+        // Shell trim: corner screws, LED strip and a name badge - like real hardware.
+        g.setColour(kt::c(theme.muted).withAlpha(0.65f));
+        for (auto p : { juce::Point<float>(face.getX() + 10.f, face.getY() + 10.f),
+                        juce::Point<float>(face.getRight() - 10.f, face.getY() + 10.f),
+                        juce::Point<float>(face.getX() + 10.f, face.getBottom() - 10.f),
+                        juce::Point<float>(face.getRight() - 10.f, face.getBottom() - 10.f) })
+        {
+            g.fillEllipse(p.x - 2.5f, p.y - 2.5f, 5.f, 5.f);
+        }
+        for (int i = 0; i < 3; ++i)
+        {
+            g.setColour(accent.withAlpha(i == 0 ? 0.9f : 0.3f));
+            g.fillRect(face.getRight() - 34.f + (float) i * 9.f, face.getY() + 8.f, 5.f, 5.f);
+        }
+        g.setColour(accent);
+        g.setFont(kt::font(theme, 9.f, true));
+        g.drawText(juce::String(shell.name).toUpperCase(), (int) face.getRight() - 130, (int) face.getBottom() - 22, 120, 13, juce::Justification::centredRight);
+        g.setColour(accent.withAlpha(0.5f));
+        g.drawLine(face.getRight() - 130, face.getBottom() - 9.f, face.getRight() - 20.f, face.getBottom() - 9.f, 1.2f);
+
+        // Bay wiring: every filled bay is joined back to the motherboard, lego-style.
         for (int i = 1; i < shell.slotCount; ++i)
         {
-            if (occupied && occupied(i))
+            if (occupied && occupied(i) && anchor)
             {
-                const int from = 0;
-                if (anchor)
+                auto a = anchor(0);
+                auto b = anchor(i);
+                if (a.x > 1.f && b.x > 1.f)
                 {
-                    auto a = anchor(from);
-                    auto b = anchor(i);
-                    if (a.x > 1.f && b.x > 1.f)
-                    {
-                        juce::Path wire;
-                        wire.startNewSubPath(a);
-                        wire.cubicTo(a.x, (a.y + b.y) * 0.5f, b.x, (a.y + b.y) * 0.5f, b.x, b.y);
-                        g.setColour(kt::c(theme.accent).withAlpha(0.85f));
-                        g.strokePath(wire, juce::PathStrokeType(2.0f));
-                        g.setColour(kt::c(theme.pegHot));
-                        g.fillEllipse(b.x - 3.f, b.y - 3.f, 6.f, 6.f);
-                    }
+                    juce::Path wire;
+                    wire.startNewSubPath(a);
+                    wire.cubicTo(a.x, (a.y + b.y) * 0.5f, b.x, (a.y + b.y) * 0.5f, b.x, b.y);
+                    g.setColour(accent.withAlpha(0.85f));
+                    g.strokePath(wire, juce::PathStrokeType(2.0f));
+                    g.setColour(kt::c(theme.pegHot));
+                    g.fillEllipse(b.x - 3.f, b.y - 3.f, 6.f, 6.f);
                 }
             }
         }
@@ -191,25 +222,54 @@ public:
         {
             const auto& slot = shell.slots[i];
             if (slot.w < 0.02f || slot.h < 0.02f) continue;
-            auto r = slotRect(face, slot);
+            auto r = slotRect(face, slot).reduced(3.f);
             const bool taken = occupied && occupied(i);
-            const bool viable = placing && !taken && styleFits(armedStyle, slot.kind);
-            g.setColour(viable ? kt::c(theme.accent).withAlpha(0.28f) : kt::c(theme.panel).withAlpha(taken ? 0.05f : 0.45f));
-            g.fillRoundedRectangle(r.reduced(3.f), 8.f);
-            g.setColour(viable ? kt::c(theme.accent) : kt::c(theme.border).withAlpha(taken ? 0.25f : 0.7f));
-            g.drawRoundedRectangle(r.reduced(3.f), 8.f, viable ? 2.f : 1.f);
-            if (!taken)
+            const bool fits = placing && ! taken && styleFits(armedStyle, slot.kind);
+            const bool hovered = placing && i == hoverSlot && fits;
+
+            // Bay plate.
+            g.setColour(fits ? accent.withAlpha(hovered ? 0.38f : 0.26f) : kt::c(theme.panel).withAlpha(taken ? 0.05f : 0.42f));
+            g.fillRoundedRectangle(r, 8.f);
+            g.setColour(fits ? accent : kt::c(theme.border).withAlpha(taken ? 0.25f : 0.7f));
+            g.drawRoundedRectangle(r, 8.f, fits ? (hovered ? 2.4f : 1.8f) : 1.f);
+
+            // Lego studs: pegs at the four corners click parts into the bay.
+            const float pegR = juce::jmin(3.4f, r.getWidth() * 0.12f);
+            const float inset = juce::jmax(7.f, juce::jmin(r.getWidth(), r.getHeight()) * 0.14f);
+            for (auto c : { juce::Point<float>(r.getX() + inset, r.getY() + inset),
+                            juce::Point<float>(r.getRight() - inset, r.getY() + inset),
+                            juce::Point<float>(r.getX() + inset, r.getBottom() - inset),
+                            juce::Point<float>(r.getRight() - inset, r.getBottom() - inset) })
             {
-                g.setColour(viable ? kt::c(theme.text) : kt::c(theme.muted));
-                g.setFont(kt::font(theme, 11.f, true));
+                if (taken)
+                {
+                    g.setColour(accent.withAlpha(0.35f));
+                    g.fillEllipse(c.x - pegR * 0.7f, c.y - pegR * 0.7f, pegR * 1.4f, pegR * 1.4f);
+                }
+                else
+                {
+                    g.setColour(fits ? kt::c(theme.pegHot) : kt::c(theme.peg).withAlpha(0.85f));
+                    g.fillEllipse(c.x - pegR, c.y - pegR, pegR * 2.f, pegR * 2.f);
+                    if (fits)
+                    {
+                        g.setColour(kt::c(theme.pegHot).withAlpha(0.35f));
+                        g.drawEllipse(c.x - pegR - 2.f, c.y - pegR - 2.f, pegR * 2.f + 4.f, pegR * 2.f + 4.f, 1.f);
+                    }
+                }
+            }
+
+            if (! taken)
+            {
+                g.setColour(fits ? kt::c(theme.text) : kt::c(theme.muted));
+                g.setFont(kt::font(theme, 10.5f, true));
                 g.drawFittedText(slot.name, r.reduced(6.f).toNearestInt(), juce::Justification::centred, 2);
             }
         }
     }
 
-    void mouseDown(const juce::MouseEvent& e) override
+    int slotAt(juce::Point<float> pos) const
     {
-        if (!placing || !onSlot) return;
+        if (! placing) return -1;
         const auto& shell = kShells[juce::jlimit(0, kShellCount - 1, shellIndex)];
         auto face = faceRect(getLocalBounds().toFloat());
         for (int i = 0; i < shell.slotCount; ++i)
@@ -217,7 +277,34 @@ public:
             const auto& slot = shell.slots[i];
             if (slot.w < 0.02f) continue;
             if (occupied && occupied(i)) continue;
-            if (!styleFits(armedStyle, slot.kind)) continue;
+            if (! styleFits(armedStyle, slot.kind)) continue;
+            if (slotRect(face, slot).contains(pos)) return i;
+        }
+        return -1;
+    }
+
+    void mouseMove(const juce::MouseEvent& e) override
+    {
+        const int hit = slotAt(e.position);
+        if (hit != hoverSlot) { hoverSlot = hit; repaint(); }
+    }
+
+    void mouseExit(const juce::MouseEvent&) override
+    {
+        if (hoverSlot != -1) { hoverSlot = -1; repaint(); }
+    }
+
+    void mouseDown(const juce::MouseEvent& e) override
+    {
+        if (! placing || ! onSlot) return;
+        const auto& shell = kShells[juce::jlimit(0, kShellCount - 1, shellIndex)];
+        auto face = faceRect(getLocalBounds().toFloat());
+        for (int i = 0; i < shell.slotCount; ++i)
+        {
+            const auto& slot = shell.slots[i];
+            if (slot.w < 0.02f) continue;
+            if (occupied && occupied(i)) continue;
+            if (! styleFits(armedStyle, slot.kind)) continue;
             if (slotRect(face, slot).contains(e.position))
             {
                 onSlot(i);

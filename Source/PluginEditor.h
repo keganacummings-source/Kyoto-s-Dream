@@ -93,6 +93,11 @@ private:
     float phase = 0.f;
 };
 
+// Full-screen viewer surface for Pluggin mode. Defined in PluginViewScreen.h; it installs
+// itself as a child of the editor (see parentHierarchyChanged) so Plugin View shows the built
+// pluggin live with only a Back and a Geek button, and nothing else, on screen.
+class PluginViewScreen;
+
 class KyotoAudioProcessorEditor : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
@@ -101,6 +106,8 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent&) override;
+    void parentHierarchyChanged() override;
+    bool inPluginView() const { return pluginView; }
 
 private:
     struct EditorSnapshot
@@ -177,6 +184,9 @@ private:
     bool loggedIn = false;
     bool isAdmin = false;
     bool pluginView = false;
+    bool geekMode = false;
+    float geekReveal = 0.f;
+    int geekHotPart = -1;
     bool proMode = false;
     int builderWizardStep = 0; // 0=done/builder, 1=theme, 2=shell
     kt::ThemePalette playgroundTheme = kt::kThemes[0];
@@ -191,7 +201,6 @@ private:
     juce::TextButton proToggleBtn { "PRO  -  OFF" }, wizardNextBtn { "NEXT >" }, wizardSkipBtn { "SKIP TO BUILDER" };
     juce::ComboBox shellBox, playgroundThemeBox;
     juce::TextButton chatRefreshBtn { "CHAT" }, threadsBtn { "THREADS" }, socialBtn { "FRIENDS" }, dmBtn { "DM" }, adminDeleteBtn { "REMOVE" }, utilityGoBtn { "GO" };
-    juce::TextButton catalogModeBtn { "CATALOG" }, threadsModeBtn { "THREADS" }, railChatBtn { "CHAT" }, railOnlineBtn { "ONLINE" };
     juce::TextEditor utilityBox;
     juce::ComboBox utilityActionBox;
     juce::Label status, whoLabel;
@@ -232,6 +241,9 @@ private:
     std::unique_ptr<WaveDisplay> waveDisplay;
     juce::OwnedArray<CanvasWidget> widgets;
     juce::ValueTree fxStack { "fxstack" };
+    PluginViewScreen* viewScreen = nullptr;
+
+    friend class PluginViewScreen;
 
     struct CatalogItem { juce::String id, name, face, author; };
     juce::String selectedCatalogId;
@@ -240,3 +252,7 @@ private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(KyotoAudioProcessorEditor)
 };
+
+// Installs the Pluggin viewer overlay once the editor is hosted. Included at the bottom so
+// PluginViewScreen sees the complete editor class while both include guards stay valid.
+#include "PluginViewScreen.h"
