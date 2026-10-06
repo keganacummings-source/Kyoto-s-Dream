@@ -1,5 +1,6 @@
 #pragma once
 #include "PluginEditor.h"
+#include "FxCatalog.h"
 #include "HardwareInternals.h"
 #include <cmath>
 

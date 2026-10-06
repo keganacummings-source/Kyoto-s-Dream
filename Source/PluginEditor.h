@@ -2,6 +2,7 @@
 #include "PluginProcessor.h"
 #include "Themes.h"
 #include "MachineDesign.h"
+#include "ModularParts.h"
 #include "WaveDisplay.h"
 #include "PluginShells.h"
 #include <vector>
@@ -107,6 +108,7 @@ public:
     void resized() override;
     void mouseDown(const juce::MouseEvent&) override;
     void parentHierarchyChanged() override;
+    bool keyPressed(const juce::KeyPress&) override;
     bool inPluginView() const { return pluginView; }
 
 private:
@@ -180,6 +182,7 @@ private:
     juce::String deriveCategoriesFromStack() const;
 
     KyotoAudioProcessor& proc;
+    juce::TooltipWindow tooltipWindow { this, 500 };
     int tab = 0;
     bool loggedIn = false;
     bool isAdmin = false;
@@ -214,6 +217,7 @@ private:
     juce::Component threadHolder;
     juce::Viewport chatView;
     SocialRail socialRail;
+    juce::TextButton catalogModeBtn { "CATALOG" }, threadsModeBtn { "THREADS" }, railChatBtn { "CHAT" }, railOnlineBtn { "ONLINE" };
     int centerMode = 0;
     int railMode = 0;
     juce::String selectedThreadId;
@@ -223,6 +227,8 @@ private:
 
     juce::TextEditor nameBox, effectNameBox;
     juce::ComboBox gridStyleBox, presetBox, kindBox, effectBox;
+    juce::ComboBox paramBox, pieceBox;
+    const kt::ModPiece* pendingPiece = nullptr;
     juce::TextButton addBtn { "PLACE" }, saveBtn { "SAVE" }, upBtn { "PUBLISH" }, wavBtn { "WAV" }, chainBreakBtn { "BREAK" }, chainMixBtn { "MIX" }, chainRemoveBtn { "REMOVE" }, chainUndoBtn { "UNDO" };
     juce::TextButton fxAddBtn { "ADD FX" }, fxSaveBtn { "SAVE" }, fxUpBtn { "PUBLISH" }, fxShareChatBtn { "CHAT" }, fxShareThreadBtn { "THREAD" }, fxRemoveBtn { "REMOVE" }, fxUndoBtn { "UNDO" };
     juce::Slider fxAmount, fxTone, fxMotion, fxMix, fxShape;
