@@ -103,6 +103,40 @@ DreamResult deleteModule(const juce::String& token, const juce::String& id)
     return postAction("module_delete", juce::var(o), token);
 }
 
+DreamResult approveModule(const juce::String& token, const juce::String& id)
+{
+    auto* o = new juce::DynamicObject(); o->setProperty("id", id);
+    return postAction("module_approve", juce::var(o), token);
+}
+
+DreamResult denyModule(const juce::String& token, const juce::String& id)
+{
+    auto* o = new juce::DynamicObject(); o->setProperty("id", id);
+    return postAction("module_deny", juce::var(o), token);
+}
+
+DreamResult tagModule(const juce::String& token, const juce::String& id, const juce::String& tags)
+{
+    auto* o = new juce::DynamicObject(); o->setProperty("id", id); o->setProperty("tags", tags);
+    return postAction("module_tag", juce::var(o), token);
+}
+
+DreamResult getMyModules(const juce::String& token)
+{
+    return postAction("module_my", juce::var(new juce::DynamicObject()), token);
+}
+
+DreamResult getPendingModules(const juce::String& token)
+{
+    return postAction("module_pending", juce::var(new juce::DynamicObject()), token);
+}
+
+DreamResult getCatalogTagged(const juce::String& token, const juce::String& tags)
+{
+    auto* o = new juce::DynamicObject(); o->setProperty("tags", tags);
+    return postAction("module_list", juce::var(o), token);
+}
+
 DreamResult getSocial(const juce::String& token)
 {
     return postAction("social_list", juce::var(new juce::DynamicObject()), token);

@@ -159,6 +159,13 @@ private:
     void setRailMode(int mode);
     void rebuildCenter();
     void rebuildThreadBoard();
+    void showCatalogCardMenu(const juce::String& id, const juce::String& name, const juce::String& author, juce::Point<int> screenPos);
+    void approveCatalogId(const juce::String& id);
+    void denyCatalogId(const juce::String& id);
+    void tagCatalogId(const juce::String& id, const juce::String& tags);
+    void refreshMyModules();
+    void refreshPending();
+    float scaledFont(float baseSize) const;
     void addSpecialChainStep(int type, const juce::String& name);
     void refreshEffectBox();
     void updateFxControls();
@@ -231,7 +238,9 @@ private:
     juce::Viewport chatView;
     SocialRail socialRail;
     juce::TextButton catalogModeBtn { "CATALOG" }, threadsModeBtn { "THREADS" }, railChatBtn { "CHAT" }, railOnlineBtn { "ONLINE" };
-    int centerMode = 0;
+    juce::TextButton pluginsTabBtn { "PLUGINS" }, effectsTabBtn { "EFFECTS" }, myPluginsBtn { "MY PLUGINS" }, pendingBtn { "PENDING" };
+    juce::TextEditor tagSearchBox;
+    int centerMode = 0; // 0=community plugins, 1=effects, 2=my plugins, 3=threads, 4=pending
     int railMode = 0;
     bool scrollChatOnRefresh = true;
     juce::String selectedThreadId;
@@ -267,7 +276,7 @@ private:
 
     friend class PluginViewScreen;
 
-    struct CatalogItem { juce::String id, name, face, author; };
+    struct CatalogItem { juce::String id, name, face, author, status, tags; };
     juce::String selectedCatalogId;
     juce::Array<CatalogItem> catalog;
     std::vector<EditorSnapshot> undoStack;
