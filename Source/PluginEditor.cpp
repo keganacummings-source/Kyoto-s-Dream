@@ -1377,7 +1377,7 @@ void KyotoAudioProcessorEditor::ensureMotherboard()
         auto child = proc.uiState.getChild(i);
         if (child.hasType("w") && child.getProperty("kind").toString() == "board") board = child;
     }
-    const auto prefix = "s01";
+    const juce::String prefix = "s01";
     if (auto* type = proc.apvts.getParameter(prefix + "type")) type->setValueNotifyingHost(type->convertTo0to1((float) shell.hiddenFx));
     if (auto* on = proc.apvts.getParameter(prefix + "on")) on->setValueNotifyingHost(1.f);
     if (auto* mix = proc.apvts.getParameter(prefix + "mix")) mix->setValueNotifyingHost(mix->convertTo0to1(shell.hiddenMix));
@@ -1788,24 +1788,24 @@ void KyotoAudioProcessorEditor::renderEffectLinks(const juce::String& text)
 {
     clearEffectLinks();
     const juce::String marker = "[KYOTRIPPAH_EFFECT:";
-    int cursor = 0;
+    int pos = 0;
     int count = 0;
     while (count < 8)
     {
-        const int start = text.indexOf(cursor, marker);
+        const int start = text.indexOf(pos, marker);
         if (start < 0) break;
         const int idStart = start + marker.length();
         const int end = text.indexOfChar(idStart, ']');
-        if (end <= idStart) { cursor = idStart; continue; }
+        if (end <= idStart) { pos = idStart; continue; }
         const auto id = text.substring(idStart, end).trim();
-        if (id.isEmpty()) { cursor = end + 1; continue; }
+        if (id.isEmpty()) { pos = end + 1; continue; }
         auto tail = text.substring(end + 1).upToFirstOccurrenceOf("\n", false, false).trim();
         if (tail.isEmpty()) tail = "Shared custom effect";
         auto* button = feedEffectButtons.add(new juce::TextButton("LOAD FX  ·  " + tail));
         button->onClick = [this, id] { loadCatalogId(id, {}); };
         addAndMakeVisible(button);
         ++count;
-        cursor = end + 1;
+        pos = end + 1;
     }
     resized();
 }
