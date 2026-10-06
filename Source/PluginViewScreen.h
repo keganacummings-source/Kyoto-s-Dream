@@ -401,7 +401,7 @@ private:
                 g.drawText("MOTHERBOARD", r.reduced(10.f).removeFromTop(15.f), juce::Justification::left);
                 g.setColour(muted);
                 g.setFont(kt::font(theme, 9.f));
-                g.drawText("CHAIN START  -  " + fxNameFor(fxType), r.reduced(10.f).removeFromTop(30.f), juce::Justification::left);
+                g.drawText("CHAIN START  -  " + fxNameFor(fxType), r.reduced(10.f).withTrimmedTop(18.f).removeFromTop(14.f), juce::Justification::left);
                 auto* mix = editor.proc.apvts.getParameter("s01mix");
                 auto bar = r.reduced(10.f).removeFromBottom(14.f);
                 g.setColour(kt::c(theme.bg));

@@ -31,6 +31,11 @@ Compiling just those objects needs JUCE headers only (Fetched at configure) — 
 - Mixer parameters are appended to the APVTS layout to preserve existing parameter order/type ranges. DAW state and undo retain them; module JSON carries `chainLevels: { enabled, levels }`. Keep `module-rules.js` and `worker/module-rules.js` in sync so catalog publishing does not strip the gains.
 - Native controls cannot be interaction-tested in the browser preview (which serves only the Worker API). Compile-check both plugin variants and test the pure `Source/ChainMix.h` accumulator for gain/mute/legacy balance.
 
+## Native UI guide and chat
+- The builder guide now has four states: shell, playground theme, built-in FX selection/placement, then control practice. Advance with `showTab(1)`, not just `resized()`, so control visibility updates on every transition. Step 3 unlocks only after a successful bay placement.
+- JUCE ComboBox owns a child Label: never draw its text again in `drawComboBox`. Key/board/cosmetic canvas widgets paint their captions themselves.
+- Chat feed order is oldest-to-newest. Opening the chat follows the bottom; refreshing preserves history browsing unless already near the bottom. These native behaviors require a DAW check; Worker HTTP checks do not verify them.
+
 ## Verify it works
 ```bash
 curl -s http://localhost:3000/ | head -c 300          # feed JSON, "storage":"durable-v4"
