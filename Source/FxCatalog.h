@@ -4,7 +4,7 @@ namespace kt {
 struct FxDef { const char* id; const char* name; int family; };
 
 // Family indices used by DSP + UI category browser.
-// 0 Delay · 1 Reverb · 2 Stereo · 3 Modulation · 4 Filter/EQ · 5 Drive · 6 Dynamics · 7 Character
+// 0 Delay - 1 Reverb - 2 Stereo - 3 Modulation - 4 Filter/EQ - 5 Drive - 6 Dynamics - 7 Character
 inline constexpr const char* kFxFamilyNames[] = {
     "Delay", "Reverb", "Stereo", "Modulation", "Filter / EQ", "Drive", "Dynamics", "Character"
 };

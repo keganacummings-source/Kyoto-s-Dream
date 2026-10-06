@@ -151,11 +151,11 @@ public:
 
         const auto& shell = kShells[juce::jlimit(0, kShellCount - 1, shellIndex)];
         g.setColour(kt::c(theme.accent));
-        g.setFont(kt::font(theme, 13.f, true));
-        g.drawText("PLUGIN BUILDER", 16, 10, 180, 18, juce::Justification::left);
+        g.setFont(kt::font(theme, 15.f, true));
+        g.drawText("PLUGIN BUILDER", 16, 10, 220, 20, juce::Justification::left);
         g.setColour(kt::c(theme.muted));
-        g.setFont(kt::font(theme, 10.f));
-        g.drawText(juce::String(shell.name) + "  ·  chain starts at the motherboard", 16, 28, getWidth() - 32, 14, juce::Justification::left);
+        g.setFont(kt::font(theme, 12.f));
+        g.drawText(juce::String(shell.name) + "  -  chain starts at the motherboard", 16, 30, getWidth() - 32, 16, juce::Justification::left);
 
         auto face = faceRect(bounds);
         g.setColour(kt::c(theme.bg).withAlpha(0.88f));
@@ -201,7 +201,7 @@ public:
             if (!taken)
             {
                 g.setColour(viable ? kt::c(theme.text) : kt::c(theme.muted));
-                g.setFont(kt::font(theme, 9.f, true));
+                g.setFont(kt::font(theme, 11.f, true));
                 g.drawFittedText(slot.name, r.reduced(6.f).toNearestInt(), juce::Justification::centred, 2);
             }
         }
