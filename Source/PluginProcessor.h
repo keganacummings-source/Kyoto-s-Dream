@@ -95,6 +95,7 @@ private:
     void cacheParameters();
     float renderVoice(Voice& v);
     void applySlotStereo(int slot, float& left, float& right);
+    void applyFx(SlotDsp& dsp, int type, float amount, float tone, float motion, float shape, float wet, float& left, float& right);
     void processChain(float& left, float& right, float original);
     void rebuildActiveSlots() noexcept;
 
@@ -135,6 +136,7 @@ private:
     juce::Random noiseRng;
     std::atomic<int> hardwareFx { -1 };
     std::atomic<float> hardwareAmt { 0.f };
+    SlotDsp hardwareDsp;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(KyotoAudioProcessor)
 };

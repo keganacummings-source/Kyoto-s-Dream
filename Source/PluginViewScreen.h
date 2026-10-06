@@ -7,8 +7,8 @@
 // Pluggin View - the viewer surface. While the editor is in plugin view this overlay covers the
 // whole window and shows only the built pluggin running live: its shell, its placed bays with
 // real values, its live waveform - plus exactly two controls, BACK and GEEK. The Geek button
-// melts moving transparent spots into the top cover so the internal hardware (motherboard,
-// battery, caps, fan...) shows through; hovering a part highlights it and reads out its settings.
+// melts moving transparent spots into the top cover so the snapped modules (or the stock
+// shell guts, if no template was built) show through; hovering a part reads its subtle colour.
 class PluginViewScreen final : public juce::Component, private juce::Timer
 {
 public:
@@ -63,9 +63,12 @@ public:
         }
 
         // Shell wordmark + live LED on the case.
+        juce::Array<lg::Placed> caseBricks;
+        lg::readBricks(editor.proc.uiState, caseBricks);
+        const juce::String caseName = caseBricks.isEmpty() ? juce::String(shell.name) : juce::String("CUSTOM TEMPLATE");
         g.setColour(accent);
         g.setFont(kt::font(theme, 13.f, true));
-        g.drawText(juce::String(shell.name).toUpperCase(), caseR.getX() + 24, (int) caseR.getY() + 10, 240, 18, juce::Justification::centredLeft);
+        g.drawText(caseName.toUpperCase(), caseR.getX() + 24, (int) caseR.getY() + 10, 280, 18, juce::Justification::centredLeft);
         g.setColour(muted);
         g.setFont(kt::font(theme, 9.f));
         g.drawText("PLUGGIN  -  LIVE", caseR.getX() + 24, (int) caseR.getY() + 27, 240, 13, juce::Justification::centredLeft);
@@ -105,12 +108,27 @@ public:
             }
             if (geekHot >= 0)
             {
-                const auto& parts = hb::kInternals[shellIdx];
-                if (geekHot < parts.count)
+                juce::Array<lg::Placed> hotBricks;
+                lg::readBricks(editor.proc.uiState, hotBricks);
+                if (! hotBricks.isEmpty() && geekHot < hotBricks.size())
                 {
-                    auto pr = hb::partRect(interior, parts.parts[geekHot]);
+                    float x, y, w, h;
+                    lg::cellNorm(hotBricks, geekHot, x, y, w, h);
+                    const auto& module = lg::kModules[hotBricks.getReference(geekHot).module];
+                    hb::HardwarePart part { module.name, module.draw, x, y, w, h, module.blurb, false };
+                    auto pr = hb::partRect(interior, part);
                     punchHole(g, interior, pr.getCentreX(), pr.getCentreY(), juce::jmax(pr.getWidth(), pr.getHeight()) * 0.72f, accent);
-                    drawTooltip(g, interior, geekHot, pr);
+                    drawLegoTooltip(g, interior, geekHot, pr);
+                }
+                else
+                {
+                    const auto& parts = hb::kInternals[shellIdx];
+                    if (geekHot < parts.count)
+                    {
+                        auto pr = hb::partRect(interior, parts.parts[geekHot]);
+                        punchHole(g, interior, pr.getCentreX(), pr.getCentreY(), juce::jmax(pr.getWidth(), pr.getHeight()) * 0.72f, accent);
+                        drawTooltip(g, interior, geekHot, pr);
+                    }
                 }
             }
         }
@@ -136,15 +154,15 @@ public:
 
     void mouseDown(const juce::MouseEvent& e) override
     {
-        const auto& shell = pb::kShells[juce::jlimit(0, pb::kShellCount - 1, editor.shellIndex)];
+        const auto slots = editor.currentSlots();
         auto face = pb::faceRect(pluginCase());
         for (int i = 0; i < editor.proc.uiState.getNumChildren(); ++i)
         {
             auto node = editor.proc.uiState.getChild(i);
             if (! node.hasType("w")) continue;
             const int bay = (int) node.getProperty("shellSlot", -1);
-            if (bay < 0 || bay >= shell.slotCount) continue;
-            auto r = pb::slotRect(face, shell.slots[bay]);
+            if (bay < 0 || bay >= (int) slots.size()) continue;
+            auto r = pb::slotRect(face, slots[(size_t) bay]);
             if (! r.contains(e.position)) continue;
             const auto kind = node.getProperty("kind").toString();
             if (kind == "key")
@@ -210,6 +228,20 @@ private:
 
     void drawInternals(juce::Graphics& g, juce::Rectangle<float> interior) const
     {
+        juce::Array<lg::Placed> bricks;
+        lg::readBricks(editor.proc.uiState, bricks);
+        if (! bricks.isEmpty())
+        {
+            for (int i = 0; i < bricks.size(); ++i)
+            {
+                float x = 0.f, y = 0.f, w = 1.f, h = 1.f;
+                lg::cellNorm(bricks, i, x, y, w, h);
+                const auto& module = lg::kModules[bricks.getReference(i).module];
+                hb::HardwarePart part { module.name, module.draw, x, y, w, h, module.blurb, module.subtleFx >= 0 };
+                hb::drawHardwarePart(g, editor.theme, part, hb::partRect(interior, part), animPhase, i == geekHot);
+            }
+            return;
+        }
         const int shellIdx = juce::jlimit(0, pb::kShellCount - 1, editor.shellIndex);
         const auto& parts = hb::kInternals[shellIdx];
         for (int i = 0; i < parts.count; ++i)
@@ -233,9 +265,23 @@ private:
 
     int hitHardwarePart(juce::Point<float> pos) const
     {
+        juce::Array<lg::Placed> bricks;
+        lg::readBricks(editor.proc.uiState, bricks);
+        const auto interior = pluginInterior();
+        if (! bricks.isEmpty())
+        {
+            for (int i = bricks.size() - 1; i >= 0; --i)
+            {
+                float x, y, w, h;
+                lg::cellNorm(bricks, i, x, y, w, h);
+                const auto& module = lg::kModules[bricks.getReference(i).module];
+                hb::HardwarePart part { module.name, module.draw, x, y, w, h, module.blurb, false };
+                if (hb::partRect(interior, part).contains(pos)) return i;
+            }
+            return -1;
+        }
         const int shellIdx = juce::jlimit(0, pb::kShellCount - 1, editor.shellIndex);
         const auto& parts = hb::kInternals[shellIdx];
-        const auto interior = pluginInterior();
         for (int i = 0; i < parts.count; ++i)
             if (hb::partRect(interior, parts.parts[i]).contains(pos)) return i;
         return -1;
@@ -303,6 +349,40 @@ private:
         return {};
     }
 
+    void drawLegoTooltip(juce::Graphics& g, juce::Rectangle<float> interior, int partIndex, juce::Rectangle<float> partRect) const
+    {
+        juce::Array<lg::Placed> bricks;
+        lg::readBricks(editor.proc.uiState, bricks);
+        if (partIndex < 0 || partIndex >= bricks.size()) return;
+        const auto& theme = editor.theme;
+        const auto accent = kt::c(theme.accent);
+        const auto& module = lg::kModules[bricks.getReference(partIndex).module];
+        juce::String settings = "No effect. This piece only opens bays.";
+        if (module.subtleFx >= 0 && module.subtleFx < kt::kFxCount)
+            settings = "Subtle " + juce::String(kt::kFx[module.subtleFx].name) + "  " + pct(module.subtleMix);
+        const float cardW = juce::jmin(300.f, interior.getWidth() * 0.7f);
+        const float cardH = 80.f;
+        auto card = juce::Rectangle<float>(partRect.getCentreX() - cardW * 0.5f, partRect.getY() - cardH - 12.f, cardW, cardH);
+        if (card.getY() < interior.getY()) card.setPosition(card.getX(), partRect.getBottom() + 12.f);
+        card.setX(juce::jlimit(interior.getX(), interior.getRight() - card.getWidth(), card.getX()));
+        card.setY(juce::jlimit(interior.getY(), interior.getBottom() - card.getHeight(), card.getY()));
+        g.setColour(kt::c(theme.panel).withAlpha(0.97f));
+        g.fillRoundedRectangle(card, 10.f);
+        g.setColour(accent);
+        g.fillRoundedRectangle(card.getX(), card.getY(), 3.5f, card.getHeight(), 2.f);
+        g.setColour(kt::c(theme.border));
+        g.drawRoundedRectangle(card, 10.f, 1.f);
+        g.setColour(accent);
+        g.setFont(kt::font(theme, 12.5f, true));
+        g.drawText(module.name, (int) card.getX() + 12, (int) card.getY() + 7, (int) card.getWidth() - 24, 16, juce::Justification::centredLeft);
+        g.setColour(kt::c(theme.muted));
+        g.setFont(kt::font(theme, 10.f));
+        g.drawFittedText(module.blurb, (int) card.getX() + 12, (int) card.getY() + 23, (int) card.getWidth() - 24, 22, juce::Justification::topLeft, 2);
+        g.setColour(kt::c(theme.text));
+        g.setFont(kt::font(theme, 10.f, true));
+        g.drawText(settings, (int) card.getX() + 12, (int) card.getBottom() - 22, (int) card.getWidth() - 24, 16, juce::Justification::centredLeft);
+    }
+
     void drawTooltip(juce::Graphics& g, juce::Rectangle<float> interior, int partIndex, juce::Rectangle<float> partRect) const
     {
         const auto& theme = editor.theme;
@@ -337,41 +417,37 @@ private:
         }
     }
 
-    void drawBayWiring(juce::Graphics& g, juce::Rectangle<float> face, const pb::Shell& shell) const
+    void drawBayWiring(juce::Graphics& g, juce::Rectangle<float> face, const pb::Shell&) const
     {
-        juce::Point<float> from;
-        bool haveBoard = false;
-        juce::Array<juce::Point<float>> targets;
+        const auto slots = editor.currentSlots();
+        const auto accent = kt::c(editor.theme.accent);
         for (int i = 0; i < editor.proc.uiState.getNumChildren(); ++i)
         {
             auto node = editor.proc.uiState.getChild(i);
             if (! node.hasType("w")) continue;
             const int bay = (int) node.getProperty("shellSlot", -1);
-            if (bay < 0 || bay >= shell.slotCount) continue;
-            auto centre = pb::slotRect(face, shell.slots[bay]).getCentre();
-            if (bay == 0) { from = centre; haveBoard = true; }
-            else targets.add(centre);
-        }
-        if (! haveBoard) return;
-        const auto accent = kt::c(editor.theme.accent);
-        for (auto& to : targets)
-        {
+            const int parent = editor.linkParentSlot(bay);
+            if (bay < 0 || parent < 0 || bay >= (int) slots.size() || parent >= (int) slots.size()) continue;
+            auto from = pb::slotRect(face, slots[(size_t) parent]).getCentre();
+            auto to = pb::slotRect(face, slots[(size_t) bay]).getCentre();
             juce::Path wire;
             wire.startNewSubPath(from);
             wire.cubicTo(from.x, (from.y + to.y) * 0.5f, to.x, (from.y + to.y) * 0.5f, to.x, to.y);
-            g.setColour(accent.withAlpha(0.30f));
-            g.strokePath(wire, juce::PathStrokeType(1.6f));
-            g.setColour(accent.withAlpha(0.8f));
+            g.setColour(accent.withAlpha(0.55f));
+            g.strokePath(wire, juce::PathStrokeType(1.8f));
+            g.setColour(accent.withAlpha(0.85f));
+            g.fillEllipse(from.x - 2.5f, from.y - 2.5f, 5.f, 5.f);
             g.fillEllipse(to.x - 2.5f, to.y - 2.5f, 5.f, 5.f);
         }
     }
 
-    void drawPlacedParts(juce::Graphics& g, juce::Rectangle<float> face, const pb::Shell& shell) const
+    void drawPlacedParts(juce::Graphics& g, juce::Rectangle<float> face, const pb::Shell&) const
     {
         const auto& theme = editor.theme;
         const auto accent = kt::c(theme.accent);
         const auto ink = kt::c(theme.text);
         const auto muted = kt::c(theme.muted);
+        const auto slots = editor.currentSlots();
         bool placedAny = false;
 
         for (int i = 0; i < editor.proc.uiState.getNumChildren(); ++i)
@@ -379,8 +455,8 @@ private:
             auto node = editor.proc.uiState.getChild(i);
             if (! node.hasType("w")) continue;
             const int bay = (int) node.getProperty("shellSlot", -1);
-            if (bay < 0 || bay >= shell.slotCount) continue;
-            auto r = pb::slotRect(face, shell.slots[bay]);
+            if (bay < 0 || bay >= (int) slots.size()) continue;
+            auto r = pb::slotRect(face, slots[(size_t) bay]);
             if (r.getWidth() < 8.f || r.getHeight() < 8.f) continue;
             placedAny = true;
             const auto kind = node.getProperty("kind").toString();
@@ -391,24 +467,37 @@ private:
             g.setColour(accent.withAlpha(0.55f));
             g.drawRoundedRectangle(r.reduced(3.f), 8.f, 1.2f);
 
-            if (kind == "board")
+            if (kind == "board" || kind == "display")
             {
-                const int fxType = liveTypeValue(node);
                 g.setColour(accent.withAlpha(0.20f));
                 g.fillRoundedRectangle(r.reduced(8.f), 6.f);
                 g.setColour(accent);
                 g.setFont(kt::font(theme, 11.f, true));
-                g.drawText("MOTHERBOARD", r.reduced(10.f).removeFromTop(15.f), juce::Justification::left);
+                g.drawText("DISPLAY", r.reduced(10.f).removeFromTop(15.f), juce::Justification::left);
                 g.setColour(muted);
                 g.setFont(kt::font(theme, 9.f));
-                g.drawText("CHAIN START  -  " + fxNameFor(fxType), r.reduced(10.f).withTrimmedTop(18.f).removeFromTop(14.f), juce::Justification::left);
-                auto* mix = editor.proc.apvts.getParameter("s01mix");
-                auto bar = r.reduced(10.f).removeFromBottom(14.f);
-                g.setColour(kt::c(theme.bg));
-                g.fillRoundedRectangle(bar, 3.f);
-                bar.setWidth(bar.getWidth() * (mix != nullptr ? mix->getValue() : 0.f));
-                g.setColour(accent.withAlpha(0.85f));
-                g.fillRoundedRectangle(bar, 3.f);
+                g.drawText(node.getProperty("display", label).toString() + "  -  NO EFFECT", r.reduced(10.f).withTrimmedTop(18.f).removeFromTop(14.f), juce::Justification::left);
+                float live[48] {};
+                editor.proc.copyScope(live, 48);
+                juce::Path wave;
+                auto screen = r.reduced(10.f).withTrimmedTop(36.f);
+                const float mid = screen.getCentreY();
+                wave.startNewSubPath(screen.getX(), mid);
+                for (int s = 0; s < 48; ++s)
+                    wave.lineTo(screen.getX() + screen.getWidth() * (float) s / 47.f, mid - live[s] * screen.getHeight() * 0.4f);
+                g.setColour(accent);
+                g.strokePath(wave, juce::PathStrokeType(1.3f));
+            }
+            else if (kind == "effect")
+            {
+                g.setColour(accent.withAlpha(0.18f));
+                g.fillRoundedRectangle(r.reduced(8.f), 6.f);
+                g.setColour(accent);
+                g.setFont(kt::font(theme, 9.f, true));
+                g.drawText("EFFECT", r.reduced(8.f).removeFromTop(14.f), juce::Justification::left);
+                g.setColour(ink);
+                g.setFont(kt::font(theme, 11.f, true));
+                g.drawFittedText(label, r.reduced(8.f).withTrimmedTop(16.f).toNearestInt(), juce::Justification::centred, 2);
             }
             else if (kind == "dial")
             {

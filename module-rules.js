@@ -107,6 +107,9 @@ async function handleKyotoModule(action, body, sess, env, deps) {
           typeof v === "number" && Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1) : []
       } : null,
       widgets:Array.isArray(mod.widgets)?mod.widgets.slice(0,80):[],
+      bricks:Array.isArray(mod.bricks)?mod.bricks.slice(0,24):[],
+      slotCursor:Number(mod.slotCursor)||0,
+      nextUid:Number(mod.nextUid)||1,
       // Full machine reconstruction payload: playground/body/parts/connections/theme/macro data.
       machineDesign: (mod.machineDesign && typeof mod.machineDesign === "object") ? mod.machineDesign : null,
       instrument:face === "kyoto" ? (mod.instrument || null) : null,

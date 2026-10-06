@@ -6,12 +6,13 @@
 #include "ModularParts.h"
 #include "WaveDisplay.h"
 #include "PluginShells.h"
+#include "TemplateModules.h"
 #include "FlexLayout.h"
 #include <vector>
 
 struct CanvasWidget : public juce::Component
 {
-    enum class Kind { Dial, Slider, Key, Wave, Stack, Board, Cosmetic };
+    enum class Kind { Dial, Slider, Key, Wave, Stack, Board, Cosmetic, Effect };
 
     CanvasWidget(KyotoAudioProcessor& p, juce::ValueTree n);
     void paint(juce::Graphics& g) override;
@@ -128,6 +129,30 @@ private:
     void armPlacement();
     void placeInSlot(int slot);
     void ensureMotherboard();
+    void prepareChainRoot();
+    void migrateDisplayRoot();
+    void applyHardwareColour();
+    void publishCanvas();
+    void snapLego(int moduleIndex);
+    void selectLego(int brickIndex);
+    void selectLegoFromSlot(int slot);
+    void removeSelectedLego();
+    void focusWire(int slot, const juce::String& why);
+    bool hasLego() const;
+    bool hasDisplay() const;
+    bool hasScreenBay() const;
+    bool hasLinkedPart() const;
+    int takeUid();
+    int linkParentSlot(int slot) const;
+    std::vector<pb::Slot> currentSlots() const;
+    juce::ValueTree widgetByUid(int uid) const;
+    juce::ValueTree widgetBySlot(int slot) const;
+    int allocateDsp(int afterSlot) const;
+    int ancestorEffectSlot(const juce::ValueTree& node) const;
+    void writeSlot(int dsp, int type, bool on);
+    void writeSlotValue(int dsp, const juce::String& suffix, float value);
+    float readControlHeld(const juce::ValueTree& node) const;
+    juce::String ancestorEffectLabel(const juce::ValueTree& node) const;
     void syncPanelMouse();
     void applyShell(int index);
     bool slotOccupied(int slot) const;
@@ -193,8 +218,9 @@ private:
     bool geekMode = false;
     float geekReveal = 0.f;
     int geekHotPart = -1;
-    bool proMode = false;
-    int builderWizardStep = 0; // 0=builder, 1=shell, 2=theme, 3=pick/place FX, 4=controls
+    int builderWizardStep = 0; // 0=workshop, 1=template, 2=display, 3=wire chain, 4=practice
+    int linkShellSlot = -1;
+    int legoSnapParent = -1;
     kt::ThemePalette playgroundTheme = kt::kThemes[0];
     MachineDesign machineDesign;
     float animPhase = 0.f;
@@ -204,8 +230,8 @@ private:
 
     juce::TextButton shareBtn { "DREAMSHARE" }, chainBtn { "PLUGIN BUILDER" }, fxBtn { "FX BUILDER" }, logoutBtn { "LOG OUT" };
     juce::TextButton pluginViewBtn { "PLUGIN VIEW" }, pluginBackBtn { "< BACK" }, newMachineBtn { "ASPECT RATIO" }, randomMachineBtn { "RANDOMIZE MACHINE" };
-    juce::TextButton proToggleBtn { "PRO  -  OFF" }, wizardNextBtn { "NEXT >" }, wizardSkipBtn { "SKIP TO BUILDER" };
-    juce::ComboBox shellBox, playgroundThemeBox;
+    juce::TextButton templateBtn { "MODULES" }, wizardNextBtn { "NEXT >" };
+    juce::ComboBox shellBox, playgroundThemeBox, displayBox;
     juce::Label shellLabel, playgroundThemeLabel;
     juce::TextButton chatRefreshBtn { "CHAT" }, threadsBtn { "THREADS" }, socialBtn { "FRIENDS" }, dmBtn { "DM" }, adminDeleteBtn { "REMOVE" }, utilityGoBtn { "GO" };
     juce::TextEditor utilityBox;
@@ -247,6 +273,7 @@ private:
     bool pendingSpecial = false;
     int pendingSpecialType = 0;
     juce::String pendingLabel;
+    juce::OwnedArray<juce::TextButton> legoButtons;
     ChainLevelControls chainLevels { proc };
     pb::BuilderCanvas panel;
     std::unique_ptr<FxBrowser> fxBrowser;

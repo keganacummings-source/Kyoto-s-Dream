@@ -171,6 +171,9 @@ void KyotoAudioProcessor::prepareToPlay(double sampleRate, int)
         s.delay[0].assign((size_t) maxDelaySamples, 0.f);
         s.delay[1].assign((size_t) maxDelaySamples, 0.f);
     }
+    hardwareDsp = {};
+    hardwareDsp.delay[0].assign((size_t) maxDelaySamples, 0.f);
+    hardwareDsp.delay[1].assign((size_t) maxDelaySamples, 0.f);
     for (auto& v : voices)
         v = {};
     cacheParameters();
@@ -252,18 +255,15 @@ float KyotoAudioProcessor::renderVoice(Voice& v)
 void KyotoAudioProcessor::applySlotStereo(int slot, float& left, float& right)
 {
     const auto& cfg = blockConfig[slot];
-    if (! cfg.on) return;
+    if (! cfg.on || cfg.type < 0 || cfg.type >= kt::kFxCount) return;
+    const float wet = 0.15f + cfg.mix * 0.85f;
+    applyFx(slotDsp[slot], cfg.type, cfg.amount, cfg.tone, cfg.motion, cfg.shape, wet, left, right);
+}
 
-    const int type = cfg.type;
-    if (type >= kt::kFxCount) return;
-
+void KyotoAudioProcessor::applyFx(SlotDsp& d, int type, float amount, float tone, float motion, float shape, float wet, float& left, float& right)
+{
+    if (type < 0 || type >= kt::kFxCount) return;
     const int fam = kt::kFx[type].family;
-    const float amount = cfg.amount;
-    const float tone = cfg.tone;
-    const float motion = cfg.motion;
-    const float mix = cfg.mix;
-    const float shape = cfg.shape;
-    auto& d = slotDsp[slot];
 
     float wetL = left, wetR = right;
     if (fam == 4)
@@ -277,6 +277,7 @@ void KyotoAudioProcessor::applySlotStereo(int slot, float& left, float& right)
     else if (fam == 0 || fam == 1)
     {
         const int n = maxDelaySamples;
+        if (n < 2 || d.delay[0].empty() || d.delay[1].empty()) return;
         const int taps = juce::jlimit(1, n - 1, (int) ((0.012f + motion * (fam == 1 ? 0.62f : 0.30f)) * (float) sampleRateHz));
         const int read = (d.write + n - taps) % n;
         wetL = d.delay[0][(size_t) read];
@@ -328,9 +329,9 @@ void KyotoAudioProcessor::applySlotStereo(int slot, float& left, float& right)
         wetL = d.lp[0]; wetR = d.lp[1];
     }
 
-    const float wet = 0.15f + mix * 0.85f;
-    left = left * (1.f - wet) + wetL * wet;
-    right = right * (1.f - wet) + wetR * wet;
+    const float blend = juce::jlimit(0.f, 1.f, wet);
+    left = left * (1.f - blend) + wetL * blend;
+    right = right * (1.f - blend) + wetR * blend;
 }
 
 void KyotoAudioProcessor::rebuildActiveSlots() noexcept
@@ -361,6 +362,10 @@ void KyotoAudioProcessor::processChain(float& left, float& right, float original
             left *= blockChainLevels[0];
             right *= blockChainLevels[0];
         }
+        const int hwType = hardwareFx.load(std::memory_order_relaxed);
+        const float hw = hardwareAmt.load(std::memory_order_relaxed);
+        if (hw > 0.001f && hwType >= 0 && hwType < kt::kFxCount)
+            applyFx(hardwareDsp, hwType, 0.35f, 0.45f, 0.22f, 0.4f, hw, left, right);
         return;
     }
 
@@ -403,14 +408,10 @@ void KyotoAudioProcessor::processChain(float& left, float& right, float original
 
     left = dryL + (left - dryL) * chainMix;
     right = dryR + (right - dryR) * chainMix;
+    const int hwType = hardwareFx.load(std::memory_order_relaxed);
     const float hw = hardwareAmt.load(std::memory_order_relaxed);
-    if (hw > 0.001f)
-    {
-        // Shell / cosmetic colour. Kept small so the chosen hardware is felt, not a second plugin.
-        const float drive = 1.f + hw * 1.6f;
-        left += (std::tanh(left * drive) - left) * hw;
-        right += (std::tanh(right * drive) - right) * hw;
-    }
+    if (hw > 0.001f && hwType >= 0 && hwType < kt::kFxCount)
+        applyFx(hardwareDsp, hwType, 0.35f, 0.45f, 0.22f, 0.4f, hw, left, right);
 }
 
 void KyotoAudioProcessor::setHardwareColour(int fxType, float amount)

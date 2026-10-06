@@ -29,7 +29,15 @@ Compiling just those objects needs JUCE headers only (Fetched at configure) — 
 ## Auto-adjusting builder toolbars
 - Plugin Builder and FX Builder toolbars use `flx::row()` (Source/FlexLayout.h) to flex-distribute buttons and dropdowns across any window width. Fixed-width items (buttons) get their natural size; flex items (dropdowns) share the remaining space. No hardcoded pixel widths that overflow on narrow windows.
 - The sidebar (effects list) and FX inspector now scale proportionally via `juce::jlimit(min, max, width/fraction)` instead of fixed pixel widths.
-- The builder wizard step 3 ("YOUR FIRST EFFECT") now allows manual NEXT advance if at least one widget has been placed, in addition to the auto-advance in `placeInSlot()`.
+
+## Plugin Builder guide
+- There is no Pro mode and no skip. PLUGIN BUILDER and MODULES always enter the guide at step 1 via `enterBuilderWizard()` / `showTab(1)`.
+- Step 1 snaps `lg::kModules` (Source/TemplateModules.h) into `uiState` children of type `brick`. Bays come from those bricks. The mainboard's only bay is the display and its `subtleFx` is -1.
+- Step 2 places a display widget (`kind=display`, DSP slot -1). It is the chain root (`link=-1`).
+- Later parts require a click on an already placed part (`linkShellSlot`). The new widget stores `link` = that part's `uid`. Wires are parent-to-child, not a star from slot 0.
+- A control hung on an effect shares that effect's DSP slot and binds its own `param` (amt/tone/mot/mix/shp). An effect hung on a control allocates a later DSP slot, rebinds that control onto the new slot, and the mix blends the new effect onto the earlier ancestor because slots process in index order.
+- Chassis colour is `setHardwareColour`. The strongest module subtle FX is the type; mixes sum and stay clamped at 0.22. The display/mainboard contributes nothing.
+- Keep `module-rules.js`, `worker/module-rules.js`, and `JV_MODULE_RULES.js` in sync. Publish must keep `bricks`, `slotCursor`, `nextUid`, and widget `link`/`uid`.
 
 ## Per-chain mixer compatibility
 - Plugin Builder's mixer uses chain ordinals separated by active BREAK slots, not individual effect wet/dry parameters. New sessions sum these gains without automatic normalization; older DAW states and module files keep legacy balanced summing until the user enables PER-CHAIN LEVELS.
@@ -37,8 +45,8 @@ Compiling just those objects needs JUCE headers only (Fetched at configure) — 
 - Native controls cannot be interaction-tested in the browser preview (which serves only the Worker API). Compile-check both plugin variants and test the pure `Source/ChainMix.h` accumulator for gain/mute/legacy balance.
 
 ## Native UI guide and chat
-- The builder guide now has four states: shell, playground theme, built-in FX selection/placement, then control practice. Advance with `showTab(1)`, not just `resized()`, so control visibility updates on every transition. Step 3 unlocks only after a successful bay placement.
-- JUCE ComboBox owns a child Label: never draw its text again in `drawComboBox`. Key/board/cosmetic canvas widgets paint their captions themselves.
+- The builder guide has four steps: template, display, first wire, then grow the chain. Advance with `showTab(1)`, not just `resized()`, so control visibility updates on every transition. NEXT stays disabled until that step's requirement is met (a display bay, a display, then any non-display part).
+- JUCE ComboBox owns a child Label: never draw its text again in `drawComboBox`. Key/board/cosmetic/effect canvas widgets paint their captions themselves.
 - Chat feed order is oldest-to-newest. Opening the chat follows the bottom; refreshing preserves history browsing unless already near the bottom. These native behaviors require a DAW check; Worker HTTP checks do not verify them.
 
 ## Verify it works
