@@ -15,6 +15,17 @@
 - KV-backed features (module catalog) run against the local simulation and are NOT shared with production.
 - The production worker lives at `https://dreamshare-api.keganacummings.workers.dev`; the VST hardcodes that URL.
 
+## Compile-checking the VST3 plugins locally (Linux container)
+CI (Windows/macOS) builds the plugins; to verify C++ changes before pushing:
+```bash
+docker run -d --name kyoto-build -v "$PWD":/src:ro ubuntu:24.04 bash -c \
+  'apt-get update -qq && apt-get install -y -qq cmake ninja-build git g++ libasound2-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libfreetype-dev libfontconfig1-dev libgl1-mesa-dev pkg-config && cmake -S /src -B /tmp/build -G Ninja -DCMAKE_BUILD_TYPE=Debug'
+docker exec kyoto-build ninja -C /tmp/build -j"$(nproc)" \
+  CMakeFiles/KYOTO.dir/Source/PluginEditor.cpp.o CMakeFiles/KYOTO.dir/Source/PluginProcessor.cpp.o CMakeFiles/KYOTO.dir/Source/DreamApi.cpp.o \
+  CMakeFiles/KYOTRIPPAHFX.dir/Source/PluginEditor.cpp.o CMakeFiles/KYOTRIPPAHFX.dir/Source/PluginProcessor.cpp.o CMakeFiles/KYOTRIPPAHFX.dir/Source/DreamApi.cpp.o
+```
+Compiling just those objects needs JUCE headers only (Fetched at configure) — no full JUCE build. ~3 min. Past CI failures were undeclared `kt::kFx` usage in PluginViewScreen.h (fixed by including FxCatalog.h) and rail buttons missing from PluginEditor.h.
+
 ## Verify it works
 ```bash
 curl -s http://localhost:3000/ | head -c 300          # feed JSON, "storage":"durable-v4"

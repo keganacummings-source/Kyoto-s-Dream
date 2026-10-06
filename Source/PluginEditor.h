@@ -214,6 +214,7 @@ private:
     juce::Component threadHolder;
     juce::Viewport chatView;
     SocialRail socialRail;
+    juce::TextButton catalogModeBtn { "CATALOG" }, threadsModeBtn { "THREADS" }, railChatBtn { "CHAT" }, railOnlineBtn { "ONLINE" };
     int centerMode = 0;
     int railMode = 0;
     juce::String selectedThreadId;
