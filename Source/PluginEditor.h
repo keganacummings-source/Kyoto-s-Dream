@@ -32,7 +32,7 @@ struct CanvasWidget : public juce::Component
 class FxBrowser : public juce::Component, private juce::ListBoxModel
 {
 public:
-    struct CustomItem { juce::String id, name, author; bool remote = false; };
+    struct CustomItem { juce::String id, name, author, categories; bool remote = false; };
 
     FxBrowser(KyotoAudioProcessor& p);
     void paint(juce::Graphics& g) override;
@@ -56,6 +56,7 @@ private:
     KyotoAudioProcessor& proc;
     juce::ListBox list;
     juce::TextEditor search;
+    juce::ComboBox familyBox;
     juce::TextButton builtInTab { "BUILT-IN" }, customTab { "CUSTOM" };
     juce::String filter;
     juce::Array<int> filtered;
@@ -166,12 +167,19 @@ private:
     void startNewMachine(int playgroundMode);
     void randomizeMachine();
     void syncMachineDesignToUi();
+    void enterBuilderWizard();
+    void advanceBuilderWizard();
+    void applyPlaygroundTheme(const juce::String& id);
+    juce::String deriveCategoriesFromStack() const;
 
     KyotoAudioProcessor& proc;
     int tab = 0;
     bool loggedIn = false;
     bool isAdmin = false;
     bool pluginView = false;
+    bool proMode = false;
+    int builderWizardStep = 0; // 0=done/builder, 1=theme, 2=shell
+    kt::ThemePalette playgroundTheme = kt::kThemes[0];
     MachineDesign machineDesign;
     float animPhase = 0.f;
     juce::String token, account;
@@ -180,7 +188,8 @@ private:
 
     juce::TextButton shareBtn { "DREAMSHARE" }, chainBtn { "PLUGIN BUILDER" }, fxBtn { "FX BUILDER" }, logoutBtn { "LOG OUT" };
     juce::TextButton pluginViewBtn { "PLUGIN VIEW" }, pluginBackBtn { "← BACK" }, newMachineBtn { "NEW MACHINE" }, randomMachineBtn { "RANDOMIZE MACHINE" };
-    juce::ComboBox shellBox;
+    juce::TextButton proToggleBtn { "PRO  ·  OFF" }, wizardNextBtn { "NEXT →" }, wizardSkipBtn { "SKIP TO BUILDER" };
+    juce::ComboBox shellBox, playgroundThemeBox;
     juce::TextButton chatRefreshBtn { "CHAT" }, threadsBtn { "THREADS" }, socialBtn { "FRIENDS" }, dmBtn { "DM" }, adminDeleteBtn { "REMOVE" }, utilityGoBtn { "GO" };
     juce::TextButton catalogModeBtn { "CATALOG" }, threadsModeBtn { "THREADS" }, railChatBtn { "CHAT" }, railOnlineBtn { "ONLINE" };
     juce::TextEditor utilityBox;

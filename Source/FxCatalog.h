@@ -2,6 +2,20 @@
 #include <cstddef>
 namespace kt {
 struct FxDef { const char* id; const char* name; int family; };
+
+// Family indices used by DSP + UI category browser.
+// 0 Delay · 1 Reverb · 2 Stereo · 3 Modulation · 4 Filter/EQ · 5 Drive · 6 Dynamics · 7 Character
+inline constexpr const char* kFxFamilyNames[] = {
+    "Delay", "Reverb", "Stereo", "Modulation", "Filter / EQ", "Drive", "Dynamics", "Character"
+};
+inline constexpr int kFxFamilyCount = 8;
+
+inline const char* fxFamilyName(int family)
+{
+    if (family >= 0 && family < kFxFamilyCount) return kFxFamilyNames[family];
+    return "Other";
+}
+
 inline constexpr FxDef kFx[] = {
     { "drive", "Drive", 5 },
     { "chorus", "Doubler / Chorus", 3 },
