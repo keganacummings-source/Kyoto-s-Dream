@@ -10,6 +10,11 @@ public:
     static constexpr int kMaxSlots = 32;
     static constexpr int kMixType = 200;
     static constexpr int kBreakType = 201;
+    static constexpr int kMaxChains = kMaxSlots + 1;
+
+    static juce::String chainLevelId(int chain);
+    juce::var exportChainLevels() const;
+    void restoreChainLevels(const juce::var& state);
 
     KyotoAudioProcessor();
     ~KyotoAudioProcessor() override;
@@ -102,6 +107,10 @@ private:
     int activeSlots[kMaxSlots] {};
     int activeSlotCount = 0;
     bool anyActiveSlot = false;
+    std::atomic<float>* perChainLevelsParam = nullptr;
+    std::atomic<float>* chainLevelParams[kMaxChains] {};
+    float blockChainLevels[kMaxChains] {};
+    bool blockPerChainLevels = true;
 
     std::atomic<float>* oscParam = nullptr;
     std::atomic<float>* cutoffParam = nullptr;

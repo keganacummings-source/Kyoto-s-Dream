@@ -1,5 +1,6 @@
 #pragma once
 #include "PluginProcessor.h"
+#include "ChainLevelControls.h"
 #include "Themes.h"
 #include "MachineDesign.h"
 #include "ModularParts.h"
@@ -243,6 +244,7 @@ private:
     bool pendingSpecial = false;
     int pendingSpecialType = 0;
     juce::String pendingLabel;
+    ChainLevelControls chainLevels { proc };
     pb::BuilderCanvas panel;
     std::unique_ptr<FxBrowser> fxBrowser;
     std::unique_ptr<WaveDisplay> waveDisplay;

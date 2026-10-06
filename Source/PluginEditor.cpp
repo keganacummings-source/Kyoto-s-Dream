@@ -663,6 +663,7 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     addAndMakeVisible(fxAmountLabel); addAndMakeVisible(fxToneLabel); addAndMakeVisible(fxMotionLabel); addAndMakeVisible(fxMixLabel); addAndMakeVisible(fxShapeLabel);
     addAndMakeVisible(fxBreakBtn); addAndMakeVisible(fxMixBtn); addAndMakeVisible(fxRandomBtn); addAndMakeVisible(fxClearBtn);
     addAndMakeVisible(stackLabel); addAndMakeVisible(panel);
+    addAndMakeVisible(chainLevels);
     panel.setInterceptsMouseClicks(false, true);
 
     // QOL: hover hints on the main controls.
@@ -893,6 +894,7 @@ void KyotoAudioProcessorEditor::timerCallback()
 {
     animPhase += 0.035f;
     if (animPhase > juce::MathConstants<float>::twoPi) animPhase -= juce::MathConstants<float>::twoPi;
+    chainLevels.refresh();
     socialRail.setPhase(animPhase);
     socialRail.setHostTheme(theme);
     repaint();
@@ -1285,6 +1287,7 @@ void KyotoAudioProcessorEditor::showTab(int next)
     // Keep the live shell preview visible during the guide as well as in the full builder.
     panel.setVisible(chain);
     if (fxBrowser) fxBrowser->setVisible(builderReady || fx);
+    chainLevels.setVisible(builderReady && ! pluginView);
     addBtn.setVisible(builderReady); chainBreakBtn.setVisible(builderReady); chainMixBtn.setVisible(builderReady); chainRemoveBtn.setVisible(builderReady); chainUndoBtn.setVisible(builderReady);
     nameBox.setVisible(builderReady); presetBox.setVisible(builderReady); saveBtn.setVisible(builderReady); upBtn.setVisible(builderReady); kindBox.setVisible(builderReady); paramBox.setVisible(builderReady); pieceBox.setVisible(builderReady); wavBtn.setVisible(builderReady);
     gridStyleBox.setVisible(false); effectBox.setVisible(false);
@@ -1310,6 +1313,7 @@ void KyotoAudioProcessorEditor::resized()
     const int W = getWidth();
     if (pluginView)
     {
+        chainLevels.setVisible(false);
         pluginBackBtn.setBounds(24, 20, 104, 34);
         pluginViewBtn.setVisible(false); newMachineBtn.setVisible(false); randomMachineBtn.setVisible(false);
         shareBtn.setVisible(false); chainBtn.setVisible(false); fxBtn.setVisible(false); logoutBtn.setVisible(false); whoLabel.setVisible(false); status.setVisible(false);
@@ -1463,6 +1467,8 @@ void KyotoAudioProcessorEditor::resized()
         wavBtn.setBounds(actions.removeFromLeft(58)); actions.removeFromLeft(6);
         saveBtn.setBounds(actions.removeFromLeft(68)); actions.removeFromLeft(6);
         upBtn.setBounds(actions.removeFromLeft(78));
+        actions.removeFromLeft(10);
+        chainLevels.setBounds(actions.withHeight(32));
 
         auto left = area.removeFromLeft(300);
         if (fxBrowser) fxBrowser->setBounds(left);
@@ -2202,6 +2208,7 @@ void KyotoAudioProcessorEditor::loadCatalogId(const juce::String& id, const juce
                 effectNameBox.setText(obj->getProperty("name").toString(), juce::dontSendNotification); if (fxStack.getNumChildren() > 0) selectFxStep(0); showTab(2); return;
             }
             nameBox.setText(obj->getProperty("name").toString(), juce::dontSendNotification);
+            proc.restoreChainLevels(obj->getProperty("chainLevels"));
             if (auto* slots = obj->getProperty("slots").getArray())
             {
                 for (int i = 0; i < proc.slotCount(); ++i)
@@ -2715,6 +2722,7 @@ void KyotoAudioProcessorEditor::saveLocal()
         o->setProperty("y", (int) w.getProperty("y"));
         widgetsArr.add(juce::var(o));
     }
+    obj->setProperty("chainLevels", proc.exportChainLevels());
     obj->setProperty("slots", slots);
     obj->setProperty("steps", steps);
     obj->setProperty("widgets", widgetsArr);
