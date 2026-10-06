@@ -2038,7 +2038,7 @@ void KyotoAudioProcessorEditor::randomizeTemplate()
     {
         if (shell.slots[s].kind == pb::SlotKind::Board || shell.slots[s].w < 0.02f) continue;
         juce::String kind;
-        if (essentials.size() > 0) kind = essentials.removeAndReturn(0);
+        if (essentials.size() > 0) { kind = essentials[0]; essentials.remove(0); }
         else
         {
             const char* pool[] = { "dial", "slider", "button", "wave", "key" };
@@ -2131,8 +2131,9 @@ void KyotoAudioProcessorEditor::editEffectPopup(int widgetIndex)
             const double seconds = beats * 60.0 / juce::jmax(1.0, proc.hostBpm());
             setOver("mot", juce::jlimit(0.0, 1.0, seconds / 2.0));
             proc.setSlotOvermax(dsp, (float) juce::jlimit(0.25, 4.0, amount));
-            node.setProperty("beats", beats, nullptr);
-            node.setProperty("overmax", amount, nullptr);
+            auto nodeCopy = node;
+            nodeCopy.setProperty("beats", beats, nullptr);
+            nodeCopy.setProperty("overmax", amount, nullptr);
             status.setText("Effect edited. " + juce::String(beats, 2) + " beats at " + juce::String(proc.hostBpm(), 1) + " BPM.", juce::dontSendNotification);
         }
         delete win;
