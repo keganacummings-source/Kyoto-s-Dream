@@ -353,6 +353,103 @@ void KyotoAudioProcessor::rebuildActiveSlots() noexcept
     }
 }
 
+void KyotoAudioProcessor::rebuildGraph() noexcept
+{
+    graphMode = false;
+    graphCount = 0;
+    graphLeafCount = 0;
+    graphChainMix = 1.f;
+
+    bool anyLink = false;
+    for (int ai = 0; ai < activeSlotCount; ++ai)
+        if (slotParentAtomic[activeSlots[ai]].load(std::memory_order_relaxed) > 0)
+        {
+            anyLink = true;
+            break;
+        }
+    if (! anyLink) return;
+
+    bool isStage[kMaxSlots] {};
+    bool done[kMaxSlots] {};
+    int effectiveParent[kMaxSlots] {};
+    int childCount[kMaxSlots] {};
+    int stages[kMaxSlots] {};
+    int stageCount = 0;
+
+    for (int ai = 0; ai < activeSlotCount; ++ai)
+    {
+        const int s = activeSlots[ai];
+        const int type = blockConfig[s].type;
+        if (type == kMixType) { graphChainMix = blockConfig[s].amount; continue; }
+        if (type == kBreakType) continue;
+        isStage[s] = true;
+        stages[stageCount++] = s;
+    }
+
+    int previous = -1;
+    for (int ai = 0; ai < activeSlotCount; ++ai)
+    {
+        const int s = activeSlots[ai];
+        const int type = blockConfig[s].type;
+        if (type == kBreakType) { previous = -1; continue; }
+        if (! isStage[s]) continue;
+
+        int parent = previous;
+        const int stored = slotParentAtomic[s].load(std::memory_order_relaxed);
+        if (stored > 0)
+        {
+            parent = stored - 1;
+            if (parent == s || parent < 0 || parent >= kMaxSlots || ! isStage[parent])
+                parent = -1; // motherboard / dry input
+        }
+        effectiveParent[s] = parent;
+        previous = s;
+    }
+
+    // Topological order, with cycle protection.
+    int placed = 0;
+    bool progress = true;
+    while (placed < stageCount && progress)
+    {
+        progress = false;
+        for (int i = 0; i < stageCount; ++i)
+        {
+            const int s = stages[i];
+            if (done[s]) continue;
+            const int p = effectiveParent[s];
+            if (p < 0 || done[p])
+            {
+                graphOrder[graphCount++] = s;
+                done[s] = true;
+                ++placed;
+                progress = true;
+            }
+        }
+    }
+    for (int i = 0; i < stageCount; ++i)
+    {
+        const int s = stages[i];
+        if (! done[s])
+        {
+            effectiveParent[s] = -1;
+            graphOrder[graphCount++] = s;
+            done[s] = true;
+        }
+    }
+
+    for (int i = 0; i < stageCount; ++i)
+    {
+        const int s = stages[i];
+        graphParent[s] = effectiveParent[s];
+        if (effectiveParent[s] >= 0) ++childCount[effectiveParent[s]];
+    }
+    for (int i = 0; i < stageCount; ++i)
+        if (childCount[stages[i]] == 0)
+            graphLeaves[graphLeafCount++] = stages[i];
+
+    graphMode = graphCount > 0 && graphLeafCount > 0;
+}
+
 void KyotoAudioProcessor::processChain(float& left, float& right, float original)
 {
     juce::ignoreUnused(original);
@@ -366,49 +463,77 @@ void KyotoAudioProcessor::processChain(float& left, float& right, float original
         return;
     }
 
-    float dryL = left, dryR = right;
-    float segmentL = left, segmentR = right;
-    kt::ChainMix branches;
+    const float dryL = left, dryR = right;
     float chainMix = 1.f;
-    int chain = 0;
 
-    // Walk only the compact active list — O(active) not O(maxSlots) per sample.
-    for (int ai = 0; ai < activeSlotCount; ++ai)
+    if (graphMode)
     {
-        const int s = activeSlots[ai];
-        const auto& cfg = blockConfig[s];
-        const int type = cfg.type;
-
-        if (type == kMixType)
+        // Explicit links: each stage receives its parent's processed signal.
+        for (int oi = 0; oi < graphCount; ++oi)
         {
-            chainMix = cfg.amount;
-            continue;
-        }
-        if (type == kBreakType)
-        {
-            branches.add(segmentL, segmentR, blockPerChainLevels ? blockChainLevels[chain] : 1.f);
-            ++chain;
-            segmentL = dryL;
-            segmentR = dryR;
-            continue;
+            const int s = graphOrder[oi];
+            const int parent = graphParent[s];
+            float stageL = parent >= 0 ? graphOutL[parent] : dryL;
+            float stageR = parent >= 0 ? graphOutR[parent] : dryR;
+            applySlotStereo(s, stageL, stageR);
+            graphOutL[s] = stageL;
+            graphOutR[s] = stageR;
         }
 
-        left = segmentL;
-        right = segmentR;
-        applySlotStereo(s, left, right);
-        segmentL = left;
-        segmentR = right;
+        kt::ChainMix outputs;
+        for (int li = 0; li < graphLeafCount; ++li)
+        {
+            const int s = graphLeaves[li];
+            outputs.add(graphOutL[s], graphOutR[s],
+                        blockPerChainLevels ? blockChainLevels[juce::jmin(li, kMaxChains - 1)] : 1.f);
+        }
+        outputs.output(left, right, false);
+        chainMix = graphChainMix;
     }
+    else
+    {
+        float segmentL = dryL, segmentR = dryR;
+        kt::ChainMix branches;
+        int chain = 0;
 
-    branches.add(segmentL, segmentR, blockPerChainLevels ? blockChainLevels[chain] : 1.f);
-    branches.output(left, right, blockPerChainLevels);
+        for (int ai = 0; ai < activeSlotCount; ++ai)
+        {
+            const int s = activeSlots[ai];
+            const auto& cfg = blockConfig[s];
+            const int type = cfg.type;
+
+            if (type == kMixType)
+            {
+                chainMix = cfg.amount;
+                continue;
+            }
+            if (type == kBreakType)
+            {
+                branches.add(segmentL, segmentR,
+                             blockPerChainLevels ? blockChainLevels[juce::jmin(chain, kMaxChains - 1)] : 1.f);
+                ++chain;
+                segmentL = dryL;
+                segmentR = dryR;
+                continue;
+            }
+
+            float stageL = segmentL, stageR = segmentR;
+            applySlotStereo(s, stageL, stageR);
+            segmentL = stageL;
+            segmentR = stageR;
+        }
+
+        branches.add(segmentL, segmentR,
+                     blockPerChainLevels ? blockChainLevels[juce::jmin(chain, kMaxChains - 1)] : 1.f);
+        branches.output(left, right, blockPerChainLevels);
+    }
 
     left = dryL + (left - dryL) * chainMix;
     right = dryR + (right - dryR) * chainMix;
+
     const float hw = hardwareAmt.load(std::memory_order_relaxed);
     if (hw > 0.001f)
     {
-        // Shell / cosmetic colour. Kept small so the chosen hardware is felt, not a second plugin.
         const float drive = 1.f + hw * 1.6f;
         left += (std::tanh(left * drive) - left) * hw;
         right += (std::tanh(right * drive) - right) * hw;
@@ -453,6 +578,7 @@ void KyotoAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     // Build the compact active-slot list once. Extreme custom-FX expansions
     // that fill many slots still only walk the live ones per sample.
     rebuildActiveSlots();
+    rebuildGraph();
     blockPerChainLevels = loadParam(perChainLevelsParam, 1.f) >= 0.5f;
     for (int chain = 0; chain < kMaxChains; ++chain)
         blockChainLevels[chain] = safeMix(loadParam(chainLevelParams[chain], 1.f));
@@ -558,6 +684,22 @@ void KyotoAudioProcessor::copyScope(float* dest, int n) const
     for (int i = 0; i < n; ++i) dest[i] = scope[(w + i) % scopeN];
 }
 
+void KyotoAudioProcessor::rebuildLinksFromUi()
+{
+    for (auto& p : slotParentAtomic)
+        p.store(0, std::memory_order_relaxed);
+
+    for (int i = 0; i < uiState.getNumChildren(); ++i)
+    {
+        auto node = uiState.getChild(i);
+        if (! node.hasType("w") || ! node.hasProperty("parentDsp")) continue;
+        const int slot = (int) node.getProperty("slot", -1);
+        const int parent = (int) node.getProperty("parentDsp", -1);
+        if (slot >= 0 && slot < kMaxSlots && parent >= 0 && parent < kMaxSlots && parent != slot)
+            slotParentAtomic[slot].store(parent + 1, std::memory_order_relaxed);
+    }
+}
+
 void KyotoAudioProcessor::getStateInformation(juce::MemoryBlock& dest)
 {
     if (auto xml = apvts.copyState().createXml())
@@ -591,6 +733,7 @@ void KyotoAudioProcessor::setStateInformation(const void* data, int size)
             ensureParameter(chainLevelId(i), 1.f);
         apvts.replaceState(tree);
         cacheParameters();
+        rebuildLinksFromUi();
     }
 }
 

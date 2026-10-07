@@ -1,6 +1,10 @@
 #pragma once
 #include <JuceHeader.h>
 #include "Themes.h"
+#include <array>
+#include <cmath>
+#include <cstring>
+#include <algorithm>
 
 // Hardware shells for the Plugin Builder. Slots are normalised inside the face plate.
 // The motherboard bay is always occupied first and is the start of the signal chain.
@@ -24,8 +28,15 @@ struct Shell
     int hiddenFx;
     float hiddenMix;
     const char* silhouette;
-    Slot slots[10];
+    Slot slots[24];
     int slotCount;
+    float corner = -1.f;
+    int trim = 0;
+    int screenStyle = 0;
+    int internals = -1;
+    bool mirrorInternals = false;
+    float tint = 0.f;
+    int bezel = 0;
 };
 
 inline const Shell kShells[] = {
@@ -80,6 +91,153 @@ inline const Shell kShells[] = {
 };
 
 inline constexpr int kShellCount = 4;
+
+inline constexpr int kGenIndex = kShellCount;
+inline constexpr int kShellChoices = kShellCount + 1;
+
+struct GeneratedShell
+{
+    Shell shell {};
+    std::array<std::array<char, 20>, 24> names {};
+    std::array<char, 48> title {};
+    std::array<char, 16> id {};
+    std::array<char, 16> silhouette {};
+    juce::uint32 seed = 0;
+    int serial = 0;
+    bool ready = false;
+};
+
+inline GeneratedShell& generated()
+{
+    static GeneratedShell g;
+    return g;
+}
+
+inline const Shell& shellAt(int index)
+{
+    if (index >= kGenIndex && generated().ready)
+        return generated().shell;
+    return kShells[juce::jlimit(0, kShellCount - 1, index)];
+}
+
+inline int clampShellIndex(int index)
+{
+    return (index >= kGenIndex && generated().ready)
+        ? kGenIndex : juce::jlimit(0, kShellCount - 1, index);
+}
+inline int shellInternalIndex(int index)
+{
+    if (index >= kGenIndex && generated().ready)
+        return juce::jlimit(0, 3, generated().shell.internals);
+    return juce::jlimit(0, 3, index);
+}
+
+inline int templateSignature(juce::uint32 seed)
+{
+    juce::Random r((juce::int64) seed);
+    return r.nextInt(6) * 8 + r.nextInt(5);
+}
+
+inline juce::uint32 freshSeed(int previousSignature)
+{
+    juce::Random r((juce::int64) juce::Time::getMillisecondCounterHiRes());
+    auto seed = (juce::uint32) r.nextInt();
+    for (int i = 0; i < 64 && previousSignature >= 0 && templateSignature(seed) == previousSignature; ++i)
+        seed = (juce::uint32) r.nextInt();
+    return seed;
+}
+
+inline void copyText(std::array<char, 48>& dst, const juce::String& value)
+{
+    std::memset(dst.data(), 0, dst.size());
+    std::strncpy(dst.data(), value.substring(0, (int) dst.size() - 1).toRawUTF8(), dst.size() - 1);
+}
+
+inline void copyText(std::array<char, 16>& dst, const juce::String& value)
+{
+    std::memset(dst.data(), 0, dst.size());
+    std::strncpy(dst.data(), value.substring(0, (int) dst.size() - 1).toRawUTF8(), dst.size() - 1);
+}
+
+inline void copyName(GeneratedShell& g, int i, const juce::String& value)
+{
+    if (i < 0 || i >= (int) g.names.size()) return;
+    std::memset(g.names[(size_t) i].data(), 0, g.names[(size_t) i].size());
+    std::strncpy(g.names[(size_t) i].data(), value.substring(0, 18).toRawUTF8(), g.names[(size_t) i].size() - 1);
+    g.shell.slots[i].name = g.names[(size_t) i].data();
+}
+
+inline void setGeneratedSlot(GeneratedShell& g, int i, SlotKind kind,
+                             float x, float y, float w, float h, const juce::String& name)
+{
+    if (i < 0 || i >= 24) return;
+    g.shell.slots[i] = { kind, x, y, w, h, nullptr };
+    copyName(g, i, name);
+}
+
+// Generates a complete machine: one motherboard, one screen, and 6-20 total bays.
+// Layout archetype + screen style are seed-derived so a new build is visibly different.
+inline void designShell(juce::uint32 seed, int serial = 1)
+{
+    auto& g = generated();
+    g = {};
+    g.seed = seed;
+    g.serial = serial;
+    juce::Random r((juce::int64) seed);
+    const int archetype = r.nextInt(6);
+    const int screenStyle = r.nextInt(5);
+    const int desired = 6 + r.nextInt(15); // 6..20
+    const char* silhouettes[] = { "console", "tower", "desk", "pocket", "console", "tower" };
+    copyText(g.silhouette, silhouettes[archetype]);
+    copyText(g.id, "gen");
+    copyText(g.title, "Dream Machine " + juce::String(serial));
+
+    g.shell.id = g.id.data();
+    g.shell.name = g.title.data();
+    g.shell.hiddenFx = r.nextInt(32);
+    g.shell.hiddenMix = 0.055f + r.nextFloat() * 0.09f;
+    g.shell.silhouette = g.silhouette.data();
+    g.shell.slotCount = desired;
+
+    // The first two bays are always unique functional anchors.
+    setGeneratedSlot(g, 0, SlotKind::Board, 0.04f, 0.68f, 0.40f, 0.24f, "MOTHERBOARD");
+    setGeneratedSlot(g, 1, SlotKind::Screen, 0.05f, 0.07f, 0.58f, 0.27f, "SCREEN");
+
+    const int extras = desired - 2;
+    const int cols = archetype == 1 ? 2 : 4;
+    const float top = 0.39f, bottom = 0.93f, gap = 0.018f;
+    const int rows = (extras + cols - 1) / cols;
+    const float cw = (0.92f - gap * (cols - 1)) / (float) cols;
+    const float rh = (bottom - top - gap * (rows - 1)) / (float) rows;
+    for (int n = 0; n < extras; ++n)
+    {
+        const int i = n + 2;
+        const int col = n % cols, row = n / cols;
+        const float x = 0.04f + col * (cw + gap);
+        const float y = top + row * (rh + gap);
+        SlotKind kind;
+        const int pick = r.nextInt(100);
+        if (pick < 28) kind = SlotKind::Knob;
+        else if (pick < 48) kind = SlotKind::Fader;
+        else if (pick < 64) kind = SlotKind::Key;
+        else if (pick < 78) kind = SlotKind::Cosmetic;
+        else kind = SlotKind::Knob;
+        const float w = kind == SlotKind::Fader ? cw * 0.72f : cw;
+        const float h = kind == SlotKind::Fader ? rh : rh * 0.92f;
+        const char* kindName = kind == SlotKind::Fader ? "FADER" :
+                               kind == SlotKind::Key ? "KEY" :
+                               kind == SlotKind::Cosmetic ? "DETAIL" : "KNOB";
+        setGeneratedSlot(g, i, kind, x, y, w, h, juce::String(kindName) + " " + juce::String(i - 1));
+    }
+    g.shell.corner = 8.f + r.nextFloat() * 22.f;
+    g.shell.trim = r.nextInt(7);
+    g.shell.screenStyle = screenStyle;
+    g.shell.internals = r.nextInt(4);
+    g.shell.mirrorInternals = r.nextBool();
+    g.shell.tint = (r.nextFloat() - 0.5f) * 0.10f;
+    g.shell.bezel = r.nextInt(3);
+    g.ready = true;
+}
 
 inline juce::String styleToken(int kindId)
 {
@@ -136,6 +294,7 @@ inline juce::Rectangle<float> slotRect(juce::Rectangle<float> face, const Slot& 
 
 inline float shellRadius(const Shell& shell)
 {
+    if (shell.corner >= 0.f) return shell.corner;
     const auto s = juce::String(shell.silhouette);
     return s == "pocket" ? 28.f : s == "tower" ? 8.f : 16.f;
 }
@@ -151,12 +310,17 @@ public:
     std::function<void(int, juce::Point<int>)> onRightClick;
     std::function<bool(int)> occupied;
     std::function<juce::Point<float>(int)> anchor;
+    std::function<int(int)> parentOf;
+    std::function<int()> highlightedBay;
+    std::function<void()> onBackgroundClick;
+    std::function<void()> onResized;
     int hoverSlot = -1;
+    void resized() override { if (onResized) onResized(); }
 
     void paint(juce::Graphics& g) override
     {
         auto bounds = getLocalBounds().toFloat();
-        const auto& shell = kShells[juce::jlimit(0, kShellCount - 1, shellIndex)];
+        const auto& shell = shellAt(shellIndex);
         const auto accent = kt::c(theme.accent);
 
         g.setColour(kt::c(theme.panel).withAlpha(0.96f));
@@ -201,22 +365,27 @@ public:
         g.setColour(accent.withAlpha(0.5f));
         g.drawLine(face.getRight() - 130, face.getBottom() - 9.f, face.getRight() - 20.f, face.getBottom() - 9.f, 1.2f);
 
-        // Bay wiring: every filled bay is joined back to the motherboard, lego-style.
+        // Bay wiring follows the explicit part-to-part links. The selected part is the hot node.
+        const int hot = highlightedBay ? highlightedBay() : -1;
         for (int i = 1; i < shell.slotCount; ++i)
         {
             if (occupied && occupied(i) && anchor)
             {
-                auto a = anchor(0);
+                int from = parentOf ? parentOf(i) : 0;
+                if (from < 0 || from >= shell.slotCount || from == i || ! occupied(from)) from = 0;
+                auto a = anchor(from);
                 auto b = anchor(i);
                 if (a.x > 1.f && b.x > 1.f)
                 {
+                    const bool glow = i == hot || from == hot;
                     juce::Path wire;
                     wire.startNewSubPath(a);
                     wire.cubicTo(a.x, (a.y + b.y) * 0.5f, b.x, (a.y + b.y) * 0.5f, b.x, b.y);
-                    g.setColour(accent.withAlpha(0.85f));
-                    g.strokePath(wire, juce::PathStrokeType(2.0f));
+                    g.setColour(accent.withAlpha(glow ? 1.0f : 0.78f));
+                    g.strokePath(wire, juce::PathStrokeType(glow ? 3.0f : 2.0f));
                     g.setColour(kt::c(theme.pegHot));
                     g.fillEllipse(b.x - 3.f, b.y - 3.f, 6.f, 6.f);
+                    g.fillEllipse(a.x - 2.5f, a.y - 2.5f, 5.f, 5.f);
                 }
             }
         }
@@ -273,7 +442,7 @@ public:
     int slotAt(juce::Point<float> pos) const
     {
         if (! placing) return -1;
-        const auto& shell = kShells[juce::jlimit(0, kShellCount - 1, shellIndex)];
+        const auto& shell = shellAt(shellIndex);
         auto face = faceRect(getLocalBounds().toFloat());
         for (int i = 0; i < shell.slotCount; ++i)
         {
@@ -301,7 +470,7 @@ public:
     {
         if (e.mods.isPopupMenu())
         {
-            const auto& shell = kShells[juce::jlimit(0, kShellCount - 1, shellIndex)];
+            const auto& shell = shellAt(shellIndex);
             auto face = faceRect(getLocalBounds().toFloat());
             int hit = -1;
             for (int i = 0; i < shell.slotCount; ++i)
@@ -309,8 +478,12 @@ public:
             if (onRightClick) onRightClick(hit, e.getScreenPosition());
             return;
         }
-        if (! placing || ! onSlot) return;
-        const auto& shell = kShells[juce::jlimit(0, kShellCount - 1, shellIndex)];
+        if (! placing || ! onSlot)
+        {
+            if (onBackgroundClick) onBackgroundClick();
+            return;
+        }
+        const auto& shell = shellAt(shellIndex);
         auto face = faceRect(getLocalBounds().toFloat());
         for (int i = 0; i < shell.slotCount; ++i)
         {

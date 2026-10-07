@@ -31,8 +31,8 @@ public:
     void paint(juce::Graphics& g) override
     {
         const auto& theme = editor.machineDesign.palette();
-        const int shellIdx = juce::jlimit(0, pb::kShellCount - 1, editor.shellIndex);
-        const auto& shell = pb::kShells[shellIdx];
+        const int shellIdx = pb::shellInternalIndex(editor.shellIndex);
+        const auto& shell = pb::shellAt(editor.shellIndex);
         const auto accent = kt::c(theme.accent);
         const auto ink = kt::c(theme.text);
         const auto muted = kt::c(theme.muted);
@@ -119,7 +119,7 @@ public:
 
     void mouseDown(const juce::MouseEvent& e) override
     {
-        const auto& shell = pb::kShells[juce::jlimit(0, pb::kShellCount - 1, editor.shellIndex)];
+        const auto& shell = pb::shellAt(editor.shellIndex);
         auto face = pb::faceRect(pluginCase());
         for (int i = 0; i < editor.proc.uiState.getNumChildren(); ++i)
         {
@@ -193,7 +193,7 @@ private:
 
     void drawInternals(juce::Graphics& g, juce::Rectangle<float> interior) const
     {
-        const int shellIdx = juce::jlimit(0, pb::kShellCount - 1, editor.shellIndex);
+        const int shellIdx = pb::shellInternalIndex(editor.shellIndex);
         const auto& parts = hb::kInternals[shellIdx];
         for (int i = 0; i < parts.count; ++i)
             hb::drawHardwarePart(g, editor.machineDesign.palette(), parts.parts[i], hb::partRect(interior, parts.parts[i]), animPhase, i == geekHot);
@@ -202,7 +202,7 @@ private:
     void drawXrayOverlay(juce::Graphics& g, juce::Rectangle<float> interior, juce::Colour accent) const
     {
         const auto& theme = editor.machineDesign.palette();
-        const int shellIdx = juce::jlimit(0, pb::kShellCount - 1, editor.shellIndex);
+        const int shellIdx = pb::shellInternalIndex(editor.shellIndex);
         const auto& parts = hb::kInternals[shellIdx];
         const float reveal = geekReveal;
 
@@ -274,7 +274,7 @@ private:
 
     int hitHardwarePart(juce::Point<float> pos) const
     {
-        const int shellIdx = juce::jlimit(0, pb::kShellCount - 1, editor.shellIndex);
+        const int shellIdx = pb::shellInternalIndex(editor.shellIndex);
         const auto& parts = hb::kInternals[shellIdx];
         const auto interior = pluginInterior();
         for (int i = 0; i < parts.count; ++i)
@@ -348,7 +348,7 @@ private:
     {
         const auto& theme = editor.machineDesign.palette();
         const auto accent = kt::c(theme.accent);
-        const int shellIdx = juce::jlimit(0, pb::kShellCount - 1, editor.shellIndex);
+        const int shellIdx = pb::shellInternalIndex(editor.shellIndex);
         const auto& part = hb::kInternals[shellIdx].parts[partIndex];
         const auto settings = liveSettingsFor(part);
         const float cardW = juce::jmin(300.f, interior.getWidth() * 0.7f);

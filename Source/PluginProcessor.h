@@ -54,6 +54,7 @@ public:
     void setSlotOvermax(int slot, float over);
     float getSlotOvermax(int slot) const;
     void copyScope(float* dest, int n) const;
+    void rebuildLinksFromUi();
 
     juce::AudioProcessorValueTreeState apvts;
     juce::ValueTree uiState { "ui" };
@@ -100,6 +101,7 @@ private:
     void applySlotStereo(int slot, float& left, float& right);
     void processChain(float& left, float& right, float original);
     void rebuildActiveSlots() noexcept;
+    void rebuildGraph() noexcept;
 
     Voice voices[8];
     SlotDsp slotDsp[kMaxSlots];
@@ -114,6 +116,18 @@ private:
     std::atomic<float>* chainLevelParams[kMaxChains] {};
     float blockChainLevels[kMaxChains] {};
     bool blockPerChainLevels = true;
+
+    // Explicit parent links: 0 = no explicit link, N+1 = this DSP slot is fed by slot N.
+    std::atomic<int> slotParentAtomic[kMaxSlots] {};
+    bool graphMode = false;
+    int graphOrder[kMaxSlots] {};
+    int graphParent[kMaxSlots] {};
+    int graphCount = 0;
+    int graphLeaves[kMaxSlots] {};
+    int graphLeafCount = 0;
+    float graphChainMix = 1.f;
+    float graphOutL[kMaxSlots] {};
+    float graphOutR[kMaxSlots] {};
 
     std::atomic<float>* oscParam = nullptr;
     std::atomic<float>* cutoffParam = nullptr;

@@ -78,13 +78,15 @@ private:
 class SocialRail : public juce::Component
 {
 public:
-    struct Bubble { juce::String id, user, text, themeId; };
+    struct Reaction { juce::String name; int count = 0; bool mine = false; };
+    struct Bubble { juce::String id, user, text, themeId; juce::Array<Reaction> reactions; };
     struct Person { juce::String name, detail, themeId, kind, requestId; bool online = false; };
 
     std::function<void(const Bubble&, juce::Point<int>)> onBubbleMenu;
     std::function<void(const Person&)> onPersonClick;
     std::function<void(const Person&, juce::Point<int>)> onPersonMenu;
     std::function<void(const kt::AttachRef&)> onFileClick;
+    std::function<void(const Bubble&, const juce::String&)> onReactionClick;
 
     void setBubbles(const juce::Array<Bubble>& next) { bubbles = next; syncSize(); }
     void setPeople(const juce::Array<Person>& next) { people = next; syncSize(); }
@@ -150,6 +152,16 @@ private:
     void ensureMotherboard();
     void syncPanelMouse();
     void applyShell(int index);
+    void designNewTemplate(bool askFirst);
+    void applyDesignedTemplate();
+    void loadShellFromUi();
+    void storeShellToUi();
+    void askNewBuild();
+    void startNewBuild(bool saveFirst);
+    void confirmAction(const juce::String& title, const juce::String& message, const juce::String& yes, std::function<void()> onYes);
+    int selectedPartIndex() const;
+    void selectPartIndex(int index);
+    void showEmojiPicker();
     bool slotOccupied(int slot) const;
     juce::Point<float> slotAnchor(int slot) const;
     void reflowSeries();
@@ -256,6 +268,7 @@ private:
     juce::TextButton shareBtn { "DREAMSHARE" }, chainBtn { "PLUGIN BUILDER" }, fxBtn { "FX BUILDER" }, logoutBtn { "LOG OUT" };
     juce::TextButton pluginViewBtn { "PLUGIN VIEW" }, pluginBackBtn { "< BACK" }, newMachineBtn { "ASPECT RATIO" }, randomMachineBtn { "RANDOMIZE MACHINE" };
     juce::TextButton proToggleBtn { "PRO  -  OFF" }, wizardNextBtn { "NEXT >" }, wizardSkipBtn { "SKIP TO BUILDER" };
+    juce::TextButton designTemplateBtn { "DESIGN TEMPLATE" }, newBuildBtn { "NEW BUILD" }, emojiBtn { ":)" };
     juce::ComboBox shellBox, playgroundThemeBox;
     juce::Label shellLabel, playgroundThemeLabel;
     juce::TextButton chatRefreshBtn { "CHAT" }, threadsBtn { "THREADS" }, socialBtn { "FRIENDS" }, dmBtn { "DM" }, adminDeleteBtn { "REMOVE" }, utilityGoBtn { "GO" };
@@ -304,6 +317,7 @@ private:
     bool placing = false;
     juce::String armedStyle { "dial" };
     int shellIndex = 0;
+    int designSerial = 0;
     int pendingFx = 0;
     bool pendingSpecial = false;
     int pendingSpecialType = 0;
