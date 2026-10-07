@@ -64,6 +64,16 @@ The `docker run -d ... bash -c '... cmake ...'` recipe above exits as soon as cm
 - The local key lives in `.dev.vars` (gitignored). Wrangler reads it only at startup: after creating or changing `.dev.vars`, run `docker compose -f docker-compose.base44.yml restart worker` — live reload does not pick up a newly created file.
 - `worker/worker.js` and `WORKER_DREAMSHARE.js` are byte copies of `worker.js` and were re-synced after the bridge change. `JV_WORKER.js` had already drifted before this work and was left alone.
 
+## Known-benign log noise (do not chase)
+- `Build failed ... Unexpected end of file` at `worker.js:<line>`: wrangler rebuilds on every save, so it can catch a large file mid-write. It is transient — the file parses once the write finishes (`node --check worker.js`). Only treat it as a real defect if the error persists after the edit lands; confirm against the container start time in `docker compose logs --timestamps worker` before "fixing" anything.
+- `Broken pipe (os error 32)` from workerd: a client (browser/preview) closed the connection early. Not an app error.
+- `npm error signal SIGTERM` on the worker: that is the container being stopped/restarted, not a crash.
+
+## Verification status (branch `ui-refactor-system`, commit f618ecb)
+- Full link of both plugin targets passed: `ninja KYOTO_VST3 KYOTRIPPAHFX_VST3` → exit 0, 0 `error:`, 0 `undefined reference`, both `.vst3/Contents/x86_64-linux/*.so` written. `SocialDirectory`/`SocialRail` symbols (incl. `Row`, `Bubble`) are present in the linked binary, and the `dis` wiring exists at `Source/PluginEditor.cpp` chat bubbles + directory rows.
+- DreamShare bridge verified over HTTP against the local stack: `?op=discord_presence` returns 401 without `x-dreamshare-bridge` and 200 with it; `chat_send` with the bridge key + `dis:true` returns a message carrying `dis:true`; a wrong key is rejected 401. `discord/worker.js` bundles with `npx wrangler deploy --dry-run` (20.6 KiB, GATEWAY Durable Object binding resolved).
+- Still not verifiable here: the rendered DIS chip (native UI) and the deployed bot on Cloudflare — both need the user's DAW / Cloudflare account.
+
 ## Discord DIS rendering (native UI)
 - `SocialRail::Bubble::dis` and `SocialDirectory::Row::dis` drive a small DIS chip beside the author name in the chat feed and in the Socials online list; the editor reads `dis` from chat messages and from `onlineUsers`.
 - `PluginEditor.cpp` compiles clean for both targets (object compile; only a pre-existing class of JUCE deprecation warning). The rendered chip itself still needs a DAW check — the browser preview cannot show native UI.
