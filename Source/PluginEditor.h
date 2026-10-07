@@ -291,6 +291,9 @@ private:
     void placeKindInSlot(const juce::String& kind, int slot, int fxIndex, const juce::String& label);
     void syncMachineDesignToUi();
     void rollNewInstanceTemplate();
+    void placeOnGrid(int gx, int gy, const juce::String& kind, int fxIndex, const juce::String& label, int screenType = 0);
+    bool hasVisualizer() const;
+    void clearBlankCanvas();
     void applyPlaygroundTheme(const juce::String& id);
     void swapPartInBay(int bay, const juce::String& kind, int fxIndex, const juce::String& label);
     void rebuildDirectory();
@@ -362,6 +365,7 @@ private:
     juce::TextButton fxBreakBtn { "BREAK" }, fxMixBtn { "MASTER MIX" }, fxRandomBtn { "RANDOM" }, fxClearBtn { "CLEAR" };
     int selectedFxStep = -1;
     int selectedChainWidget = -1;
+    int wireFromWidget = -1;
     bool placing = false;
     juce::String armedStyle { "dial" };
     int shellIndex = 0;

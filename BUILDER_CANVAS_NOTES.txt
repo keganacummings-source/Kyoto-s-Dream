@@ -1,0 +1,11 @@
+PLUGIN BUILDER CANVAS (templates retired)
+
+- Old hardware templates are no longer the start of a build. A new instance opens on a blank grid.
+- The chain starts only when a Visualizer is placed. The visualizer has no effect and does not own a DSP bay.
+- 12 visualizer types: Scope Glass, Pan Field, CRT Tube, VU Meters, Spectrogram, Flatline, Radial Orbit, Lissajous, Peak Bars, Waterfall, Ring Phase, Stereo Ribbons. Place any of them anywhere on the grid.
+- Parts snap to the same 32x22 grid they are painted on, so bays no longer drift off the plate.
+- RANDOMIZE always rolls the visualizer type and the controls of placed parts. It does not load an old template.
+- Right-click menu follows the active theme and is grouped: Visualizer, Parts, Effects (by family), Wires, Edit.
+- Wires: right-click a part > Wires > Disconnect wire. Attach wire, then left-click the part it should plug into.
+- Hidden default FX stays off (slot 1 and hardware colour). Only placed, controllable effects make sound.
+- Geek mode draws the internal board, caps, ribbons and ports under the parts you placed, using their grid cells.
