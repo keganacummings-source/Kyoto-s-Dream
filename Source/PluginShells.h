@@ -268,9 +268,9 @@ inline SlotKind styleSlot(const juce::String& style)
 
 inline bool styleFits(const juce::String& style, SlotKind slot)
 {
-    // Sound and toggle buttons can sit in any bay except the motherboard.
-    if (style == "sound" || style == "button") return slot != SlotKind::Board;
-    return styleSlot(style) == slot;
+    // Any part snaps onto any peg. The motherboard bay stays the chain start.
+    juce::ignoreUnused(style);
+    return slot != SlotKind::Board;
 }
 
 inline int cosmeticHiddenFx(const juce::String& style)
@@ -299,15 +299,132 @@ inline float shellRadius(const Shell& shell)
     return s == "pocket" ? 28.f : s == "tower" ? 8.f : 16.f;
 }
 
+inline constexpr int kGridCols = 16;
+inline constexpr int kGridRows = 10;
+
+inline void moduleSpan(const juce::String& style, int& gw, int& gh)
+{
+    if (style == "screen" || style == "wave") { gw = 6; gh = 3; }
+    else if (style == "fader" || style == "hfader" || style == "slider") { gw = 2; gh = 4; }
+    else if (style == "key" || style == "button") { gw = 2; gh = 2; }
+    else if (style == "vent" || style == "badge" || style == "rail") { gw = 3; gh = 2; }
+    else if (style == "board") { gw = 5; gh = 3; }
+    else { gw = 3; gh = 3; }
+}
+
+inline juce::Rectangle<float> gridRect(juce::Rectangle<float> face, int gx, int gy, int gw, int gh)
+{
+    const float cw = face.getWidth() / (float) kGridCols;
+    const float ch = face.getHeight() / (float) kGridRows;
+    return { face.getX() + gx * cw, face.getY() + gy * ch, juce::jmax(cw, gw * cw), juce::jmax(ch, gh * ch) };
+}
+
+inline void paintPunkModule(juce::Graphics& g, juce::Rectangle<float> r, const juce::String& kind,
+                            const juce::String& style, const juce::String& themeId, const juce::String& label,
+                            juce::Colour accent, juce::Colour ink, juce::Colour bg, bool glyphs = true)
+{
+    auto box = r.reduced(2.f);
+    const float radius = juce::jlimit(6.f, 16.f, juce::jmin(box.getWidth(), box.getHeight()) * 0.18f);
+    g.setColour(bg.darker(0.15f));
+    g.fillRoundedRectangle(box, radius);
+    g.setColour(accent.withAlpha(0.85f));
+    g.fillRoundedRectangle(box.removeFromTop(juce::jmin(14.f, box.getHeight() * 0.22f)), radius);
+    g.setColour(juce::Colours::black.withAlpha(0.85f));
+    g.drawRoundedRectangle(r.reduced(2.f), radius, 2.4f);
+    g.setColour(accent.brighter(0.4f));
+    g.fillEllipse(r.getX() + 6.f, r.getY() + 5.f, 5.f, 5.f);
+    g.setColour(ink);
+    g.setFont(juce::Font(juce::jlimit(8.f, 12.f, r.getWidth() * 0.12f), juce::Font::bold));
+    g.drawFittedText(label, r.reduced(8.f, 3.f).removeFromTop(14.f).toNearestInt(), juce::Justification::centred, 1);
+    if (! glyphs) return;
+
+    auto well = r.reduced(8.f).withTrimmedTop(16.f);
+    g.setColour(accent);
+    if (kind == "cosmetic")
+    {
+        if (themeId.contains("blood") || themeId == "wine")
+            g.fillEllipse(well.reduced(well.getWidth() * 0.25f, 2.f));
+        else if (themeId == "abyss" || themeId == "cobalt")
+        {
+            g.drawEllipse(well.reduced(4.f), 2.f);
+            g.drawEllipse(well.reduced(10.f), 1.5f);
+        }
+        else if (themeId == "amber" || themeId == "ember" || themeId == "rust")
+        {
+            juce::Path flame;
+            flame.addTriangle(well.getCentreX(), well.getY(), well.getX() + 4.f, well.getBottom(), well.getRight() - 4.f, well.getBottom());
+            g.fillPath(flame);
+        }
+        else if (themeId == "trippah" || themeId == "goonr")
+        {
+            for (int i = 0; i < 3; ++i)
+                g.fillEllipse(well.getX() + i * well.getWidth() / 3.f, well.getCentreY() - 6.f, 12.f, 12.f);
+        }
+        else
+        {
+            for (int i = 0; i < 4; ++i)
+                g.drawLine(well.getX(), well.getY() + 4.f + i * 6.f, well.getRight(), well.getY() + 4.f + i * 6.f, 1.6f);
+        }
+        return;
+    }
+    if (kind == "board")
+    {
+        for (int i = 0; i < 4; ++i)
+            g.drawLine(well.getX(), well.getY() + i * 7.f, well.getRight(), well.getCentreY() + i * 3.f, 1.4f);
+        g.fillEllipse(well.getCentreX() - 5.f, well.getCentreY() - 5.f, 10.f, 10.f);
+        return;
+    }
+    if (kind == "key" || kind == "button")
+    {
+        g.fillRoundedRectangle(well.reduced(4.f), 6.f);
+        g.setColour(bg);
+        g.fillEllipse(well.getCentreX() - 3.f, well.getY() + 4.f, 6.f, 6.f);
+        return;
+    }
+    if (kind == "wave" || kind == "stack" || kind == "sound")
+    {
+        g.setColour(bg);
+        g.fillRoundedRectangle(well, 4.f);
+        g.setColour(accent);
+        juce::Path wave;
+        wave.startNewSubPath(well.getX() + 3.f, well.getCentreY());
+        for (int i = 0; i < 12; ++i)
+        {
+            const float t = (float) i / 11.f;
+            wave.lineTo(well.getX() + 3.f + t * (well.getWidth() - 6.f),
+                        well.getCentreY() + std::sin(t * 8.f) * well.getHeight() * 0.28f);
+        }
+        g.strokePath(wave, juce::PathStrokeType(2.f));
+        return;
+    }
+    const bool wide = r.getWidth() > r.getHeight() * 1.2f;
+    const bool tall = r.getHeight() > r.getWidth() * 1.2f;
+    if (wide || (style == "hfader" && ! tall))
+        g.fillRoundedRectangle(well.withSizeKeepingCentre(well.getWidth() * 0.8f, juce::jmax(8.f, well.getHeight() * 0.28f)), 4.f);
+    else if (tall || style == "fader" || kind == "slider")
+        g.fillRoundedRectangle(well.withSizeKeepingCentre(juce::jmax(8.f, well.getWidth() * 0.28f), well.getHeight() * 0.75f), 4.f);
+    else
+    {
+        const float d = juce::jmin(well.getWidth(), well.getHeight()) * 0.72f;
+        auto knob = well.withSizeKeepingCentre(d, d);
+        g.fillEllipse(knob);
+        g.setColour(bg);
+        g.drawLine(knob.getCentreX(), knob.getCentreY(), knob.getCentreX(), knob.getY() + 4.f, 3.f);
+    }
+}
+
 class BuilderCanvas : public juce::Component
 {
 public:
     int shellIndex = 0;
     bool placing = false;
+    bool gridCanvas = true;
     juce::String armedStyle;
     kt::ThemePalette theme = kt::kThemes[0];
     std::function<void(int)> onSlot;
+    std::function<void(int, int)> onGrid;
     std::function<void(int, juce::Point<int>)> onRightClick;
+    std::function<void(int, int, juce::Point<int>)> onGridMenu;
     std::function<bool(int)> occupied;
     std::function<juce::Point<float>(int)> anchor;
     std::function<int(int)> parentOf;
@@ -315,10 +432,71 @@ public:
     std::function<void()> onBackgroundClick;
     std::function<void()> onResized;
     int hoverSlot = -1;
+    int hoverGx = -1, hoverGy = -1;
     void resized() override { if (onResized) onResized(); }
+
+    bool cellAt(juce::Point<float> pos, int& gx, int& gy) const
+    {
+        gx = -1;
+        gy = -1;
+        auto face = faceRect(getLocalBounds().toFloat());
+        if (! face.contains(pos)) return false;
+        const float cw = face.getWidth() / (float) kGridCols;
+        const float ch = face.getHeight() / (float) kGridRows;
+        if (cw < 1.f || ch < 1.f) return false;
+        gx = juce::jlimit(0, kGridCols - 1, (int) ((pos.x - face.getX()) / cw));
+        gy = juce::jlimit(0, kGridRows - 1, (int) ((pos.y - face.getY()) / ch));
+        return true;
+    }
+
+    void paintGrid(juce::Graphics& g)
+    {
+        auto bounds = getLocalBounds().toFloat();
+        const auto accent = kt::c(theme.accent);
+        g.setColour(kt::c(theme.panel).withAlpha(0.96f));
+        g.fillRoundedRectangle(bounds, 14.f);
+        g.setColour(kt::c(theme.border));
+        g.drawRoundedRectangle(bounds.reduced(0.5f), 14.f, 1.f);
+        g.setColour(accent);
+        g.setFont(kt::font(theme, 15.f, true));
+        g.drawText("BUILD PLUGIN  0.5.1", 18, 10, 340, 18, juce::Justification::left);
+        g.setColour(kt::c(theme.muted));
+        g.setFont(kt::font(theme, 11.5f));
+        g.drawText("Blank grid. PLACE snaps a module. Drag the top bar to move, the corner tick to resize.", 18, 30, getWidth() - 36, 16, juce::Justification::left);
+
+        auto face = faceRect(bounds);
+        g.setColour(kt::c(theme.bg).withAlpha(0.94f));
+        g.fillRoundedRectangle(face, 12.f);
+        const float cw = face.getWidth() / (float) kGridCols;
+        const float ch = face.getHeight() / (float) kGridRows;
+        g.setColour(accent.withAlpha(0.18f));
+        for (int c = 1; c < kGridCols; ++c)
+            g.drawLine(face.getX() + c * cw, face.getY() + 6.f, face.getX() + c * cw, face.getBottom() - 6.f, 1.f);
+        for (int r = 1; r < kGridRows; ++r)
+            g.drawLine(face.getX() + 6.f, face.getY() + r * ch, face.getRight() - 6.f, face.getY() + r * ch, 1.f);
+        g.setColour(accent.withAlpha(0.7f));
+        g.drawRoundedRectangle(face, 12.f, 1.6f);
+
+        if (placing && hoverGx >= 0)
+        {
+            int gw = 3, gh = 3;
+            moduleSpan(armedStyle, gw, gh);
+            const int gx = juce::jlimit(0, juce::jmax(0, kGridCols - gw), hoverGx);
+            const int gy = juce::jlimit(0, juce::jmax(0, kGridRows - gh), hoverGy);
+            auto ghost = gridRect(face, gx, gy, gw, gh).reduced(3.f);
+            g.setColour(accent.withAlpha(0.30f));
+            g.fillRoundedRectangle(ghost, 8.f);
+            g.setColour(kt::c(theme.pegHot));
+            g.drawRoundedRectangle(ghost, 8.f, 2.2f);
+        }
+        g.setColour(accent.withAlpha(0.85f));
+        g.setFont(kt::font(theme, 10.f, true));
+        g.drawText("0.5.1", (int) face.getRight() - 70, (int) face.getBottom() - 18, 56, 14, juce::Justification::centredRight);
+    }
 
     void paint(juce::Graphics& g) override
     {
+        if (gridCanvas) { paintGrid(g); return; }
         auto bounds = getLocalBounds().toFloat();
         const auto& shell = shellAt(shellIndex);
         const auto accent = kt::c(theme.accent);
@@ -331,10 +509,10 @@ public:
         // Clean header: template name on one line, chain hint below it.
         g.setColour(accent);
         g.setFont(kt::font(theme, 15.f, true));
-        g.drawText("PLUGIN BUILDER", 18, 12, 220, 18, juce::Justification::left);
+        g.drawText("KYOTRIPPAH 0.5.1", 18, 12, 280, 18, juce::Justification::left);
         g.setColour(kt::c(theme.muted));
         g.setFont(kt::font(theme, 11.5f));
-        g.drawText(juce::String(shell.name) + "  -  chain starts at the motherboard", 18, 31, getWidth() - 36, 15, juce::Justification::left);
+        g.drawText(juce::String(shell.name) + "  -  any peg, part resizes to the bay", 18, 31, getWidth() - 36, 15, juce::Justification::left);
 
         auto face = faceRect(bounds);
         const float radius = shellRadius(shell);
@@ -434,7 +612,8 @@ public:
             {
                 g.setColour(fits ? kt::c(theme.text) : kt::c(theme.muted));
                 g.setFont(kt::font(theme, 10.5f, true));
-                g.drawFittedText(slot.name, r.reduced(6.f).toNearestInt(), juce::Justification::centred, 2);
+                const auto pegName = slot.kind == SlotKind::Board ? juce::String(slot.name) : ("PEG " + juce::String(i));
+                g.drawFittedText(pegName, r.reduced(6.f).toNearestInt(), juce::Justification::centred, 2);
             }
         }
     }
@@ -457,17 +636,43 @@ public:
 
     void mouseMove(const juce::MouseEvent& e) override
     {
+        if (gridCanvas)
+        {
+            int gx = -1, gy = -1;
+            cellAt(e.position, gx, gy);
+            if (gx != hoverGx || gy != hoverGy) { hoverGx = gx; hoverGy = gy; repaint(); }
+            return;
+        }
         const int hit = slotAt(e.position);
         if (hit != hoverSlot) { hoverSlot = hit; repaint(); }
     }
 
     void mouseExit(const juce::MouseEvent&) override
     {
+        if (gridCanvas)
+        {
+            if (hoverGx != -1) { hoverGx = -1; hoverGy = -1; repaint(); }
+            return;
+        }
         if (hoverSlot != -1) { hoverSlot = -1; repaint(); }
     }
 
     void mouseDown(const juce::MouseEvent& e) override
     {
+        if (gridCanvas)
+        {
+            int gx = -1, gy = -1;
+            const bool hit = cellAt(e.position, gx, gy);
+            if (e.mods.isPopupMenu())
+            {
+                if (hit && onGridMenu) onGridMenu(gx, gy, e.getScreenPosition());
+                else if (onRightClick) onRightClick(-1, e.getScreenPosition());
+                return;
+            }
+            if (placing && hit && onGrid) { onGrid(gx, gy); return; }
+            if (onBackgroundClick) onBackgroundClick();
+            return;
+        }
         if (e.mods.isPopupMenu())
         {
             const auto& shell = shellAt(shellIndex);

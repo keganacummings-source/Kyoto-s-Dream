@@ -1,0 +1,10 @@
+KYOTRIPPAH 0.5.0 peg + hardware pass
+
+- Any empty peg accepts any armed part. The motherboard bay stays the chain start.
+- The peg no longer forces the part type. A dial dropped on a fader, screen, key, or vent peg stays a dial and is resized to that peg.
+- Wide pegs morph the control to a horizontal fader. Tall pegs morph it to a vertical fader. Square pegs keep a rotary knob.
+- Placed parts paint as hardware modules: metal face, corner screws, silk-screen label, and a control well that follows the peg.
+- Viewer faders follow peg aspect.
+- Catalog is 216 FX. Mix and chain-break sit at types 500 and 501 so they do not collide with catalog indices.
+- BUILD OFFLINE opens Plugin Builder and Viewer without a DreamShare login. DreamShare remains the login path.
+- build-vst3.ps1 configures Visual Studio 2022, builds Release VST3, and zips the bundles.

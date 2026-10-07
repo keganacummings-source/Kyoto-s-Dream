@@ -217,7 +217,23 @@ inline constexpr FxDef kFx[] = {
     { "plate2", "Plate II", 1 },
     { "comb2", "Comb II", 7 },
     { "formant2", "Formant II", 4 },
+    { "pegglue", "Peg Glue", 6 },
+    { "bayroom", "Bay Room", 1 },
+    { "studdelay", "Stud Delay", 0 },
+    { "chassis", "Chassis Tone", 4 },
+    { "busdrive", "Bus Drive", 5 },
+    { "railwid", "Rail Width", 2 },
+    { "ventair", "Vent Air", 4 },
+    { "badge", "Badge Saturate", 5 },
+    { "screwtone", "Screw Tone", 7 },
+    { "faceplate", "Faceplate EQ", 4 },
+    { "harness", "Harness Chorus", 3 },
+    { "pcbcomb", "PCB Comb", 7 },
+    { "ledgate", "LED Gate", 6 },
+    { "heatsink", "Heatsink Shelf", 4 },
+    { "ribbon", "Ribbon Pan", 2 },
+    { "modulehall", "Module Hall", 1 },
 };
-inline constexpr int kFxCount = 200;
-static_assert(sizeof(kFx) / sizeof(kFx[0]) == 200, "fx count");
+inline constexpr int kFxCount = 216;
+static_assert(sizeof(kFx) / sizeof(kFx[0]) == 216, "fx count");
 }

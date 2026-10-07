@@ -78,24 +78,18 @@ public:
         const auto face = pb::faceRect(caseR);
         const auto interior = pluginInterior();
         const bool geekOn = geekReveal > 0.01f;
+        const bool built = hasPlacedModules();
 
-        // 1) Internal hardware underneath the top cover.
-        if (geekOn) drawInternals(g, interior);
+        if (geekOn && ! built) drawInternals(g, interior);
 
-        // 2) The top cover: faceplate, bay wiring and the placed parts running live.
-        //    In Geek mode the cover fades to a faint ghost, so the whole machine can be read at a glance
-        //    (no more jumping spot-lights - it is meant to be watched, not hunted).
-        const float cover = 1.f - 0.84f * geekReveal;
+        const float cover = built ? (geekOn ? 0.22f : 0.9f) : (1.f - 0.84f * geekReveal);
         g.setColour(kt::c(theme.bg).withAlpha(0.95f * cover));
         g.fillRoundedRectangle(face, bodyRadius);
         g.setColour(accent.withAlpha(0.45f));
         g.drawRoundedRectangle(face, bodyRadius, 1.3f);
-        if (geekOn) g.beginTransparencyLayer(juce::jmax(0.14f, cover));
         drawBayWiring(g, face, shell);
         drawPlacedParts(g, face, shell);
-        if (geekOn) g.endTransparencyLayer();
 
-        // 3) Geek x-ray overlay: slow scan band, steady part labels, hovered part tooltip.
         if (geekOn) drawXrayOverlay(g, interior, accent);
     }
 
@@ -108,7 +102,7 @@ public:
     void mouseMove(const juce::MouseEvent& e) override
     {
         if (! geekMode || geekReveal < 0.5f) return;
-        const int hit = hitHardwarePart(e.position);
+        const int hit = hasPlacedModules() ? hitPlacedModule(e.position) : hitHardwarePart(e.position);
         if (hit != geekHot) { geekHot = hit; repaint(); }
     }
 
@@ -125,10 +119,8 @@ public:
         {
             auto node = editor.proc.uiState.getChild(i);
             if (! node.hasType("w")) continue;
-            const int bay = (int) node.getProperty("shellSlot", -1);
-            if (bay < 0 || bay >= shell.slotCount) continue;
-            auto r = pb::slotRect(face, shell.slots[bay]);
-            if (! r.contains(e.position)) continue;
+            auto r = nodeRect(face, node, shell);
+            if (r.isEmpty() || ! r.contains(e.position)) continue;
             const auto kind = node.getProperty("kind").toString();
             if (kind == "key")
             {
@@ -191,6 +183,39 @@ private:
         return face.reduced(face.getWidth() * 0.02f, face.getHeight() * 0.035f);
     }
 
+    bool hasPlacedModules() const
+    {
+        for (int i = 0; i < editor.proc.uiState.getNumChildren(); ++i)
+            if (editor.proc.uiState.getChild(i).hasType("w")) return true;
+        return false;
+    }
+
+    juce::Rectangle<float> nodeRect(juce::Rectangle<float> face, const juce::ValueTree& node, const pb::Shell& shell) const
+    {
+        const int gx = (int) node.getProperty("gx", -1);
+        if (gx >= 0)
+            return pb::gridRect(face, gx, (int) node.getProperty("gy", 0),
+                                juce::jmax(1, (int) node.getProperty("gw", 3)),
+                                juce::jmax(1, (int) node.getProperty("gh", 3)));
+        const int bay = (int) node.getProperty("shellSlot", -1);
+        if (bay >= 0 && bay < shell.slotCount)
+            return pb::slotRect(face, shell.slots[bay]);
+        return {};
+    }
+
+    int hitPlacedModule(juce::Point<float> pos) const
+    {
+        const auto& shell = pb::shellAt(editor.shellIndex);
+        auto face = pb::faceRect(pluginCase());
+        for (int i = 0; i < editor.proc.uiState.getNumChildren(); ++i)
+        {
+            auto node = editor.proc.uiState.getChild(i);
+            if (! node.hasType("w")) continue;
+            if (nodeRect(face, node, shell).contains(pos)) return i;
+        }
+        return -1;
+    }
+
     void drawInternals(juce::Graphics& g, juce::Rectangle<float> interior) const
     {
         const int shellIdx = pb::shellInternalIndex(editor.shellIndex);
@@ -205,6 +230,23 @@ private:
         const int shellIdx = pb::shellInternalIndex(editor.shellIndex);
         const auto& parts = hb::kInternals[shellIdx];
         const float reveal = geekReveal;
+        if (hasPlacedModules())
+        {
+            g.saveState();
+            g.reduceClipRegion(interior.toNearestInt());
+            const float t = animPhase / juce::MathConstants<float>::twoPi;
+            const float bandW = interior.getWidth() * 0.22f;
+            const float sx = interior.getX() - bandW + t * (interior.getWidth() + 2.f * bandW);
+            juce::ColourGradient grad(accent.withAlpha(0.f), sx - bandW, 0.f, accent.withAlpha(0.f), sx + bandW, 0.f, false);
+            grad.addColour(0.5, accent.withAlpha(0.16f * reveal));
+            g.setGradientFill(grad);
+            g.fillRect(juce::Rectangle<float>(sx - bandW, interior.getY(), bandW * 2.f, interior.getHeight()));
+            g.restoreState();
+            g.setColour(kt::c(theme.muted).withAlpha(0.9f * reveal));
+            g.setFont(kt::font(theme, 11.f));
+            g.drawText("GEEK  -  modules you placed", interior.withTrimmedTop(interior.getHeight() - 22.f).toNearestInt(), juce::Justification::centred, true);
+            return;
+        }
 
         // Slow scan band sweeping across the open machine.
         {
@@ -387,10 +429,11 @@ private:
         {
             auto node = editor.proc.uiState.getChild(i);
             if (! node.hasType("w")) continue;
-            const int bay = (int) node.getProperty("shellSlot", -1);
-            if (bay < 0 || bay >= shell.slotCount) continue;
-            auto centre = pb::slotRect(face, shell.slots[bay]).getCentre();
-            if (bay == 0) { from = centre; haveBoard = true; }
+            auto centre = nodeRect(face, node, shell).getCentre();
+            if (centre.x < 1.f) continue;
+            const auto kind = node.getProperty("kind").toString();
+            if (kind == "cosmetic") continue;
+            if (! haveBoard) { from = centre; haveBoard = true; }
             else targets.add(centre);
         }
         if (! haveBoard) return;
@@ -419,120 +462,43 @@ private:
         {
             auto node = editor.proc.uiState.getChild(i);
             if (! node.hasType("w")) continue;
-            const int bay = (int) node.getProperty("shellSlot", -1);
-            if (bay < 0 || bay >= shell.slotCount) continue;
-            auto r = pb::slotRect(face, shell.slots[bay]);
+            auto r = nodeRect(face, node, shell);
             if (r.getWidth() < 8.f || r.getHeight() < 8.f) continue;
             placedAny = true;
             const auto kind = node.getProperty("kind").toString();
             const auto label = node.getProperty("label").toString();
-
-            g.setColour(kt::c(theme.panel).withAlpha(0.92f));
-            g.fillRoundedRectangle(r.reduced(3.f), 8.f);
-            g.setColour(accent.withAlpha(0.55f));
-            g.drawRoundedRectangle(r.reduced(3.f), 8.f, 1.2f);
-
-            if (kind == "board")
+            const auto style = node.getProperty("style").toString();
+            pb::paintPunkModule(g, r.reduced(2.f), kind, style, theme.id != nullptr ? theme.id : "", label,
+                                accent, ink, kt::c(theme.bg), true);
+            if (kind == "dial" || kind == "slider")
             {
-                const int fxType = liveTypeValue(node);
-                g.setColour(accent.withAlpha(0.20f));
-                g.fillRoundedRectangle(r.reduced(8.f), 6.f);
-                g.setColour(accent);
-                g.setFont(kt::font(theme, 11.f, true));
-                g.drawText("MOTHERBOARD", r.reduced(10.f).removeFromTop(15.f), juce::Justification::left);
-                g.setColour(muted);
-                g.setFont(kt::font(theme, 9.f));
-                g.drawText("CHAIN START  -  " + fxNameFor(fxType), r.reduced(10.f).withTrimmedTop(18.f).removeFromTop(14.f), juce::Justification::left);
-                auto* mix = editor.proc.apvts.getParameter("s01mix");
-                auto bar = r.reduced(10.f).removeFromBottom(14.f);
-                g.setColour(kt::c(theme.bg));
-                g.fillRoundedRectangle(bar, 3.f);
-                bar.setWidth(bar.getWidth() * (mix != nullptr ? mix->getValue() : 0.f));
-                g.setColour(accent.withAlpha(0.85f));
-                g.fillRoundedRectangle(bar, 3.f);
-            }
-            else if (kind == "dial")
-            {
-                const float v = liveParamValue(node);
-                auto knobArea = r.reduced(6.f);
-                const float rad = juce::jmin(knobArea.getWidth(), knobArea.getHeight()) * 0.5f - 4.f;
-                const auto centre = knobArea.getCentre();
-                g.setColour(accent.withAlpha(0.16f));
-                g.fillEllipse(centre.x - rad, centre.y - rad, rad * 2.f, rad * 2.f);
-                g.setColour(kt::c(theme.knob));
-                g.fillEllipse(centre.x - rad * 0.72f, centre.y - rad * 0.72f, rad * 1.44f, rad * 1.44f);
-                const float a0 = juce::MathConstants<float>::pi * 1.25f;
-                const float sweep = a0 + (juce::MathConstants<float>::twoPi * 0.75f) * v;
-                juce::Path arc;
-                arc.addCentredArc(centre.x, centre.y, rad, rad, 0.f, a0, a0 + (juce::MathConstants<float>::twoPi * 0.75f) * v, true);
-                g.setColour(accent);
-                g.strokePath(arc, juce::PathStrokeType(2.2f));
-                g.drawLine(centre.x, centre.y, centre.x + std::cos(sweep) * rad * 0.62f, centre.y + std::sin(sweep) * rad * 0.62f, 2.f);
                 g.setColour(ink);
                 g.setFont(kt::font(theme, 9.f, true));
-                g.drawText(pct(v), r.reduced(3.f).removeFromBottom(13.f), juce::Justification::centred);
-                g.setColour(muted);
-                g.setFont(kt::font(theme, 8.f));
-                g.drawText(label, r.reduced(3.f).removeFromTop(12.f), juce::Justification::centred);
-            }
-            else if (kind == "slider")
-            {
-                const float v = liveParamValue(node);
-                auto track = r.reduced(10.f, 8.f).withSizeKeepingCentre(juce::jmax(6.f, r.getWidth() * 0.16f), r.getHeight() - 30.f);
-                g.setColour(kt::c(theme.bg));
-                g.fillRoundedRectangle(track, 3.f);
-                const float thumbY = track.getBottom() - v * track.getHeight();
-                g.setColour(accent);
-                g.fillRoundedRectangle(track.getX(), thumbY - 5.f, track.getWidth(), 10.f, 3.f);
-                g.setColour(ink);
-                g.setFont(kt::font(theme, 9.f, true));
-                g.drawText(pct(v), r.reduced(3.f).removeFromBottom(13.f), juce::Justification::centred);
-                g.setColour(muted);
-                g.setFont(kt::font(theme, 8.f));
-                g.drawText(label, r.reduced(3.f).removeFromTop(12.f), juce::Justification::centred);
-            }
-            else if (kind == "key")
-            {
-                g.setColour(accent.withAlpha(0.25f));
-                g.fillRoundedRectangle(r.reduced(6.f), 6.f);
-                g.setColour(accent);
-                g.drawRoundedRectangle(r.reduced(6.f), 6.f, 1.4f);
-                g.setColour(ink);
-                g.setFont(kt::font(theme, 9.f, true));
-                g.drawText(label, r, juce::Justification::centred);
+                g.drawText(pct(liveParamValue(node)), r.reduced(4.f).removeFromBottom(14.f).toNearestInt(), juce::Justification::centred);
             }
             else if (kind == "wave")
             {
                 float samples[256] {};
                 editor.proc.copyScope(samples, 256);
-                auto waveR = r.reduced(8.f, 6.f);
-                waveR.removeFromBottom(14.f);
-                g.setColour(kt::c(theme.bg).brighter(0.03f));
-                g.fillRoundedRectangle(waveR, 4.f);
+                auto waveR = r.reduced(10.f, 8.f);
+                waveR.removeFromTop(16.f);
+                waveR.removeFromBottom(8.f);
                 juce::Path wave;
                 const float mid = waveR.getCentreY();
                 wave.startNewSubPath(waveR.getX() + 4.f, mid);
-                for (int s = 0; s < 128; ++s)
-                    wave.lineTo(waveR.getX() + 4.f + (waveR.getWidth() - 8.f) * (float) s / 127.f,
-                                mid - samples[s * 2] * waveR.getHeight() * 0.46f);
+                for (int s = 0; s < 64; ++s)
+                    wave.lineTo(waveR.getX() + 4.f + (waveR.getWidth() - 8.f) * (float) s / 63.f,
+                                mid - samples[s * 4] * waveR.getHeight() * 0.4f);
                 g.setColour(accent);
-                g.strokePath(wave, juce::PathStrokeType(1.5f));
-                g.setColour(muted);
-                g.setFont(kt::font(theme, 8.f, true));
-                g.drawText("LIVE", r.reduced(6.f).removeFromBottom(12.f), juce::Justification::centred);
+                g.strokePath(wave, juce::PathStrokeType(1.6f));
             }
-            else
+            if (geekMode && i == geekHot)
             {
-                const auto style = node.getProperty("style").toString();
-                g.setColour(accent.withAlpha(0.35f));
-                if (style == "vent")
-                    for (int l = 0; l < 4; ++l) g.drawLine(r.getX() + 8.f, r.getY() + 10.f + (float) l * 7.f, r.getRight() - 8.f, r.getY() + 10.f + (float) l * 7.f, 1.3f);
-                else if (style == "rail")
-                    g.fillRoundedRectangle(r.reduced(r.getWidth() * 0.35f, 6.f), 3.f);
-                else
-                    g.fillEllipse(r.reduced(8.f));
+                g.setColour(accent);
+                g.drawRoundedRectangle(r.reduced(1.f), 8.f, 2.4f);
             }
         }
+
 
         // Nothing built on the shell yet: still show the playground machine so the view is never empty.
         if (! placedAny)
@@ -540,7 +506,7 @@ private:
             const auto& md = editor.machineDesign;
             g.setColour(muted);
             g.setFont(kt::font(theme, 12.f));
-            g.drawText("No bays filled yet - parts placed in the Plugin Builder show up here, live.",
+            g.drawText("Nothing on the grid yet. Parts you place in BUILD PLUGIN show up here.",
                        rtoInt(face).removeFromTop(juce::jmax(20, (int) (face.getHeight() * 0.08f))),
                        juce::Justification::centred);
             const float sx = face.getWidth() / (float) juce::jmax(1, md.playgroundWidth);

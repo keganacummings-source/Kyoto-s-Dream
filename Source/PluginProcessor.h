@@ -8,8 +8,8 @@ class KyotoAudioProcessor : public juce::AudioProcessor
 {
 public:
     static constexpr int kMaxSlots = 32;
-    static constexpr int kMixType = 200;
-    static constexpr int kBreakType = 201;
+    static constexpr int kMixType = 500;
+    static constexpr int kBreakType = 501;
     static constexpr int kMaxChains = kMaxSlots + 1;
 
     static juce::String chainLevelId(int chain);
