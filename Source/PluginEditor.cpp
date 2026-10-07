@@ -2065,7 +2065,7 @@ void KyotoAudioProcessorEditor::randomizeTemplate()
     {
         if (shell.slots[s].kind == pb::SlotKind::Board || shell.slots[s].w < 0.02f) continue;
         juce::String kind;
-        if (essentials.size() > 0) kind = essentials.removeAndReturn(0);
+        if (essentials.size() > 0) { kind = essentials[0]; essentials.remove(0); }
         else
         {
             const char* pool[] = { "dial", "slider", "button", "wave", "key" };
@@ -2137,7 +2137,7 @@ void KyotoAudioProcessorEditor::editEffectPopup(int widgetIndex)
     win->addTextEditor("mix", "80", "Mix %");
     win->addButton("Apply", 1);
     win->addButton("Close", 0);
-    win->enterModalState(true, juce::ModalCallbackFunction::create([this, win, dsp, node](int code)
+    win->enterModalState(true, juce::ModalCallbackFunction::create([this, win, dsp, node](int code) mutable
     {
         if (code == 1 && dsp >= 0)
         {
