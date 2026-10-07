@@ -664,8 +664,9 @@ inline void paintShellBody(juce::Graphics& g, juce::Rectangle<float> c, const Sh
 
 
 // ---- Screens: every motherboard IS the plugin's screen. Right-click it -> Change Screen. -----------------
-inline constexpr const char* kScreenTypes[] = { "Plain Glass", "Corner Brackets", "CRT Tube", "Notched Panel", "Scanline Monitor", "Round Porthole" };
-inline constexpr int kScreenTypeCount = 6;
+inline constexpr const char* kScreenTypes[] = { "Plain Glass", "Corner Brackets", "CRT Tube", "Notched Panel", "Scanline Monitor", "Round Porthole",
+    "OLED Grid", "Waveform River", "Radar Sweep", "Bar Graph" };
+inline constexpr int kScreenTypeCount = 10;
 
 // The fine grid every part is snapped to while it is dragged by its corners, and that the
 // hidden hardware inside the shell is laid out on too. Coarse enough to feel steppy, fine
@@ -696,6 +697,10 @@ inline juce::Path screenClipPath(juce::Rectangle<float> r, int type)
         }
         case 4: p.addRoundedRectangle(r, 5.f); break;
         case 5: p.addRoundedRectangle(r, m * 0.5f); break;
+        case 6: p.addRoundedRectangle(r, 3.f); break;  // OLED Grid - sharp corners
+        case 7: p.addRoundedRectangle(r, m * 0.08f); break; // Waveform River - slight round
+        case 8: p.addRoundedRectangle(r, m * 0.5f); break;  // Radar Sweep - round
+        case 9: p.addRoundedRectangle(r, 4.f); break;       // Bar Graph - slight round
         default: p.addRoundedRectangle(r, 6.f); break;
     }
     return p;
@@ -851,6 +856,88 @@ inline void paintScreenFace(juce::Graphics& g, juce::Rectangle<float> r, int typ
             for (float y = r.getY(); y < r.getBottom(); y += 3.f) g.drawHorizontalLine((int) y, r.getX(), r.getRight());
             break;
         }
+        case 6: // OLED Grid - pixelated grid display with live scope
+        {
+            const auto w = buildWave(0.85f, 0.f, 0.f);
+            g.setColour(accent.withAlpha(0.18f));
+            g.strokePath(w, juce::PathStrokeType(3.f));
+            g.setColour(accent);
+            g.strokePath(w, juce::PathStrokeType(1.4f));
+            // Pixel grid overlay
+            const float px = 4.f;
+            g.setColour(accent.withAlpha(0.08f));
+            for (float x = r.getX(); x < r.getRight(); x += px)
+                g.drawVerticalLine((int) x, r.getY(), r.getBottom());
+            for (float y = r.getY(); y < r.getBottom(); y += px)
+                g.drawHorizontalLine((int) y, r.getX(), r.getRight());
+            break;
+        }
+        case 7: // Waveform River - flowing multi-layer waveform
+        {
+            for (int layer = 0; layer < 3; ++layer)
+            {
+                const auto w = buildWave(0.7f - (float) layer * 0.15f, (float) layer * r.getHeight() * 0.08f - r.getHeight() * 0.08f, 0.02f * (float) layer);
+                g.setColour(accent.withAlpha(0.5f - (float) layer * 0.15f));
+                g.strokePath(w, juce::PathStrokeType(2.2f - (float) layer * 0.5f));
+            }
+            const auto mainWave = buildWave(0.9f, 0.f, 0.f);
+            g.setColour(accent);
+            g.strokePath(mainWave, juce::PathStrokeType(1.5f));
+            break;
+        }
+        case 8: // Radar Sweep - circular radar with live signal blips
+        {
+            const auto centre = r.getCentre();
+            const float rad = juce::jmin(r.getWidth(), r.getHeight()) * 0.45f;
+            g.setColour(accent.withAlpha(0.12f));
+            for (int i = 1; i <= 4; ++i)
+                g.drawEllipse(centre.x - rad * (float) i / 4.f, centre.y - rad * (float) i / 4.f, rad * 2.f * (float) i / 4.f, rad * 2.f * (float) i / 4.f, 1.f);
+            g.setColour(accent.withAlpha(0.2f));
+            g.drawLine(centre.x - rad, centre.y, centre.x + rad, centre.y, 1.f);
+            g.drawLine(centre.x, centre.y - rad, centre.x, centre.y + rad, 1.f);
+            // Sweep beam
+            const float sweepAngle = phase * 1.5f;
+            juce::Path beam;
+            beam.startNewSubPath(centre);
+            beam.lineTo(centre.x + std::cos(sweepAngle) * rad, centre.y + std::sin(sweepAngle) * rad);
+            beam.lineTo(centre.x + std::cos(sweepAngle + 0.4f) * rad * 0.3f, centre.y + std::sin(sweepAngle + 0.4f) * rad * 0.3f);
+            beam.closeSubPath();
+            g.setColour(accent.withAlpha(0.15f));
+            g.fillPath(beam);
+            // Signal blips from live scope
+            if (scope != nullptr && n > 1)
+            {
+                for (int i = 0; i < juce::jmin(n, 8); ++i)
+                {
+                    const float v = std::abs(scope[i]);
+                    if (v > 0.1f)
+                    {
+                        const float ang = (float) i / (float) juce::jmin(n, 8) * juce::MathConstants<float>::twoPi + phase * 0.3f;
+                        const float dist = v * rad;
+                        g.setColour(accent.withAlpha(0.8f));
+                        g.fillEllipse(centre.x + std::cos(ang) * dist - 3.f, centre.y + std::sin(ang) * dist - 3.f, 6.f, 6.f);
+                    }
+                }
+            }
+            break;
+        }
+        case 9: // Bar Graph - vertical bar meter display
+        {
+            const int bars = juce::jmax(8, juce::jmin(32, (int) (r.getWidth() / 6.f)));
+            const float bw = r.getWidth() / (float) bars;
+            for (int i = 0; i < bars; ++i)
+            {
+                float v = 0.f;
+                if (scope != nullptr && n > 1)
+                    v = std::abs(scope[(int) ((float) i / (float) bars * (float) n) % n]);
+                v = juce::jlimit(0.f, 1.f, v * 2.5f);
+                const float h = juce::jmax(2.f, v * r.getHeight() * 0.85f);
+                const float x = r.getX() + (float) i * bw;
+                g.setColour(v > 0.85f ? juce::Colour(0xffff5a5a) : accent.withAlpha(0.25f + 0.6f * v));
+                g.fillRoundedRectangle(x + 1.f, r.getBottom() - h, juce::jmax(1.f, bw - 2.f), h, 2.f);
+            }
+            break;
+        }
         default: // Round Porthole - calm flatline with slow blips
         {
             juce::Path w;
@@ -932,6 +1019,38 @@ inline void paintScreenBezel(juce::Graphics& g, juce::Rectangle<float> r, int st
             g.setColour(accent.withAlpha(0.3f));
             g.drawRoundedRectangle(r.reduced(5.f), m * 0.5f - 5.f, 1.f);
             break;
+        case 6: // OLED Grid bezel - thin tech frame with corner dots
+            g.setColour(accent.withAlpha(0.8f));
+            g.drawRoundedRectangle(r, 3.f, 1.6f);
+            g.setColour(accent.withAlpha(0.5f));
+            for (auto p : { juce::Point<float>(r.getX() + 3.f, r.getY() + 3.f), juce::Point<float>(r.getRight() - 6.f, r.getY() + 3.f),
+                            juce::Point<float>(r.getX() + 3.f, r.getBottom() - 6.f), juce::Point<float>(r.getRight() - 6.f, r.getBottom() - 6.f) })
+                g.fillEllipse(p.x, p.y, 3.f, 3.f);
+            break;
+        case 7: // Waveform River bezel - soft glow border
+            g.setColour(accent.withAlpha(0.6f));
+            g.drawRoundedRectangle(r, m * 0.08f, 2.f);
+            g.setColour(accent.withAlpha(0.2f));
+            g.drawRoundedRectangle(r.expanded(2.f), m * 0.08f + 2.f, 1.f);
+            break;
+        case 8: // Radar Sweep bezel - concentric ring frame
+            g.setColour(accent.withAlpha(0.85f));
+            g.drawRoundedRectangle(r, m * 0.5f, 2.f);
+            g.setColour(accent.withAlpha(0.35f));
+            g.drawRoundedRectangle(r.reduced(4.f), m * 0.5f - 4.f, 1.f);
+            g.setColour(accent.withAlpha(0.15f));
+            for (int i = 0; i < 4; ++i) g.drawEllipse(r.getCentreX() - m * 0.15f * (float) (i + 1), r.getCentreY() - m * 0.15f * (float) (i + 1), m * 0.3f * (float) (i + 1), m * 0.3f * (float) (i + 1), 0.8f);
+            break;
+        case 9: // Bar Graph bezel - segmented frame
+        {
+            g.setColour(accent.withAlpha(0.7f));
+            g.drawRoundedRectangle(r, 4.f, 1.5f);
+            g.setColour(accent.withAlpha(0.3f));
+            const int segs = juce::jmax(4, (int) (r.getWidth() / 20.f));
+            for (int i = 1; i < segs; ++i)
+                g.drawVerticalLine((int) (r.getX() + r.getWidth() * (float) i / (float) segs), r.getY(), r.getBottom());
+            break;
+        }
         default: // plain double border
             g.setColour(accent.withAlpha(0.75f));
             g.drawRoundedRectangle(r, 6.f, 1.8f);

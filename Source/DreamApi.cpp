@@ -222,3 +222,21 @@ bool downloadAttachment(const juce::String& token, const AttachRef& ref, const j
 }
 
 }
+
+DreamResult getDiscordMessages(const juce::String& token)
+{
+    return postAction("discord_messages", juce::var(new juce::DynamicObject()), token);
+}
+
+DreamResult sendDiscordMessage(const juce::String& token, const juce::String& user, const juce::String& text)
+{
+    auto* o = new juce::DynamicObject();
+    o->setProperty("user", user);
+    o->setProperty("text", text);
+    return postAction("discord_send", juce::var(o), token);
+}
+
+DreamResult getDiscordStatus(const juce::String& token)
+{
+    return postAction("discord_status", juce::var(new juce::DynamicObject()), token);
+}

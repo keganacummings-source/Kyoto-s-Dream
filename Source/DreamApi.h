@@ -32,6 +32,11 @@ DreamResult friendRequest(const juce::String& token, const juce::String& action,
 DreamResult react(const juce::String& token, const juce::String& kind, const juce::String& id, const juce::String& emoji);
 DreamResult postAction(const juce::String& action, juce::var body, const juce::String& token);
 
+// Native Kyoto Discord #general (bot token stays on the worker; VST never holds it)
+DreamResult getDiscordMessages(const juce::String& token);
+DreamResult sendDiscordMessage(const juce::String& token, const juce::String& user, const juce::String& text);
+DreamResult getDiscordStatus(const juce::String& token);
+
 // File attachments (see Attach.h). Both run on a background thread; neither touches the UI.
 bool uploadAttachment(const juce::String& token, const juce::File& file, AttachRef& out, juce::String& error);
 bool downloadAttachment(const juce::String& token, const AttachRef& ref, const juce::File& dest, juce::String& error);

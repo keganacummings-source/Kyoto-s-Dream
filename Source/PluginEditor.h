@@ -10,6 +10,7 @@
 #include "PluginShells.h"
 #include "FlexLayout.h"
 #include "BuilderFit.h"
+#include "HtmlReader.h"
 #include <vector>
 
 struct CanvasWidget : public juce::Component
@@ -38,6 +39,7 @@ struct CanvasWidget : public juce::Component
     int handleAt(juce::Point<int> pos) const;
     static constexpr int kHandlePx = 7;
     static constexpr int kGrabPx = 13;
+    static constexpr int kEdgeGrabPx = 8;
     static constexpr int kMinCells = 3;
 
     KyotoAudioProcessor& proc;
@@ -121,7 +123,13 @@ public:
     void mouseDown(const juce::MouseEvent& e) override;
 
 private:
-    void syncSize() { setSize(juce::jmax(220, getWidth()), contentHeight()); repaint(); }
+    void syncSize()
+    {
+        const int h = contentHeight();
+        if (h != getHeight())
+            setSize(juce::jmax(220, getWidth()), h);
+        repaint();
+    }
     int rowAt(juce::Point<int> pos, Bubble* bubble, Person* person) const;
     juce::Array<Bubble> bubbles;
     juce::Array<Person> people;
@@ -209,6 +217,7 @@ private:
     void logout();
     void sendChat();
     void refreshFeed();
+    void refreshDiscord();
     void chatUtility(const juce::String& action);
     void refreshCatalog();
     // Chain wiring: new parts connect into the highlighted part (or the end of the chain).
@@ -332,7 +341,7 @@ private:
     juce::Viewport chatView;
     SocialRail socialRail;
     SocialDirectory socialDirectory;
-    juce::TextButton catalogModeBtn { "CATALOG" }, threadsModeBtn { "THREADS" }, railChatBtn { "CHAT" }, railOnlineBtn { "SOCIALS" };
+    juce::TextButton catalogModeBtn { "CATALOG" }, threadsModeBtn { "THREADS" }, railChatBtn { "CHAT" }, railDiscordBtn { "DISCORD" }, railOnlineBtn { "SOCIALS" };
     juce::TextButton pluginsTabBtn { "PLUGINS" }, effectsTabBtn { "EFFECTS" }, myPluginsBtn { "MY PLUGINS" }, pendingBtn { "PENDING" };
     juce::TextEditor tagSearchBox;
     juce::TextButton textMinusBtn { "A-" }, textPlusBtn { "A+" }, attachChip { "" };
@@ -376,6 +385,7 @@ private:
     juce::OwnedArray<CanvasWidget> widgets;
     juce::ValueTree fxStack { "fxstack" };
     PluginViewScreen* viewScreen = nullptr;
+    std::unique_ptr<HtmlOverlay> htmlOverlay;
 
     friend class PluginViewScreen;
 

@@ -78,3 +78,54 @@ CHAINING (why it was not working)
 NOT COMPILED HERE either - please run the CI build. Things to eyeball: case shapes vs. corner screws,
 chaining on a fresh plugin (place 3 effects, highlight the first, right-click to add a 4th: it should sit
 second in the chain), and a template with 20 bays (Arcade Cab / Bridge Console / Mega Matrix).
+
+
+=====================================================================
+UPDATE 3: DISCORD-STYLE OVERHAUL + LAG/BOUNCE FIX
+=====================================================================
+
+PERFORMANCE / LAG FIX (the "super laggy" screen)
+- Root cause: timerCallback() ran at 30Hz and called socialRail.setPhase() + socialRail.setHostTheme()
+  every frame, each triggering a full SocialRail repaint. SocialRail::paint creates a TextLayout for every
+  bubble on every frame — extremely expensive with a long chat history.
+- Fix: removed both calls from timerCallback. SocialRail is now only repainted when data actually changes
+  (new messages, theme switch, tab change). The editor's own repaint() is now skipped on the DreamShare
+  tab (tab == 0) since the hero theme-field animation is not visible there anyway.
+- (Source/PluginEditor.cpp: timerCallback)
+
+CHAT BOUNCE FIX
+- Root cause: SocialRail::syncSize() called setSize() unconditionally on every data update, even when the
+  content height was unchanged. This caused the Viewport to resize and jump (bounce) on every refresh.
+- Fix: syncSize() now compares the new height to the current height and only calls setSize() when it
+  actually changed. (Source/PluginEditor.h: SocialRail::syncSize)
+
+DISCORD-STYLE CHAT (SocialRail::paint)
+- Replaced rounded bubble cards with flat Discord-style message rows:
+  - Avatar circle (themed color + first letter of username) on the left
+  - Username in theme color + inline "Today" timestamp (Discord convention)
+  - Message body below, full width, no rounded card background
+  - Own messages get a subtle accent-tinted background + left accent bar (no more right-side bar)
+  - File attachment chips are now type-colored (blue=image, amber=zip, green=audio) instead of all-accent
+  - DIS tag for Discord-relayed messages preserved
+- Smaller gap between messages (3px vs 8px) for tighter Discord-like density
+- (Source/PluginEditor.cpp: layoutBubble, SocialRail::paint, SocialRail::mouseDown)
+
+DISCORD-STYLE MEMBER SIDEBAR (SocialRail mode 1 + SocialDirectory)
+- Avatar circles with status dots (green=online, grey=offline) — Discord convention
+- Compact rows (40-46px vs 44-52px)
+- Section headers in muted uppercase (Discord style)
+- SocialDirectory: avatar circles replace plain status dots, self-highlight is a subtle accent background
+  instead of a rounded card
+- (Source/PluginEditor.cpp: SocialRail::paint mode 1, SocialDirectory::paint)
+
+ENHANCED EMOJI REACTIONS
+- Right-click a chat message -> "React with emoji" submenu now has 10 options (was 5):
+  Heart, Fire, Laugh, Moon, 100, Up, Skull, Eyes, Sparkles, Wave — each with its Unicode emoji glyph
+- Added "Reply" option to the bubble context menu (inserts >>id quote prefix)
+- (Source/PluginEditor.cpp: showBubbleMenu)
+
+VERIFIED
+- Full compile + link of both KYOTO_VST3 and KYOTRIPPAHFX_VST3 targets: 0 errors, 0 undefined references.
+- Worker API still healthy on port 3000.
+- NOT verified in a DAW: the rendered Discord-style chat, avatar circles, status dots, and the new
+  emoji submenu all need a DAW check.
