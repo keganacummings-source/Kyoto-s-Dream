@@ -90,7 +90,9 @@ inline void draw(juce::Graphics& g, Id id, juce::Rectangle<float> r)
         g.drawEllipse(r.reduced(s*.08f),1.5f);
         g.fillEllipse(cx-s*.18f,cy-s*.08f,s*.10f,s*.12f);
         g.fillEllipse(cx+s*.08f,cy-s*.08f,s*.10f,s*.12f);
-        g.drawArc(cx-s*.22f,cy-s*.02f,s*.44f,s*.30f,0.2f,2.9f,1.5f); return;
+        juce::Path smile;
+        smile.addCentredArc(cx, cy + s * .08f, s * .22f, s * .15f, 0.0f, 0.2f, 2.9f, true);
+        g.strokePath(smile, juce::PathStrokeType(1.5f)); return;
     }
     g.setColour(accent);
     g.drawEllipse(r.reduced(s*.10f),1.4f);

@@ -910,7 +910,8 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
             if (savedShell == pb::kShells[i].id) { shellIndex = i; shellBox.setSelectedId(i + 1, juce::dontSendNotification); }
     }
     refreshEffectBox();
-    startTimerHz(30);
+    // DreamShare animation is intentionally lightweight; avoid driving the whole editor at audio-like UI rates.
+    startTimerHz(12);
     restoreEditorSession();
 }
 
@@ -995,15 +996,28 @@ void KyotoAudioProcessorEditor::setPluginView(bool on)
 
 void KyotoAudioProcessorEditor::timerCallback()
 {
-    animPhase += 0.035f;
-    if (animPhase > juce::MathConstants<float>::twoPi) animPhase -= juce::MathConstants<float>::twoPi;
-    chainLevels.refresh();
-    socialRail.setPhase(animPhase);
-    socialRail.setHostTheme(theme);
-    repaint();
-    for (auto* w : widgets)
-        if (w->kind == CanvasWidget::Kind::Wave || w->kind == CanvasWidget::Kind::Stack)
-            w->repaint();
+    // The homepage is the only screen that needs the animated DreamShare field/rail.
+    // Keep the timer alive for lightweight editor maintenance, but do not repaint every
+    // screen or animate hidden components. This prevents the home animation from stealing
+    // UI time from the actual plugin controls.
+    if (tab == 0 && loggedIn)
+    {
+        animPhase += 0.035f;
+        if (animPhase > juce::MathConstants<float>::twoPi)
+            animPhase -= juce::MathConstants<float>::twoPi;
+
+        socialRail.setPhase(animPhase);
+        repaint();
+
+        for (auto* w : widgets)
+            if (w->kind == CanvasWidget::Kind::Wave || w->kind == CanvasWidget::Kind::Stack)
+                w->repaint();
+    }
+    else
+    {
+        // Chain topology changes are cheap to detect and still need to stay in sync.
+        chainLevels.refresh();
+    }
 }
 
 
@@ -1625,11 +1639,16 @@ void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
             g.setColour(selected ? kt::c(theme.accent).withAlpha(0.20f) : kt::c(theme.panel).brighter(0.06f)); g.fillRoundedRectangle(r, 9.f);
             g.setColour(kt::c(theme.border).withAlpha(selected?0.95f:0.75f)); g.drawRoundedRectangle(r, 9.f, selected?2.f:1.f);
             g.setColour(kt::c(theme.accent)); g.setFont(kt::font(theme, 12.f, true)); g.drawText(juce::String(i+1).paddedLeft('0',2), r.getX()+9, r.getY()+8, 28, 16, juce::Justification::left);
-            g.setColour(kt::c(theme.text)); g.setFont(kt::font(theme, 13.f, true)); g.drawFittedText(st.getProperty("name").toString(), r.getX()+36, r.getY()+7, r.getWidth()-46, 18, juce::Justification::left, 1);
+            g.setColour(kt::c(theme.text)); g.setFont(kt::font(theme, 13.f, true)); g.drawFittedText(st.getProperty("name").toString(),
+                              (int) juce::roundToInt(r.getX() + 36.f), (int) juce::roundToInt(r.getY() + 7.f),
+                              (int) juce::roundToInt(r.getWidth() - 46.f), 18,
+                              juce::Justification::left, 1);
             g.setColour(kt::c(theme.muted)); g.setFont(kt::font(theme, 11.f));
             const int fxType = (int) st.getProperty("fx", 0);
             const juce::String fam = (fxType >= 0 && fxType < kt::kFxCount) ? kt::fxFamilyName(kt::kFx[fxType].family) : "FX";
-            g.drawText(fam + "   A " + juce::String((double)st.getProperty("amount",0.5),2) + "   T " + juce::String((double)st.getProperty("tone",0.5),2), r.getX()+10, r.getBottom()-24, r.getWidth()-20, 16, juce::Justification::left);
+            g.drawText(fam + "   A " + juce::String((double)st.getProperty("amount",0.5),2) + "   T " + juce::String((double)st.getProperty("tone",0.5),2),
+                        (int) juce::roundToInt(r.getX() + 10.f), (int) juce::roundToInt(r.getBottom() - 24.f),
+                        (int) juce::roundToInt(r.getWidth() - 20.f), 16, juce::Justification::left);
         }
     }
 }
@@ -3242,7 +3261,7 @@ void KyotoAudioProcessorEditor::layoutCenterHolder()
 void KyotoAudioProcessorEditor::applyDsScale()
 {
     const float s = kt::dsScale();
-    const auto f = juce::Font(14.f * s);
+    const auto f = juce::Font(juce::FontOptions{}.withPointHeight(14.f * s));
     msgBox.setFont(f);
     utilityBox.setFont(f);
     tagSearchBox.setFont(f);
@@ -3978,7 +3997,6 @@ void KyotoAudioProcessorEditor::applyTheme(const juce::String& id)
     machineDesign.theme = theme.id;
     machineDesign.normalizeThemeIds();
     panel.theme = theme;
-    for (auto* w : widgets) w->setTheme(theme);
     panel.repaint();
     if (fxBrowser) fxBrowser->setTheme(theme);
     for (auto* e : { &logBox, &msgBox, &utilityBox, &userBox, &passBox, &nameBox, &effectNameBox })
