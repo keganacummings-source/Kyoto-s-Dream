@@ -44,3 +44,37 @@ GEEK MODE (Plugin View)
 NOT VERIFIED (no JUCE toolchain / network in the authoring sandbox)
 - Nothing was compiled or run in a DAW. Run the CI build and check: chat bubbles, A-/A+, drag overlay,
   attach + save round-trip, Geek view. Worker JS passes a syntax check.
+
+
+=====================================================================
+UPDATE 2: CHAINING + 30 TEMPLATES
+=====================================================================
+
+CHAINING (why it was not working)
+- The audio chain runs in DSP-slot order, but new parts always took the first free slot and the wires always
+  showed a star from the motherboard. And the right-click Add menu always placed FX as "dial", so it only worked
+  in Knob bays - in any other bay it silently did nothing.
+- Now: click a part to highlight it, then right-click anywhere and Add. The new part plugs into the highlighted
+  part: it is inserted right after it in the real signal order (later parts slide down the chain), and the wire
+  is drawn from the highlighted part to the new one. Nothing highlighted = joins the end of the chain.
+  The new part becomes highlighted, so you can keep right-clicking to string effects together. Click the empty
+  case to un-highlight. Removing a part re-joins its neighbours. Menu header shows "Adds into: <part>".
+- Right-click does not need to be on a free bay: the nearest free bay that fits is used (knob first, then fader
+  for effects). (Source/PluginEditor.cpp: placeInSlot, chainParentWidget, nearestFreeBay, shiftDspUp, showSlotMenu)
+- Each placed part stores "parent" (the bay it plugs into); saved chains export shellSlot + parent too.
+
+30 TEMPLATES (was 4)
+- Source/PluginShells.h: 30 templates, 6-20 bays each, exactly ONE screen each, every screen a different
+  size/position AND bezel. Checked by script: no overlapping bays, all inside the case, no duplicate screens.
+  TEMPLATE_PREVIEW.png in the zip shows all 30 layouts.
+- The original 4 (console, tower, desk, pocket) keep their ids so saved plugins still open. Pocket Unit grew
+  from 5 to 7 bays; its old unused/overlapping bays were removed.
+- Each template has its own Plugin View design: case silhouette (rounded, chamfer, pill, square, notch, wedge,
+  hex), ears/handles/feet/wings, trim pattern, tint and screen bezel - unique combinations. The builder panel
+  shows the same silhouette, trim and bezel. (paintShellBody / paintScreenBezel in PluginShells.h)
+- Each template also has its own set of internal parts for Geek mode (Source/HardwareInternals.h).
+- Randomize now places each part in a bay that really fits it.
+
+NOT COMPILED HERE either - please run the CI build. Things to eyeball: case shapes vs. corner screws,
+chaining on a fresh plugin (place 3 effects, highlight the first, right-click to add a 4th: it should sit
+second in the chain), and a template with 20 bays (Arcade Cab / Bridge Console / Mega Matrix).

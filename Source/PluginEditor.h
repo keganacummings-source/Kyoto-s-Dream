@@ -163,6 +163,11 @@ private:
     void refreshFeed();
     void chatUtility(const juce::String& action);
     void refreshCatalog();
+    // Chain wiring: new parts connect into the highlighted part (or the end of the chain).
+    int chainParentWidget() const;
+    int nearestFreeBay(const juce::String& style, juce::Point<float> localPos, int preferred) const;
+    void shiftDspUp(int from, int to);
+    void repairParents();
     void refreshCurrentCenter();
     void layoutCenterHolder();
     void applyDsScale();

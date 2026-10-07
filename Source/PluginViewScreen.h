@@ -1,8 +1,11 @@
 #pragma once
+#include <map>
 #include "PluginEditor.h"
 #include "FxCatalog.h"
 #include "HardwareInternals.h"
 #include <cmath>
+
+static_assert(sizeof(hb::kInternals) / sizeof(hb::kInternals[0]) == (size_t) pb::kShellCount, "every template needs hardware internals");
 
 // Pluggin View - the viewer surface. While the editor is in plugin view this overlay covers the
 // whole window and shows only the built pluggin running live: its shell, its placed bays with
@@ -40,21 +43,18 @@ public:
         g.fillAll(kt::c(theme.bg));
 
         const auto caseR = pluginCase();
-        const float bodyRadius = juce::String(shell.silhouette) == "pocket" ? 28.f
-                              : juce::String(shell.silhouette) == "tower" ? 8.f : 16.f;
+        const float bodyRadius = pb::shellRadius(shell);
 
-        // Case body - the hardware shell itself.
-        g.setColour(kt::c(theme.panel));
-        g.fillRoundedRectangle(caseR, bodyRadius + 4.f);
-        g.setColour(kt::c(theme.border));
-        g.drawRoundedRectangle(caseR, bodyRadius + 4.f, 1.2f);
+        // Case body - this template's own hardware shell: silhouette, ears/handles/feet, trim pattern and tint.
+        pb::paintShellBody(g, caseR, shell, theme, true);
 
-        // Corner screws.
+        // Corner screws (pulled in for the cut-corner silhouettes).
+        const float so = (shell.shape == 1 || shell.shape == 5) ? 26.f : 14.f;
         g.setColour(muted.withAlpha(0.6f));
-        for (auto p : { juce::Point<float>(caseR.getX() + 14.f, caseR.getY() + 14.f),
-                        juce::Point<float>(caseR.getRight() - 14.f, caseR.getY() + 14.f),
-                        juce::Point<float>(caseR.getX() + 14.f, caseR.getBottom() - 14.f),
-                        juce::Point<float>(caseR.getRight() - 14.f, caseR.getBottom() - 14.f) })
+        for (auto p : { juce::Point<float>(caseR.getX() + so, caseR.getY() + so),
+                        juce::Point<float>(caseR.getRight() - so, caseR.getY() + so),
+                        juce::Point<float>(caseR.getX() + so, caseR.getBottom() - so),
+                        juce::Point<float>(caseR.getRight() - so, caseR.getBottom() - so) })
         {
             g.fillEllipse(p.x - 3.f, p.y - 3.f, 6.f, 6.f);
             g.setColour(kt::c(theme.bg).withAlpha(0.7f));
@@ -91,6 +91,9 @@ public:
         g.setColour(accent.withAlpha(0.45f));
         g.drawRoundedRectangle(face, bodyRadius, 1.3f);
         if (geekOn) g.beginTransparencyLayer(juce::jmax(0.14f, cover));
+        for (int i = 0; i < shell.slotCount; ++i)
+            if (shell.slots[i].kind == pb::SlotKind::Screen)
+                pb::paintScreenBezel(g, pb::slotRect(face, shell.slots[i]).reduced(3.f), shell.screenStyle, theme);
         drawBayWiring(g, face, shell);
         drawPlacedParts(g, face, shell);
         if (geekOn) g.endTransparencyLayer();
@@ -380,23 +383,28 @@ private:
 
     void drawBayWiring(juce::Graphics& g, juce::Rectangle<float> face, const pb::Shell& shell) const
     {
-        juce::Point<float> from;
-        bool haveBoard = false;
-        juce::Array<juce::Point<float>> targets;
+        // Every part is wired into the part it was connected to (the chain), not just to the motherboard.
+        std::map<int, juce::Point<float>> centre;
+        std::map<int, int> parentOf;
         for (int i = 0; i < editor.proc.uiState.getNumChildren(); ++i)
         {
             auto node = editor.proc.uiState.getChild(i);
             if (! node.hasType("w")) continue;
             const int bay = (int) node.getProperty("shellSlot", -1);
             if (bay < 0 || bay >= shell.slotCount) continue;
-            auto centre = pb::slotRect(face, shell.slots[bay]).getCentre();
-            if (bay == 0) { from = centre; haveBoard = true; }
-            else targets.add(centre);
+            centre[bay] = pb::slotRect(face, shell.slots[bay]).getCentre();
+            parentOf[bay] = (int) node.getProperty("parent", 0);
         }
-        if (! haveBoard) return;
+        if (centre.find(0) == centre.end()) return;
         const auto accent = kt::c(editor.machineDesign.palette().accent);
-        for (auto& to : targets)
+        for (auto& entry : centre)
         {
+            const int bay = entry.first;
+            if (bay == 0) continue;
+            int par = parentOf[bay];
+            if (par == bay || centre.find(par) == centre.end()) par = 0;
+            const auto from = centre[par];
+            const auto to = entry.second;
             juce::Path wire;
             wire.startNewSubPath(from);
             wire.cubicTo(from.x, (from.y + to.y) * 0.5f, to.x, (from.y + to.y) * 0.5f, to.x, to.y);
