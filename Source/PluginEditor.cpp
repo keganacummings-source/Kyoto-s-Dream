@@ -2900,10 +2900,10 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
 
     const bool hasSelection = selectedChainWidget >= 0 && selectedChainWidget < widgets.size();
     auto* selected = hasSelection ? widgets[selectedChainWidget] : nullptr;
-    const int selBay = selected != nullptr ? (int) selected->node.getProperty("shellSlot", -1) : -1;
+    juce::ignoreUnused(selected, slot);
 
     juce::PopupMenu menu;
-    menu.addSectionHeader(theme.name + "  ·  builder");
+    menu.addSectionHeader(juce::String(theme.name) + "  -  builder");
 
     juce::PopupMenu vis;
     const int cur = pb::boardScreenTypeOf(proc.uiState, 0);
@@ -3040,7 +3040,6 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
                 const int fx = result - 1000;
                 placeOnGrid(gx, gy, "dial", fx, kt::kFx[fx].name, 0);
             }
-            juce::ignoreUnused(slot, selBay);
         });
 }
 

@@ -1,0 +1,45 @@
+KYOTRIPPAH MASTER NOTES
+======================
+One note. The old fragment notes were folded in here and deleted.
+Local self-installer files are gone. Builds are the GitHub workflow only.
+
+CURRENT BUILDER
+- A new instance opens on a blank grid. Old hardware templates are not the start of a build.
+- The chain starts only when a Visualizer is placed. It has no effect and does not own a DSP bay.
+- 12 visualizer types: Scope Glass, Pan Field, CRT Tube, VU Meters, Spectrogram, Flatline, Radial Orbit, Lissajous, Peak Bars, Waterfall, Ring Phase, Stereo Ribbons. Place any of them anywhere on the grid.
+- Parts use the stored 32x22 grid cells, so they stay on the plate they were drawn on.
+- RANDOMIZE rolls the visualizer type and the controls of parts already placed. It does not load a template.
+- Right-click menu follows the active theme and is grouped: Visualizer, Parts, Effects by family, Wires, Edit.
+- Wires: right-click a part, Wires, Disconnect wire. Attach wire, then left-click the part it should plug into.
+- Hidden default FX stays off. Only placed, controllable effects make sound.
+- Geek mode draws the internal board, caps, ribbons and ports under the parts you placed, using those grid cells.
+- Dials and sliders are percent attachments. Buttons toggle the slot. Keys are MIDI note on/off. Sound accepts a dropped wav/aiff/flac/mp3/ogg.
+- Editor tab, theme, and window size persist so minimize/reopen restores builder mode.
+
+THEME LAW
+- Parts, case and Plugin View follow the plugin theme (playgroundTheme). The signed-in user theme only styles DreamShare.
+- Published plugins store their own theme. Loading a plugin applies it.
+- ThemeDecals.h has 13 decal families mapped across the themes, plus a serial sticker naming the theme.
+
+DREAMSHARE
+- Catalog: plugins are everything that is not an effect. Effects are face fx/effect. Approved chain plugins are no longer dropped by a kyoto-only filter.
+- Approve, Deny, Tag and Remove refresh the tab you are on. Public catalog hides pending and denied cards. Builders still get the full list.
+- Search is debounced. Empty tabs show a card instead of a blank panel.
+- Chat bubbles size to their text. Your own messages are tinted and tagged.
+- DreamShare text scale is remembered. Catalog and thread cards reflow with window width.
+- Discord DIS chip is data-wired. The rendered chip still needs a DAW check.
+
+WORKER
+- Canonical file is worker.js. Kyoto rules live in module-rules.js. Compatibility copies are not the deploy entry.
+- module_get is on the authenticated router. Catalog face filtering is case-insensitive.
+- module_publish accepts kyoteppah-module-1 and kyoteppah-effect-1.
+- module_delete removes the index entry, the user-module reference, and any matching community instrument.
+- node --check passed on worker.js and module-rules.js when the worker was last rebuilt. The VST was not part of that check.
+
+OPTIMIZATION
+- UI meters and menus run at 12 Hz. Scope copy is capped. DreamShare does not reseed a motherboard effect.
+- Part skins are cosmetic only. They do not change knob response or the sound.
+
+BUILD
+- GitHub Actions builds the Windows and macOS VST3s. There is no local installer in this tree.
+- MSVC cannot add two const char* pointers. Menu headers go through juce::String.
