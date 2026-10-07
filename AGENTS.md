@@ -26,6 +26,12 @@ docker exec kyoto-build ninja -C /tmp/build -j"$(nproc)" \
 ```
 Compiling just those objects needs JUCE headers only (Fetched at configure) — no full JUCE build. ~3 min. Past CI failures were undeclared `kt::kFx` usage in PluginViewScreen.h (fixed by including FxCatalog.h) and rail buttons missing from PluginEditor.h.
 
+**Object compile is not enough.** A declared-but-undefined member (e.g. `swapPartInBay`, `rollNewInstanceTemplate`, `SocialDirectory::setData`/`paint`/`mouseDown`, `rebuildDirectory`) compiles fine and only fails at link. Before pushing, also link the real targets so `undefined reference` surfaces:
+```bash
+docker exec kyoto-build ninja -C /tmp/build -j"$(nproc)" KYOTO_VST3 KYOTRIPPAHFX_VST3
+```
+That builds all JUCE modules too (~10 min cold, ~1 min warm) and writes both `.vst3/Contents/x86_64-linux/*.so` bundles. Success = `FULL_EXIT=0` and 0 `error:`/`undefined reference` lines.
+
 ## Auto-adjusting builder toolbars
 - Plugin Builder and FX Builder toolbars use `flx::row()` (Source/FlexLayout.h) to flex-distribute buttons and dropdowns across any window width. Fixed-width items (buttons) get their natural size; flex items (dropdowns) share the remaining space. No hardcoded pixel widths that overflow on narrow windows.
 - The sidebar (effects list) and FX inspector now scale proportionally via `juce::jlimit(min, max, width/fraction)` instead of fixed pixel widths.

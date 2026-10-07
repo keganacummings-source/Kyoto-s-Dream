@@ -138,7 +138,7 @@ private:
 class SocialDirectory : public juce::Component
 {
 public:
-    struct Row { juce::String name, detail, themeId; bool online = false, friend = false, self = false; };
+    struct Row { juce::String name, detail, themeId; bool online = false, isFriend = false, self = false; };
 
     std::function<void(const Row&, juce::Point<int>)> onRowMenu;
     std::function<void(const Row&)> onRowClick;
@@ -151,7 +151,7 @@ public:
 
 private:
     enum class ItemType { Header, Label, Person, Discord };
-    struct Item { ItemType type = ItemType::Label; Row row; juce::String text; };
+    struct Item { ItemType type = ItemType::Label; Row row; juce::String text; int y = 0, h = 0; };
 
     juce::Array<Item> items;
     kt::ThemePalette host = kt::kThemes[0];

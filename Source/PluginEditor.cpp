@@ -898,7 +898,7 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     threadsModeBtn.onClick = [this] { setCenterMode(3); refreshFeed(); };
     railChatBtn.onClick = [this] { setRailMode(0); refreshFeed(); };
     // SOCIALS takes over the centre: the Threads board is replaced by the full DreamShare directory.
-    railOnlineBtn.onClick = [this] { setRailMode(1); refreshSocial(); setCenterMode(5); };
+    railOnlineBtn.onClick = [this] { setRailMode(1); setCenterMode(5); };
     threadBackBtn.onClick = [this] { closeThread(); };
     threadReactBtn.onClick = [this] { if (selectedThreadId.isNotEmpty()) reactTo("thread", selectedThreadId, "heart"); };
     threadShareFxBtn.onClick = [this] { const auto text = effectShareText(); if (text.isEmpty()) status.setText("Publish an effect before sharing it.", juce::dontSendNotification); else postThreadComment(text); };
@@ -919,7 +919,7 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
         person.online = r.online;
         person.themeId = r.themeId;
         person.detail = r.detail;
-        person.kind = r.friend ? "friend" : (r.online ? "active" : "user");
+        person.kind = r.isFriend ? "friend" : (r.online ? "active" : "user");
         showPersonMenu(person, pos);
     };
     pluginsTabBtn.onClick = [this] { setCenterMode(0); refreshCatalog(); };
@@ -1377,6 +1377,119 @@ void SocialRail::mouseDown(const juce::MouseEvent& e)
     if (! hitPerson(e.y, person)) return;
     if (e.mods.isPopupMenu()) { if (onPersonMenu) onPersonMenu(person, e.getScreenPosition()); }
     else if (onPersonClick) onPersonClick(person);
+}
+
+// ---- Socials directory: every DreamShare account, the ones active now pinned to the top ----
+namespace
+{
+constexpr int kSdPad = 12;
+constexpr int kSdHeaderH = 24;
+constexpr int kSdLabelH = 26;
+constexpr int kSdPersonH = 48;
+constexpr int kSdVoiceH = 54;
+}
+
+void SocialDirectory::setData(const juce::Array<Row>& rows, int total, int active)
+{
+    items.clear();
+    totalUsers = juce::jmax(0, total);
+    activeUsers = juce::jmax(0, active);
+
+    juce::Array<Row> onlineRows, friendRows;
+    for (const auto& r : rows)
+    {
+        if (r.online || r.self) onlineRows.add(r);
+        if (r.isFriend) friendRows.add(r);
+    }
+
+    int y = kSdPad;
+    auto addHeader = [&](const juce::String& text) { Item it; it.type = ItemType::Header; it.text = text; it.y = y; it.h = kSdHeaderH; items.add(it); y += kSdHeaderH; };
+    auto addLabel  = [&](const juce::String& text) { Item it; it.type = ItemType::Label;  it.text = text; it.y = y; it.h = kSdLabelH;  items.add(it); y += kSdLabelH; };
+    auto addPerson = [&](const Row& r)              { Item it; it.type = ItemType::Person; it.row = r;     it.y = y; it.h = kSdPersonH; items.add(it); y += kSdPersonH; };
+
+    addHeader("ONLINE NOW  -  " + juce::String(activeUsers) + " OF " + juce::String(totalUsers) + " ACCOUNTS");
+    if (onlineRows.isEmpty()) addLabel("Nobody else is online right now.");
+    else for (const auto& r : onlineRows) addPerson(r);
+
+    addHeader("FRIENDS");
+    if (friendRows.isEmpty()) addLabel("No friends yet - right-click a name to add one.");
+    else for (const auto& r : friendRows) addPerson(r);
+
+    addHeader("DREAMSHARE MEMBERS  -  " + juce::String(totalUsers));
+    if (rows.isEmpty()) addLabel("No accounts yet.");
+    else for (const auto& r : rows) addPerson(r);
+
+    addHeader("VOICE");
+    { Item it; it.type = ItemType::Discord; it.y = y; it.h = kSdVoiceH; items.add(it); y += kSdVoiceH; }
+
+    totalHeight = juce::jmax(1, y + kSdPad);
+    setSize(juce::jmax(1, getWidth()), totalHeight);
+    repaint();
+}
+
+void SocialDirectory::paint(juce::Graphics& g)
+{
+    g.fillAll(kt::c(host.bg).withAlpha(0.2f));
+    for (const auto& it : items)
+    {
+        auto row = juce::Rectangle<int>(0, it.y, getWidth(), it.h);
+        if (it.type == ItemType::Header)
+        {
+            g.setColour(kt::c(host.accent));
+            g.setFont(kt::dsFont(host, 10.f, true));
+            g.drawText(it.text, kSdPad, row.getY() + 5, getWidth() - 2 * kSdPad, 16, juce::Justification::centredLeft);
+        }
+        else if (it.type == ItemType::Label)
+        {
+            g.setColour(kt::c(host.muted));
+            g.setFont(kt::dsFont(host, 10.f));
+            g.drawText(it.text, kSdPad + 6, row.getY() + 3, getWidth() - 2 * kSdPad - 6, 16, juce::Justification::centredLeft, true);
+        }
+        else if (it.type == ItemType::Person)
+        {
+            const auto pal = kt::themeById(it.row.themeId.isEmpty() ? host.id : it.row.themeId);
+            auto card = row.reduced(kSdPad, 3).toFloat();
+            g.setColour(it.row.self ? kt::c(pal.panel).interpolatedWith(kt::c(pal.accent), 0.18f) : kt::c(pal.panel));
+            g.fillRoundedRectangle(card, 8.f);
+            g.setColour(kt::c(pal.border).withAlpha(0.75f));
+            g.drawRoundedRectangle(card, 8.f, 1.f);
+            g.setColour(it.row.online ? kt::c(pal.accent) : kt::c(pal.muted));
+            g.fillEllipse(card.getX() + 10.f, card.getCentreY() - 5.f, 10.f, 10.f);
+            g.setColour(kt::c(pal.accent));
+            g.setFont(kt::dsFont(pal, 12.f, true));
+            g.drawText(it.row.name + (it.row.self ? "  (you)" : ""), (int) card.getX() + 28, (int) card.getY() + 5, (int) card.getWidth() - 36, 16, juce::Justification::centredLeft, true);
+            g.setColour(kt::c(pal.muted));
+            g.setFont(kt::dsFont(pal, 9.5f));
+            g.drawText(it.row.detail, (int) card.getX() + 28, (int) card.getY() + 22, (int) card.getWidth() - 36, 14, juce::Justification::centredLeft, true);
+        }
+        else if (it.type == ItemType::Discord)
+        {
+            auto card = row.reduced(kSdPad, 3).toFloat();
+            g.setColour(kt::c(host.panel).brighter(0.04f));
+            g.fillRoundedRectangle(card, 8.f);
+            g.setColour(kt::c(host.border).withAlpha(0.8f));
+            g.drawRoundedRectangle(card, 8.f, 1.f);
+            g.setColour(kt::c(host.accent).withAlpha(0.8f));
+            g.setFont(kt::dsFont(host, 11.f, true));
+            g.drawText("DISCORD", (int) card.getX() + 12, (int) card.getY() + 6, (int) card.getWidth() - 24, 16, juce::Justification::centredLeft);
+            g.setColour(kt::c(host.muted));
+            g.setFont(kt::dsFont(host, 9.5f));
+            g.drawText("Voice rooms - coming soon", (int) card.getX() + 12, (int) card.getY() + 24, (int) card.getWidth() - 24, 14, juce::Justification::centredLeft, true);
+        }
+    }
+}
+
+void SocialDirectory::mouseDown(const juce::MouseEvent& e)
+{
+    for (const auto& it : items)
+    {
+        if (it.type != ItemType::Person) continue;
+        if (e.y < it.y || e.y >= it.y + it.h) continue;
+        if (it.row.self) return; // your own card is not a WAV target
+        if (e.mods.isPopupMenu()) { if (onRowMenu) onRowMenu(it.row, e.getScreenPosition()); }
+        else if (onRowClick) onRowClick(it.row);
+        return;
+    }
 }
 
 struct BoardCard : public juce::Component
@@ -2501,6 +2614,95 @@ void KyotoAudioProcessorEditor::randomizeTemplate()
     status.setText("Random template: essentials covered, " + juce::String(placed) + " parts, limit " + juce::String(limit) + ".", juce::dontSendNotification);
 }
 
+void KyotoAudioProcessorEditor::rollNewInstanceTemplate()
+{
+    // A brand-new instance opens on a randomly generated template; a restored build is left alone.
+    for (int i = 0; i < proc.uiState.getNumChildren(); ++i)
+    {
+        auto child = proc.uiState.getChild(i);
+        if (child.hasType("w") && child.getProperty("kind").toString() != "board")
+            return;
+    }
+    randomizeTemplate();
+}
+
+void KyotoAudioProcessorEditor::swapPartInBay(int bay, const juce::String& kind, int fxIndex, const juce::String& label)
+{
+    const auto& shell = pb::kShells[juce::jlimit(0, pb::kShellCount - 1, shellIndex)];
+    if (bay < 0 || bay >= shell.slotCount || kind.isEmpty()) return;
+
+    // Find the part currently sitting in the bay; a swap keeps its place, size and chain wiring.
+    juce::ValueTree old;
+    for (int i = 0; i < proc.uiState.getNumChildren(); ++i)
+    {
+        auto child = proc.uiState.getChild(i);
+        if (child.hasType("w") && (int) child.getProperty("shellSlot", -1) == bay) { old = child; break; }
+    }
+    if (! old.isValid()) { status.setText("That bay is empty - left-click it to place a part.", juce::dontSendNotification); return; }
+    if (! pb::styleFits(kind, shell.slots[bay].kind))
+    {
+        status.setText("The " + juce::String(shell.slots[bay].name) + " bay does not take a " + kind + ".", juce::dontSendNotification);
+        return;
+    }
+    captureSnapshot();
+
+    const bool cosmetic = shell.slots[bay].kind == pb::SlotKind::Cosmetic;
+    const int oldSlot = (int) old.getProperty("slot", -1);
+    int dsp = -1;
+    if (! cosmetic)
+    {
+        dsp = oldSlot;
+        if (dsp < 0)
+        {
+            for (int i = 1; i < proc.slotCount(); ++i)
+            {
+                auto* on = proc.apvts.getParameter("s" + juce::String(i + 1).paddedLeft('0', 2) + "on");
+                if (on != nullptr && on->getValue() < 0.5f) { dsp = i; break; }
+            }
+            if (dsp < 0) { status.setText("DSP bays are full - remove a part first.", juce::dontSendNotification); return; }
+        }
+        const auto prefix = "s" + juce::String(dsp + 1).paddedLeft('0', 2);
+        if (fxIndex >= 0)
+            if (auto* param = proc.apvts.getParameter(prefix + "type")) param->setValueNotifyingHost(param->convertTo0to1((float) fxIndex));
+        if (auto* on = proc.apvts.getParameter(prefix + "on")) on->setValueNotifyingHost(1.f);
+    }
+    else if (oldSlot >= 0)
+    {
+        // Cosmetic parts own no DSP bay, so release the one the old part held.
+        if (auto* on = proc.apvts.getParameter("s" + juce::String(oldSlot + 1).paddedLeft('0', 2) + "on")) on->setValueNotifyingHost(0.f);
+    }
+
+    auto node = juce::ValueTree("w");
+    node.setProperty("slot", dsp, nullptr);
+    node.setProperty("shellSlot", bay, nullptr);
+    node.setProperty("series", old.getProperty("series", proc.uiState.getNumChildren()), nullptr);
+    node.setProperty("parent", old.getProperty("parent", 0), nullptr);
+    for (auto* key : { "gx", "gy", "gw", "gh" })
+        if (old.hasProperty(key)) node.setProperty(key, old.getProperty(key), nullptr);
+    node.setProperty("kind", kind, nullptr);
+    node.setProperty("style", kind, nullptr);
+    node.setProperty("param", old.getProperty("param", "amt"), nullptr);
+    node.setProperty("label", label.isNotEmpty() ? label : kind, nullptr);
+
+    const int index = proc.uiState.indexOf(old);
+    proc.uiState.removeChild(old, nullptr);
+    proc.uiState.addChild(node, index, nullptr);
+    rebuildCanvas();
+    ensureMotherboard();
+
+    selectedChainWidget = -1;
+    for (int i = 0; i < widgets.size(); ++i)
+        if ((int) widgets[i]->node.getProperty("shellSlot", -1) == bay)
+        {
+            selectedChainWidget = i;
+            widgets[i]->selected = true;
+            widgets[i]->repaint();
+        }
+    panel.selectedSlot = bay;
+    panel.repaint();
+    status.setText("Swapped in " + (label.isNotEmpty() ? label : kind) + ".", juce::dontSendNotification);
+}
+
 void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPos)
 {
     const auto local = panel.getLocalPoint(nullptr, screenPos.toFloat());
@@ -3354,6 +3556,82 @@ void KyotoAudioProcessorEditor::refreshSocial()
     }).detach();
 }
 
+void KyotoAudioProcessorEditor::rebuildDirectory()
+{
+    // Entering SOCIALS (or re-laying the column out) pulls a fresh account list + presence.
+    if (token.isEmpty())
+    {
+        juce::Array<SocialDirectory::Row> empty;
+        socialDirectory.setData(empty, 0, 0);
+        status.setText("Sign in to DreamShare to browse the directory.", juce::dontSendNotification);
+        return;
+    }
+    refreshSocial();
+}
+
+void KyotoAudioProcessorEditor::setDirectoryData(const juce::var& socialParsed, const juce::var& presenceParsed)
+{
+    auto* root = socialParsed.getDynamicObject();
+
+    juce::StringArray friendNames;
+    if (root != nullptr)
+        if (auto* arr = root->getProperty("friendsDetailed").getArray())
+            for (auto& item : *arr)
+            {
+                if (auto* o = item.getDynamicObject()) friendNames.add(o->getProperty("name").toString());
+                else friendNames.add(item.toString());
+            }
+
+    juce::StringArray onlineNames;
+    juce::HashMap<juce::String, juce::String> onlineThemes;
+    if (auto* presence = presenceParsed.getDynamicObject())
+        if (auto* arr = presence->getProperty("onlineUsers").getArray())
+            for (auto& item : *arr)
+            {
+                juce::String name, themeId;
+                if (auto* o = item.getDynamicObject()) { name = o->getProperty("name").toString(); themeId = o->getProperty("theme").toString(); }
+                else name = item.toString();
+                if (name.isNotEmpty()) { onlineNames.add(name); onlineThemes.set(name.toLowerCase(), themeId); }
+            }
+
+    juce::Array<SocialDirectory::Row> rows;
+    auto already = [&rows](const juce::String& name) {
+        for (const auto& r : rows) if (r.name.equalsIgnoreCase(name)) return true;
+        return false;
+    };
+    auto addRow = [&](const juce::String& name, bool onlineHint) {
+        if (name.isEmpty() || already(name)) return;
+        SocialDirectory::Row r;
+        r.name = name;
+        r.self = name.equalsIgnoreCase(account);
+        r.isFriend = friendNames.contains(name, true);
+        r.online = onlineHint || r.self || onlineNames.contains(name, true);
+        const auto themeId = onlineThemes[name.toLowerCase()];
+        r.themeId = themeId.isNotEmpty() ? themeId : (r.self ? theme.id : juce::String());
+        r.detail = r.self ? "you - signed in"
+                 : (r.online && r.isFriend) ? "friend - active now"
+                 : r.online ? "active now"
+                 : r.isFriend ? "friend"
+                 : "member";
+        rows.add(r);
+    };
+
+    int total = 0;
+    if (root != nullptr)
+        if (auto* dir = root->getProperty("directory").getArray())
+            for (auto& item : *dir)
+            {
+                const auto name = item.toString();
+                if (name.isEmpty()) continue;
+                ++total;
+                addRow(name, false);
+            }
+    // Accounts that only appear through live presence still belong in the list.
+    for (const auto& name : onlineNames) addRow(name, true);
+
+    socialDirectory.setData(rows, juce::jmax(total, rows.size()), onlineNames.size());
+}
+
 void KyotoAudioProcessorEditor::openWavRequest(const juce::String& name)
 {
     if (name.isEmpty() || token.isEmpty()) return;
@@ -3995,6 +4273,7 @@ void KyotoAudioProcessorEditor::applyTheme(const juce::String& id)
     for (auto* w : widgets) w->setTheme(playgroundTheme);
     kLookAndFeel.setTheme(theme);
     socialRail.setHostTheme(theme);
+    socialDirectory.setHostTheme(theme);
     kLookAndFeel.setColour(juce::PopupMenu::backgroundColourId, kt::c(theme.panel));
     kLookAndFeel.setColour(juce::PopupMenu::textColourId, kt::c(theme.text));
     kLookAndFeel.setColour(juce::PopupMenu::highlightedBackgroundColourId, kt::c(theme.accent).withAlpha(0.32f));
@@ -4028,61 +4307,6 @@ void KyotoAudioProcessorEditor::applyPlaygroundTheme(const juce::String& id)
         }
     syncMachineDesignToUi();
     repaint();
-}
-
-void KyotoAudioProcessorEditor::enterBuilderWizard()
-{
-    // Keep setup, first placement and control practice in one guided flow.
-    builderWizardStep = 1;
-    applyShell(shellBox.getSelectedId() - 1);
-    showTab(1);
-    status.setText("Step 1 of 4 - pick a hardware template. Preview updates as you change the shell.", juce::dontSendNotification);
-    resized();
-    repaint();
-}
-
-void KyotoAudioProcessorEditor::advanceBuilderWizard()
-{
-    if (builderWizardStep == 1)
-    {
-        applyShell(shellBox.getSelectedId() - 1);
-        builderWizardStep = 2;
-        showTab(1);
-        status.setText("Step 2 of 4 - pick a playground theme.", juce::dontSendNotification);
-    }
-    else if (builderWizardStep == 2)
-    {
-        const int i = playgroundThemeBox.getSelectedId() - 1;
-        if (i >= 0 && i < kt::kThemeCount)
-            applyPlaygroundTheme(kt::kThemes[i].id);
-        builderWizardStep = 3;
-        placing = false;
-        syncPanelMouse();
-        if (fxBrowser) fxBrowser->showCustom(false);
-        showTab(1);
-        status.setText("Step 3 of 4 - select an effect, then place it in a glowing knob bay.", juce::dontSendNotification);
-    }
-    else if (builderWizardStep == 3)
-    {
-        // Allow manual advance from step 3 if at least one part was placed.
-        if (widgets.size() > 0)
-        {
-            builderWizardStep = 4;
-            showTab(1);
-            status.setText("Step 4 of 4 - try the effect knob, then enter the workshop.", juce::dontSendNotification);
-        }
-        else
-        {
-            status.setText("Select an effect on the left, then click a glowing bay on your template.", juce::dontSendNotification);
-        }
-    }
-    else if (builderWizardStep == 4)
-    {
-        builderWizardStep = 0;
-        proc.uiState.setProperty("builderWizardDone", true, nullptr);
-        showTab(1);
-        status.setText("Builder ready - effects are listed by category on the left.", juce::dontSendNotification);
-    }
 }
 
 juce::String KyotoAudioProcessorEditor::deriveCategoriesFromStack() const
