@@ -15,7 +15,8 @@ FetchContent_MakeAvailable(JUCE)
 set(KYOTO_SOURCES
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
-    Source/DreamApi.cpp)
+    Source/DreamApi.cpp
+    Source/KtDspEngine.cpp)
 
 function(kyoto_make target product code synth categories)
     juce_add_plugin(${target}

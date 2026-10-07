@@ -3,6 +3,7 @@
 #include <array>
 #include <atomic>
 #include <vector>
+#include "KtDspEngine.h"
 
 class KyotoAudioProcessor : public juce::AudioProcessor
 {
@@ -71,9 +72,8 @@ private:
 
     struct SlotDsp
     {
-        float lp[2] {}, hp[2] {}, bp[2] {}, lfo = 0.f;
-        std::vector<float> delay[2];
-        int write = 0;
+        float hp[2] {};
+        kt::dsp::DspEngine::EffectState fx;
     };
 
     struct SlotParams
@@ -103,6 +103,7 @@ private:
 
     Voice voices[8];
     SlotDsp slotDsp[kMaxSlots];
+    kt::dsp::DspEngine dspEngine;
     SlotParams slotParams[kMaxSlots];
     BlockSlotConfig blockConfig[kMaxSlots];
     // Compact ordered list of slots that process audio this block.

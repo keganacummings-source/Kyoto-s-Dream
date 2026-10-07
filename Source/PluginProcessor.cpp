@@ -165,11 +165,11 @@ void KyotoAudioProcessor::prepareToPlay(double sampleRate, int)
     sampleRateHz = sampleRate > 0.0 ? sampleRate : 44100.0;
     maxDelaySamples = juce::jmax(2048, (int) std::round(sampleRateHz * 0.75));
 
-    for (auto& s : slotDsp)
+    dspEngine.prepare(sampleRateHz);
+    for (int i = 0; i < kMaxSlots; ++i)
     {
-        s = {};
-        s.delay[0].assign((size_t) maxDelaySamples, 0.f);
-        s.delay[1].assign((size_t) maxDelaySamples, 0.f);
+        slotDsp[i] = {};
+        dspEngine.prepareState(slotDsp[i].fx, i);
     }
     for (auto& v : voices)
         v = {};
@@ -257,79 +257,13 @@ void KyotoAudioProcessor::applySlotStereo(int slot, float& left, float& right)
     const int type = cfg.type;
     if (type >= kt::kFxCount) return;
 
-    const int fam = kt::kFx[type].family;
-    const float amount = cfg.amount;
-    const float tone = cfg.tone;
-    const float motion = cfg.motion;
-    const float mix = cfg.mix;
-    const float shape = cfg.shape;
-    auto& d = slotDsp[slot];
-
-    float wetL = left, wetR = right;
-    if (fam == 4)
-    {
-        const float c = juce::jlimit(0.002f, 0.45f, 0.006f + tone * 0.30f);
-        d.lp[0] += c * (left - d.lp[0]);
-        d.lp[1] += c * (right - d.lp[1]);
-        if ((type & 1) == 0) { wetL = d.lp[0]; wetR = d.lp[1]; }
-        else { wetL = left - d.lp[0]; wetR = right - d.lp[1]; }
-    }
-    else if (fam == 0 || fam == 1)
-    {
-        const int n = maxDelaySamples;
-        const int taps = juce::jlimit(1, n - 1, (int) ((0.012f + motion * (fam == 1 ? 0.62f : 0.30f)) * (float) sampleRateHz));
-        const int read = (d.write + n - taps) % n;
-        wetL = d.delay[0][(size_t) read];
-        wetR = d.delay[1][(size_t) read];
-        const float fb = juce::jlimit(0.f, 0.88f, amount * (fam == 1 ? 0.80f : 0.68f));
-        d.delay[0][(size_t) d.write] = left + wetL * fb;
-        d.delay[1][(size_t) d.write] = right + wetR * fb;
-        d.write = (d.write + 1) % n;
-    }
-    else if (fam == 2 || fam == 3)
-    {
-        d.lfo += (0.05f + motion * 8.f) / (float) sampleRateHz;
-        if (d.lfo >= 1.f) d.lfo -= std::floor(d.lfo);
-        const float l = std::sin(d.lfo * juce::MathConstants<float>::twoPi);
-        if (fam == 2)
-        {
-            const float width = amount * (0.25f + shape * 0.75f);
-            wetL = left * (1.f + l * width);
-            wetR = right * (1.f - l * width);
-        }
-        else
-        {
-            const float c = 0.01f + tone * 0.22f;
-            d.bp[0] += c * ((left * (0.5f + 0.5f * l)) - d.bp[0]);
-            d.bp[1] += c * ((right * (0.5f - 0.5f * l)) - d.bp[1]);
-            wetL = d.bp[0]; wetR = d.bp[1];
-        }
-    }
-    else if (fam == 6)
-    {
-        const float thr = 0.08f + (1.f - amount) * 0.82f;
-        const float drive = 1.f + shape * 7.f;
-        auto comp = [thr, drive](float x)
-        {
-            const float ax = std::abs(x);
-            if (ax <= thr) return x;
-            return std::copysign(thr + (ax - thr) / drive, x);
-        };
-        wetL = comp(left); wetR = comp(right);
-    }
-    else
-    {
-        const float k = 1.f + amount * (2.f + shape * 10.f);
-        wetL = std::tanh(left * k);
-        wetR = std::tanh(right * k);
-        const float c = 0.02f + tone * 0.28f;
-        d.lp[0] += c * (wetL - d.lp[0]);
-        d.lp[1] += c * (wetR - d.lp[1]);
-        wetL = d.lp[0]; wetR = d.lp[1];
-    }
+    float wetR = right;
+    float wetL = dspEngine.processOne(slotDsp[slot].fx, type, cfg.amount,
+                                      cfg.tone, cfg.motion, cfg.shape,
+                                      left, right, wetR);
 
     const float over = slotOvermax[slot] <= 0.f ? 1.f : slotOvermax[slot];
-    const float wet = juce::jlimit(0.f, 1.f, (0.15f + mix * 0.85f) * juce::jmin(1.6f, over));
+    const float wet = juce::jlimit(0.f, 1.f, (0.15f + cfg.mix * 0.85f) * juce::jmin(1.6f, over));
     const float drive = juce::jmax(1.f, over);
     left = left * (1.f - wet) + std::tanh(wetL * drive) * wet;
     right = right * (1.f - wet) + std::tanh(wetR * drive) * wet;

@@ -604,8 +604,8 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     chainUndoBtn.onClick = [this] { undoLast(); };
     chainBreakBtn.onClick = [this] { pendingSpecial = true; pendingSpecialType = KyotoAudioProcessor::kBreakType; pendingLabel = "CHAIN BREAK"; armedStyle = "dial"; placing = true; status.setText("Break is a knob part - click a glowing knob bay.", juce::dontSendNotification); panel.placing = true; panel.armedStyle = armedStyle; syncPanelMouse(); panel.repaint(); };
     chainMixBtn.onClick = [this] { pendingSpecial = true; pendingSpecialType = KyotoAudioProcessor::kMixType; pendingLabel = "MASTER MIX"; armedStyle = "fader"; placing = true; status.setText("Mix is a fader part - click a glowing fader bay.", juce::dontSendNotification); panel.placing = true; panel.armedStyle = armedStyle; syncPanelMouse(); panel.repaint(); };
-    saveBtn.onClick = [this] { saveLocal(); publish(); };
-    upBtn.onClick = [this] { publish(); };
+    saveBtn.onClick = [this] { saveLocal(); if (token.isNotEmpty()) publish(); else status.setText("Saved locally - sign in to DreamShare to share it.", juce::dontSendNotification); };
+    upBtn.onClick = [this] { if (token.isEmpty()) { status.setText("Sign in to DreamShare first to publish.", juce::dontSendNotification); return; } publish(); };
     wavBtn.onClick = [this] { loadWav(); };
 
     fxAddBtn.onClick = [this] {
@@ -706,8 +706,8 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     sendBtn.setTooltip("Send chat message (Enter also sends)");
     feedBtn.setTooltip("Refresh the feed");
     wavBtn.setTooltip("Load a WAV file onto the chain");
-    saveBtn.setTooltip("Save and auto-upload to DreamShare (pending admin approval)");
-    upBtn.setTooltip("Publish this build to the catalog");
+    saveBtn.setTooltip("Save this build locally");
+    upBtn.setTooltip("Publish this build to the DreamShare catalog so others can load it");
     addBtn.setTooltip("Place the selected widget");
     chainUndoBtn.setTooltip("Undo the last builder step");
     fxAddBtn.setTooltip("Add the selected effect");
@@ -939,7 +939,7 @@ void KyotoAudioProcessorEditor::setPluginView(bool on)
     pluginView = on;
     pluginViewBtn.setVisible(!on && loggedIn);
     pluginBackBtn.setVisible(on);
-    shareBtn.setVisible(!on); chainBtn.setVisible(!on); fxBtn.setVisible(!on); logoutBtn.setVisible(!on); whoLabel.setVisible(!on);
+    shareBtn.setVisible(!on); chainBtn.setVisible(!on); fxBtn.setVisible(false); logoutBtn.setVisible(!on); whoLabel.setVisible(!on);
     if (on)
     {
         showTab(1);
@@ -1588,6 +1588,7 @@ void KyotoAudioProcessorEditor::mouseDown(const juce::MouseEvent& e)
 
 void KyotoAudioProcessorEditor::showTab(int next)
 {
+    next = juce::jlimit(0, 1, next); // FX Builder tab removed - fine-tune via right-click FX EDIT
     const bool openingChat = false;
     juce::ignoreUnused(openingChat);
     tab = loggedIn ? next : 0;
@@ -1638,7 +1639,7 @@ void KyotoAudioProcessorEditor::showTab(int next)
     wizardNextBtn.setButtonText(builderWizardStep == 4 ? "BUILD >" : builderWizardStep == 3 ? "PLACE A PART >" : "NEXT >");
     chainLevels.setVisible(builderReady && ! pluginView);
     addBtn.setVisible(builderReady); chainBreakBtn.setVisible(builderReady); chainMixBtn.setVisible(builderReady); chainRemoveBtn.setVisible(builderReady); chainUndoBtn.setVisible(builderReady); randomTemplateBtn.setVisible(builderReady);
-    nameBox.setVisible(builderReady); presetBox.setVisible(builderReady); saveBtn.setVisible(builderReady); upBtn.setVisible(false); kindBox.setVisible(builderReady); paramBox.setVisible(builderReady); pieceBox.setVisible(builderReady); wavBtn.setVisible(builderReady);
+    nameBox.setVisible(builderReady); presetBox.setVisible(builderReady); saveBtn.setVisible(builderReady); upBtn.setVisible(builderReady); kindBox.setVisible(builderReady); paramBox.setVisible(builderReady); pieceBox.setVisible(builderReady); wavBtn.setVisible(builderReady);
     gridStyleBox.setVisible(false); effectBox.setVisible(false);
     newMachineBtn.setVisible(share && loggedIn && !pluginView); randomMachineBtn.setVisible(share && loggedIn && !pluginView);
 
@@ -2502,7 +2503,7 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
     menu.addSubMenu("Add", add);
     if (selectedChainWidget >= 0 && selectedChainWidget < widgets.size())
     {
-        menu.addItem(7, "Edit Effect");
+        menu.addItem(7, "FX EDIT");
         menu.addItem(8, "Remove");
     }
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({ screenPos.x, screenPos.y, 1, 1 }),
@@ -2551,24 +2552,50 @@ void KyotoAudioProcessorEditor::editEffectPopup(int widgetIndex)
     if (widgetIndex < 0 || widgetIndex >= widgets.size()) return;
     auto node = widgets[widgetIndex]->node;
     const int dsp = (int) node.getProperty("slot", -1);
-    const double bpm = proc.hostBpm();
-    auto* win = new juce::AlertWindow("Edit Effect", "Overmax is allowed (0-200). Time is beats and follows the FL project BPM (" + juce::String(bpm, 1) + ").", juce::AlertWindow::NoIcon);
-    win->addTextEditor("amount", "120", "Amount % (overmax)");
-    win->addTextEditor("tone", "50", "Tone %");
-    win->addTextEditor("beats", "1", "Time (beats)");
-    win->addTextEditor("mix", "80", "Mix %");
+    if (dsp < 0 || dsp >= proc.slotCount()) { status.setText("This part has no effect slot to edit.", juce::dontSendNotification); return; }
+    const auto prefix = "s" + juce::String(dsp + 1).paddedLeft('0', 2);
+    const int type = (int) proc.apvts.getRawParameterValue(prefix + "type")->load();
+    const int fam = (type >= 0 && type < kt::kFxCount) ? kt::kFx[type].family : 0;
+    const juce::String fxName = (type >= 0 && type < kt::kFxCount) ? kt::kFx[type].name : juce::String("Effect");
+
+    // Family-specific knob labels (mirrors the former FX Builder knobs).
+    juce::String amountLabel = "Amount", toneLabel = "Tone", motionLabel = "Motion", mixLabel = "Mix", shapeLabel = "Shape";
+    if (fam == 0) { amountLabel = "Time"; motionLabel = "Feedback"; shapeLabel = "Spread"; }
+    else if (fam == 1) { amountLabel = "Size"; motionLabel = "Decay"; shapeLabel = "Diffusion"; }
+    else if (fam == 2 || fam == 3) { amountLabel = "Depth"; toneLabel = "Color"; motionLabel = "Rate"; shapeLabel = "Width"; }
+    else if (fam == 4) { amountLabel = "Cutoff"; toneLabel = "Resonance"; motionLabel = "Sweep"; shapeLabel = "Slope"; }
+    else if (fam == 5) { amountLabel = "Drive"; motionLabel = "Bias"; }
+    else if (fam == 6) { amountLabel = "Thresh"; toneLabel = "Ratio"; motionLabel = "Attack"; shapeLabel = "Release"; }
+
+    auto readParam = [&](const char* suffix) { return (double) proc.apvts.getRawParameterValue(prefix + suffix)->load(); };
+    const double curAmount = readParam("amt");
+    const double curTone = readParam("tone");
+    const double curMotion = readParam("mot");
+    const double curMix = readParam("mix");
+    const double curShape = readParam("shp");
+    const double curOver = proc.getSlotOvermax(dsp);
+
+    auto* win = new juce::AlertWindow("FX EDIT  -  " + fxName,
+        "Fine-tune this effect. Values are %. Overmax is allowed (0-200).", juce::AlertWindow::NoIcon);
+    win->addTextEditor("amount", juce::String(juce::roundToInt(curAmount * 100.0)), amountLabel + " %");
+    win->addTextEditor("tone", juce::String(juce::roundToInt(curTone * 100.0)), toneLabel + " %");
+    win->addTextEditor("motion", juce::String(juce::roundToInt(curMotion * 100.0)), motionLabel + " %");
+    win->addTextEditor("mix", juce::String(juce::roundToInt(curMix * 100.0)), mixLabel + " %");
+    win->addTextEditor("shape", juce::String(juce::roundToInt(curShape * 100.0)), shapeLabel + " %");
+    win->addTextEditor("overmax", juce::String(juce::roundToInt(curOver * 100.0)), "Overmax % (drive)");
     win->addButton("Apply", 1);
     win->addButton("Close", 0);
-    win->enterModalState(true, juce::ModalCallbackFunction::create([this, win, dsp, node](int code)
+    win->enterModalState(true, juce::ModalCallbackFunction::create([this, win, dsp, prefix, node](int code)
     {
         if (code == 1 && dsp >= 0)
         {
-            const auto prefix = "s" + juce::String(dsp + 1).paddedLeft('0', 2);
-            auto read = [&](const char* id, double fallback) { return win->getTextEditorContents(id).getDoubleValue() > 0.0 || win->getTextEditorContents(id) == "0" ? win->getTextEditorContents(id).getDoubleValue() : fallback; };
-            const double amount = read("amount", 100.0) / 100.0;
-            const double tone = read("tone", 50.0) / 100.0;
-            const double beats = read("beats", 1.0);
-            const double mix = read("mix", 80.0) / 100.0;
+            auto read = [&](const char* id, double fallback) { const auto t = win->getTextEditorContents(id); return t.getDoubleValue() > 0.0 || t == "0" ? t.getDoubleValue() : fallback; };
+            const double amount = juce::jlimit(0.0, 100.0, read("amount", 50.0)) / 100.0;
+            const double tone = juce::jlimit(0.0, 100.0, read("tone", 50.0)) / 100.0;
+            const double motion = juce::jlimit(0.0, 100.0, read("motion", 35.0)) / 100.0;
+            const double mix = juce::jlimit(0.0, 100.0, read("mix", 80.0)) / 100.0;
+            const double shape = juce::jlimit(0.0, 100.0, read("shape", 50.0)) / 100.0;
+            const double over = juce::jlimit(0.25, 4.0, read("overmax", 100.0) / 100.0);
             auto setOver = [&](const char* id, double value)
             {
                 if (auto* param = proc.apvts.getParameter(prefix + id))
@@ -2576,14 +2603,17 @@ void KyotoAudioProcessorEditor::editEffectPopup(int widgetIndex)
             };
             setOver("amt", amount);
             setOver("tone", tone);
+            setOver("mot", motion);
             setOver("mix", mix);
-            const double seconds = beats * 60.0 / juce::jmax(1.0, proc.hostBpm());
-            setOver("mot", juce::jlimit(0.0, 1.0, seconds / 2.0));
-            proc.setSlotOvermax(dsp, (float) juce::jlimit(0.25, 4.0, amount));
+            setOver("shp", shape);
+            proc.setSlotOvermax(dsp, (float) over);
             auto nodeCopy = node;
-            nodeCopy.setProperty("beats", beats, nullptr);
-            nodeCopy.setProperty("overmax", amount, nullptr);
-            status.setText("Effect edited. " + juce::String(beats, 2) + " beats at " + juce::String(proc.hostBpm(), 1) + " BPM.", juce::dontSendNotification);
+            nodeCopy.setProperty("overmax", over, nullptr);
+            status.setText("FX edited  -  " + juce::String(juce::roundToInt(amount * 100.0)) + "/"
+                           + juce::String(juce::roundToInt(tone * 100.0)) + "/" + juce::String(juce::roundToInt(motion * 100.0))
+                           + "/" + juce::String(juce::roundToInt(mix * 100.0)) + "/" + juce::String(juce::roundToInt(shape * 100.0))
+                           + "  overmax " + juce::String(juce::roundToInt(over * 100.0)) + "%", juce::dontSendNotification);
+            repaint();
         }
         delete win;
     }), true);
