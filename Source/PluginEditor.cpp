@@ -1565,9 +1565,13 @@ void SocialRail::paint(juce::Graphics& g)
                     g.setFont(kt::dsFont(pal, 10.f));
                     // Show shortened URL
                     juce::String url = L.clean;
-                    for (const auto& token : juce::StringArray::fromTokens(L.clean, " 
-	", {}))
-                        if (token.startsWithIgnoreCase("http")) { url = token; break; }
+                    {
+                        juce::StringArray toks;
+                        const char* breaks = " \t\r\n";
+                        toks.addTokens (L.clean, breaks, "");
+                        for (int ti = 0; ti < toks.size(); ++ti)
+                            if (toks[ti].startsWithIgnoreCase ("http")) { url = toks[ti]; break; }
+                    }
                     g.drawFittedText(url, media.reduced(10.f, 28.f).toNearestInt(), juce::Justification::topLeft, 4);
                     ty += 128.f;
                 }
@@ -1770,7 +1774,7 @@ void SocialDirectory::paint(juce::Graphics& g)
                     g.fillRoundedRectangle(chip, 3.f);
                     g.setColour(kt::c(pal.accent));
                     g.setFont(kt::dsFont(pal, 8.f, true));
-                    g.drawText(m.originTag.isNotEmpty() ? m.originTag : juce::String("KYTO"), chip, juce::Justification::centred);
+                    g.drawText("KYTO", chip, juce::Justification::centred);
                 }
             }
             g.setColour(kt::c(pal.muted));
