@@ -56,6 +56,7 @@ struct CanvasWidget : public juce::Component
     bool selected = false;
     bool hovered = false;
     bool resizing = false;
+    bool moving = false;
     int resizeHandle = -1;
     int startGx = 0, startGy = 0, startGw = 1, startGh = 1;
     juce::Point<int> dragStart;
@@ -105,7 +106,7 @@ private:
 class SocialRail : public juce::Component
 {
 public:
-    struct Bubble { juce::String id, user, text, themeId, discordId; bool dis = false; };
+    struct Bubble { juce::String id, user, text, themeId, discordId, originTag; bool dis = false; };
     struct Person { juce::String name, detail, themeId, kind, requestId; bool online = false; };
 
     std::function<void(const Bubble&, juce::Point<int>)> onBubbleMenu;

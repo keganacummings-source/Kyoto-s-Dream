@@ -20,6 +20,30 @@ const GATEWAY_URL = 'wss://gateway.discord.gg/?v=10&encoding=json';
 const INTENTS = 1 + 2 + 256 + 512 + 32768;
 const SWEEP_MS = 15000;   // alarm tick: heartbeats, reconnect, outbound poll, presence
 
+// Guilds the bridge is allowed to listen on (Kyoto + user servers).
+const ALLOWED_GUILDS = [
+  '1518252339864014929', // Kyoto original
+  '1440066181624234106', // TurboNerdos → TRBN tag
+];
+function guildAllowed(guildId, env) {
+  const id = String(guildId || '');
+  if (!id) return false;
+  if (ALLOWED_GUILDS.indexOf(id) >= 0) return true;
+  const envOne = String((env && env.DISCORD_GUILD_ID) || '');
+  if (envOne && envOne === id) return true;
+  const envMany = String((env && env.DISCORD_GUILD_IDS) || '');
+  if (envMany && envMany.split(/[,\s]+/).filter(Boolean).indexOf(id) >= 0) return true;
+  return false;
+}
+
+// Kyoto → KYTO, TurboNerdos → TRBN
+function originTagForGuild(guildId) {
+  const id = String(guildId || '');
+  if (id === '1440066181624234106') return 'TRBN';
+  if (id === '1518252339864014929') return 'KYTO';
+  return 'KYTO';
+}
+
 function json(o, status = 200) {
   return new Response(JSON.stringify(o), {
     status,
@@ -236,7 +260,7 @@ export class DiscordGateway {
       const member = this.members.get(id);
       if (!member || member.bot) continue;
       const linked = cfg.links ? cfg.links[id] : '';
-      out.push({ id, name: linked || member.name, dis: true });
+      out.push({ id, name: linked || member.name, dis: true, tag: 'KYTO' });
     }
     out.sort((a, b) => a.name.localeCompare(b.name));
     return out.slice(0, 100);
@@ -258,20 +282,30 @@ export class DiscordGateway {
   // ------------------------------------------------------- Discord -> DreamShare
   async relayIn(d) {
     if (!d || !d.author || d.author.bot || !d.guild_id) return;
+    if (!guildAllowed(d.guild_id, this.env)) return;
     if (!String(d.content || '').trim()) return;
     const cfg = await this.getCfg();
-    if (!cfg.channels.length || cfg.channels.indexOf(String(d.channel_id)) < 0) return;
+    // If no channel allow-list configured yet, accept any channel in an allowed guild.
+    if (cfg.channels.length && cfg.channels.indexOf(String(d.channel_id)) < 0) return;
     const isOwner = String(d.author.id) === String(this.env.DISCORD_OWNER_ID || '');
     if (!isOwner && !this.memberHasRole(d.member, cfg.roles)) return;
     if (d.member) this.rememberMember(d.member);
 
     const name = this.displayName(d.author, d.member);
     const text = String(d.content).replace(/\s+/g, ' ').trim().slice(0, 380);
+    const originTag = originTagForGuild(d.guild_id); // KYTO or TRBN
     try {
       await fetch(String(this.env.DREAMSHARE_API || '').replace(/\/+$/, '') + '/', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-dreamshare-bridge': this.env.DREAMSHARE_BRIDGE_KEY || '' },
-        body: JSON.stringify({ action: 'chat_send', text: text, dis: true, user: 'DreamUser:' + name })
+        body: JSON.stringify({
+          action: 'chat_send',
+          text: text,
+          dis: true,
+          tag: originTag,
+          guildId: String(d.guild_id || ''),
+          user: 'DreamUser:' + name
+        })
       });
     } catch (_) {}
   }
@@ -420,7 +454,7 @@ async function handleInteraction(interaction, gateway, env) {
     const res = await fetch(base + '/', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-dreamshare-bridge': String(env.DREAMSHARE_BRIDGE_KEY || '') },
-      body: JSON.stringify({ action: 'chat_send', text, dis: true, user: 'DreamUser:' + linked })
+      body: JSON.stringify({ action: 'chat_send', text, dis: true, tag: originTagForGuild(env.DISCORD_GUILD_ID), user: 'DreamUser:' + linked })
     }).catch(() => null);
     const ok = res ? (await res.json().catch(() => ({ ok: false }))).ok : false;
     return json({ type: 4, data: { content: ok ? 'Posted to DreamShare chat.' : 'DreamShare API did not accept it.', flags: 64 } });

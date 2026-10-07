@@ -393,7 +393,12 @@ void CanvasWidget::resized()
         slider.setSliderStyle(style == "hfader" ? juce::Slider::LinearHorizontal : juce::Slider::LinearVertical);
     }
     if (kind == Kind::Dial || kind == Kind::Slider)
-        slider.setBounds(4, 14, juce::jmax(8, getWidth() - 8), juce::jmax(8, getHeight() - 18));
+    {
+        // Leave a frame around the control so click-drag on the plastic shell can MOVE the part.
+        const int mx = juce::jmax(6, getWidth() / 7);
+        const int my = juce::jmax(8, getHeight() / 6);
+        slider.setBounds(mx, my, juce::jmax(8, getWidth() - 2 * mx), juce::jmax(8, getHeight() - 2 * my));
+    }
     if (waveDisplay)
         waveDisplay->setBounds(4, 14, juce::jmax(8, getWidth() - 8), juce::jmax(8, getHeight() - 30));
 }
@@ -469,11 +474,11 @@ void CanvasWidget::mouseDown(const juce::MouseEvent& e)
         return;
     }
     if (onSelect) onSelect();
-    // A corner grabs the part and resizes it onto the grid instead of using the control.
     resizeHandle = handleAt(e.getPosition());
     if (resizeHandle >= 0)
     {
         resizing = true;
+        moving = false;
         dragStart = e.getPosition();
         startGx = (int) node.getProperty("gx", 0);
         startGy = (int) node.getProperty("gy", 0);
@@ -481,6 +486,14 @@ void CanvasWidget::mouseDown(const juce::MouseEvent& e)
         startGh = juce::jmax(kMinCells, (int) node.getProperty("gh", 4));
         return;
     }
+    // Body drag moves the part on the free grid (screen, board, dials, etc.)
+    moving = true;
+    resizing = false;
+    dragStart = e.getPosition();
+    startGx = (int) node.getProperty("gx", 0);
+    startGy = (int) node.getProperty("gy", 0);
+    startGw = juce::jmax(kMinCells, (int) node.getProperty("gw", 4));
+    startGh = juce::jmax(kMinCells, (int) node.getProperty("gh", 4));
     if (kind == Kind::Key)
     {
         const int note = (int) node.getProperty("note", 60);
@@ -509,7 +522,7 @@ void CanvasWidget::mouseDown(const juce::MouseEvent& e)
 
 void CanvasWidget::mouseDrag(const juce::MouseEvent& e)
 {
-    if (! resizing) return;
+    if (! resizing && ! moving) return;
     const auto face = faceProvider ? faceProvider() : juce::Rectangle<float>();
     if (face.getWidth() < 4.f || face.getHeight() < 4.f) return;
     const float cw = face.getWidth() / (float) gridCols;
@@ -517,35 +530,52 @@ void CanvasWidget::mouseDrag(const juce::MouseEvent& e)
     const int dx = (int) std::lround((e.getPosition().x - dragStart.x) / juce::jmax(1.f, cw));
     const int dy = (int) std::lround((e.getPosition().y - dragStart.y) / juce::jmax(1.f, ch));
     int gx = startGx, gy = startGy, gw = startGw, gh = startGh;
-    switch (resizeHandle)
+    if (moving && ! resizing)
     {
-        case 0: gx = startGx + dx; gw = startGw - dx; gy = startGy + dy; gh = startGh - dy; break;
-        case 1: gw = startGw + dx; gy = startGy + dy; gh = startGh - dy; break;
-        case 2: gw = startGw + dx; gh = startGh + dy; break;
-        case 3: gx = startGx + dx; gw = startGw - dx; gh = startGh + dy; break;
-        case 4: gy = startGy + dy; gh = startGh - dy; break; // top edge
-        case 5: gw = startGw + dx; break;                     // right edge
-        case 6: gh = startGh + dy; break;                     // bottom edge
-        case 7: gx = startGx + dx; gw = startGw - dx; break;  // left edge
-        default: return;
+        gx = startGx + dx;
+        gy = startGy + dy;
+        gw = startGw;
+        gh = startGh;
     }
-    if (gw < kMinCells) { if (resizeHandle == 0 || resizeHandle == 3 || resizeHandle == 7) gx = startGx + startGw - kMinCells; gw = kMinCells; }
-    if (gh < kMinCells) { if (resizeHandle == 0 || resizeHandle == 1 || resizeHandle == 4) gy = startGy + startGh - kMinCells; gh = kMinCells; }
-    gw = juce::jmin(gw, gridCols);
-    gh = juce::jmin(gh, gridRows);
+    else
+    {
+        switch (resizeHandle)
+        {
+            case 0: gx = startGx + dx; gw = startGw - dx; gy = startGy + dy; gh = startGh - dy; break;
+            case 1: gw = startGw + dx; gy = startGy + dy; gh = startGh - dy; break;
+            case 2: gw = startGw + dx; gh = startGh + dy; break;
+            case 3: gx = startGx + dx; gw = startGw - dx; gh = startGh + dy; break;
+            case 4: gy = startGy + dy; gh = startGh - dy; break; // top edge
+            case 5: gw = startGw + dx; break; // right
+            case 6: gh = startGh + dy; break; // bottom
+            case 7: gx = startGx + dx; gw = startGw - dx; break; // left
+            default: break;
+        }
+    }
+    gw = juce::jmax(kMinCells, gw);
+    gh = juce::jmax(kMinCells, gh);
     gx = juce::jlimit(0, juce::jmax(0, gridCols - gw), gx);
     gy = juce::jlimit(0, juce::jmax(0, gridRows - gh), gy);
+    if (gx + gw > gridCols) gx = juce::jmax(0, gridCols - gw);
+    if (gy + gh > gridRows) gy = juce::jmax(0, gridRows - gh);
     applyGrid(gx, gy, gw, gh);
+    if (onGeometryChanged) onGeometryChanged(this);
 }
 
 void CanvasWidget::mouseUp(const juce::MouseEvent&)
 {
-    if (resizing) { resizing = false; resizeHandle = -1; repaint(); return; }
+    const bool wasInteracting = resizing || moving;
+    resizing = false;
+    moving = false;
+    resizeHandle = -1;
     if (kind == Kind::Key)
     {
         proc.noteOff((int) node.getProperty("note", 60));
         repaint();
+        return;
     }
+    if (wasInteracting)
+        repaint();
 }
 
 FxBrowser::FxBrowser(KyotoAudioProcessor& p) : proc(p)
@@ -889,7 +919,7 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     fxBtn.setTooltip("FX Builder: stack up to 16 effects into one saved effect");
     loginBtn.setTooltip("Sign in (a new name creates an account)");
     logoutBtn.setTooltip("Log out of DreamShare");
-    sendBtn.setTooltip("Send chat message (Enter also sends)");
+    sendBtn.setTooltip("Sends to DreamShare chat. Optional: /d message for Discord-only. Kyoto Discord posts appear here with KYTO (Kyoto) or TRBN (TurboNerdos) tags via the bot bridge.");
     feedBtn.setTooltip("Refresh the feed");
     wavBtn.setTooltip("Load a WAV file onto the chain");
     saveBtn.setTooltip("Save this build locally");
@@ -1177,7 +1207,7 @@ void KyotoAudioProcessorEditor::setPluginView(bool on)
     pluginView = on;
     pluginViewBtn.setVisible(!on && loggedIn);
     pluginBackBtn.setVisible(on);
-    shareBtn.setVisible(!on); chainBtn.setVisible(!on); fxBtn.setVisible(false); // FX Builder page removed from the VST chrome logoutBtn.setVisible(!on); whoLabel.setVisible(!on);
+    shareBtn.setVisible(!on); chainBtn.setVisible(!on); fxBtn.setVisible(false); logoutBtn.setVisible(!on); whoLabel.setVisible(!on);
     if (on)
     {
         showTab(1);
@@ -1355,7 +1385,16 @@ BubbleLayout layoutBubble(const SocialRail::Bubble& b, const kt::ThemePalette& p
         L.textH = tl.getHeight() + 2.f;
     }
     L.chipH = L.ref.valid() ? 28.f * s : 0.f;
-    const float bodyH = (L.textH > 0.f ? 2.f + L.textH : 0.f) + (L.chipH > 0.f ? 4.f + L.chipH : 0.f);
+    // Extra height for image/gif link embeds in unified chat.
+    float mediaH = 0.f;
+    {
+        const auto lower = L.clean.toLowerCase();
+        if (lower.contains("http") && (lower.contains(".gif") || lower.contains(".png") || lower.contains(".jpg")
+                || lower.contains(".jpeg") || lower.contains(".webp") || lower.contains("tenor.com")
+                || lower.contains("giphy.com") || lower.contains("discordapp")))
+            mediaH = 128.f;
+    }
+    const float bodyH = (L.textH > 0.f ? 2.f + L.textH : 0.f) + (L.chipH > 0.f ? 4.f + L.chipH : 0.f) + (mediaH > 0.f ? 4.f + mediaH : 0.f);
     const float minH = avatar + 4.f;
     L.h = juce::jmax(minH, L.nameH + bodyH) + 2.f * kMsgPad;
     return L;
@@ -1477,21 +1516,24 @@ void SocialRail::paint(juce::Graphics& g)
             g.drawText("Today", (int) (L.contentX + nameW + 8.f), (int) nameY,
                        (int) juce::jmax(40.f, L.contentW - nameW - 8.f), (int) L.nameH, juce::Justification::centredLeft, true);
 
-            // DIS tag for Discord-relayed messages.
-            if (m.dis)
+            // Community origin badge: KYTO (Kyoto) or TRBN (TurboNerdos).
+            if (m.dis || m.originTag.isNotEmpty())
             {
-                juce::Rectangle<float> chip(L.contentX + nameW + 44.f, nameY + (L.nameH - 13.f) * 0.5f, 28.f, 13.f);
+                juce::String badge = m.originTag.toUpperCase();
+                if (badge.isEmpty()) badge = "KYTO";
+                if (badge != "TRBN" && badge != "KYTO") badge = "KYTO";
+                juce::Rectangle<float> chip(L.contentX + nameW + 44.f, nameY + (L.nameH - 13.f) * 0.5f, 38.f, 13.f);
                 if (chip.getRight() < w - 6.f)
                 {
                     g.setColour(kt::c(pal.accent).withAlpha(0.18f));
                     g.fillRoundedRectangle(chip, 3.f);
                     g.setColour(kt::c(pal.accent));
                     g.setFont(kt::dsFont(pal, 8.f, true));
-                    g.drawText("DIS", chip, juce::Justification::centred);
+                    g.drawText(badge, chip, juce::Justification::centred);
                 }
             }
 
-            // Message body.
+            // Message body + media embeds (image / gif links).
             float ty = nameY + L.nameH + 2.f;
             if (L.clean.isNotEmpty())
             {
@@ -1499,6 +1541,36 @@ void SocialRail::paint(juce::Graphics& g)
                 as.append(L.clean, kt::dsFont(pal, 12.f), kt::c(pal.text));
                 as.setWordWrap(juce::AttributedString::byWord);
                 as.draw(g, juce::Rectangle<float>(L.contentX, ty, L.contentW, L.textH + 2.f));
+                ty += L.textH + 4.f;
+            }
+            // Detect image/gif URLs and draw an embed card (actual pixels load via host / attachment when available).
+            {
+                const auto lower = L.clean.toLowerCase();
+                const bool looksMedia = lower.contains("http") && (
+                    lower.contains(".gif") || lower.contains(".png") || lower.contains(".jpg")
+                    || lower.contains(".jpeg") || lower.contains(".webp") || lower.contains("tenor.com")
+                    || lower.contains("giphy.com") || lower.contains("media.discordapp")
+                    || lower.contains("cdn.discordapp"));
+                if (looksMedia)
+                {
+                    auto media = juce::Rectangle<float>(L.contentX, ty, juce::jmin(L.contentW, 280.f), 120.f);
+                    g.setColour(kt::c(pal.panel).brighter(0.08f));
+                    g.fillRoundedRectangle(media, 8.f);
+                    g.setColour(kt::c(pal.accent).withAlpha(0.55f));
+                    g.drawRoundedRectangle(media, 8.f, 1.2f);
+                    g.setColour(kt::c(pal.accent));
+                    g.setFont(kt::dsFont(pal, 11.f, true));
+                    g.drawText("MEDIA EMBED", media.reduced(10.f, 8.f).removeFromTop(16.f), juce::Justification::centredLeft);
+                    g.setColour(kt::c(pal.muted));
+                    g.setFont(kt::dsFont(pal, 10.f));
+                    // Show shortened URL
+                    juce::String url = L.clean;
+                    for (const auto& token : juce::StringArray::fromTokens(L.clean, " 
+	", {}))
+                        if (token.startsWithIgnoreCase("http")) { url = token; break; }
+                    g.drawFittedText(url, media.reduced(10.f, 28.f).toNearestInt(), juce::Justification::topLeft, 4);
+                    ty += 128.f;
+                }
             }
             if (L.chipH > 0.f) drawFileChip(g, pal, bubbleChipRect(0.f, y, w, L), L.ref);
             y += L.h + kMsgGap;
@@ -1698,7 +1770,7 @@ void SocialDirectory::paint(juce::Graphics& g)
                     g.fillRoundedRectangle(chip, 3.f);
                     g.setColour(kt::c(pal.accent));
                     g.setFont(kt::dsFont(pal, 8.f, true));
-                    g.drawText("DIS", chip, juce::Justification::centred);
+                    g.drawText(m.originTag.isNotEmpty() ? m.originTag : juce::String("KYTO"), chip, juce::Justification::centred);
                 }
             }
             g.setColour(kt::c(pal.muted));
@@ -1914,7 +1986,7 @@ void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
         g.fillRoundedRectangle(catalogCard, 10.f);
         g.setColour(kt::c(theme.accent));
         g.setFont(kt::font(theme, 12.f, true));
-        g.drawText(railMode == 0 ? "DREAM CHAT" : (railMode == 2 ? "DISCORD #GENERAL" : "FRIENDS / ONLINE"), chatCard.getX()+12, chatCard.getY()+6, 220, 18, juce::Justification::left);
+        g.drawText(railMode == 0 ? "DREAM CHAT" : (railMode == 2 ? "DREAMSHARE CHAT" : "FRIENDS / ONLINE"), chatCard.getX()+12, chatCard.getY()+6, 220, 18, juce::Justification::left);
         juce::String centerLabel = centerMode == 0 ? "COMMUNITY PLUGINS" : centerMode == 2 ? "MY PLUGINS" : centerMode == 4 ? "PENDING APPROVAL" : centerMode == 5 ? "SOCIALS  -  DREAMSHARE DIRECTORY" : "THREADS";
         g.drawText(centerLabel, catalogCard.getX()+12, catalogCard.getY()+6, 200, 18, juce::Justification::left);
     }
@@ -2033,8 +2105,8 @@ void KyotoAudioProcessorEditor::showTab(int next)
     msgBox.setVisible(share && loggedIn && (railMode == 0 || railMode == 2)); sendBtn.setVisible(share && loggedIn && (railMode == 0 || railMode == 2)); feedBtn.setVisible(share && loggedIn);
     themeBox.setVisible(share && loggedIn); // global UI theme only on DreamShare home
     // Templates, themes, and builder action buttons are now in the right-click context menu.
-    shellBox.setVisible(false); playgroundThemeBox.setVisible(false);
-    shellLabel.setVisible(false); playgroundThemeLabel.setVisible(false);
+    shellBox.setVisible(false); playgroundThemeBox.setVisible(true);
+    shellLabel.setVisible(false); playgroundThemeLabel.setVisible(true);
     catalogView.setVisible(share && loggedIn && centerMode != 3);
     threadBoard.setVisible(share && loggedIn && centerMode == 3);
     chatView.setVisible(share && loggedIn);
@@ -2056,7 +2128,7 @@ void KyotoAudioProcessorEditor::showTab(int next)
     fxAmountLabel.setVisible(fx); fxToneLabel.setVisible(fx); fxMotionLabel.setVisible(fx); fxMixLabel.setVisible(fx); fxShapeLabel.setVisible(fx);
     fxBreakBtn.setVisible(fx); fxMixBtn.setVisible(fx); fxRandomBtn.setVisible(fx); fxClearBtn.setVisible(fx); stackLabel.setVisible(fx);
 
-    shareBtn.setToggleState(share, juce::dontSendNotification); chainBtn.setToggleState(chain, juce::dontSendNotification); fxBtn.setToggleState(fx, juce::dontSendNotification);
+    shareBtn.setToggleState(share, juce::dontSendNotification); chainBtn.setToggleState(chain, juce::dontSendNotification); fxBtn.setVisible(false); fxBtn.setToggleState(false, juce::dontSendNotification);
     catalogModeBtn.setToggleState(centerMode == 0, juce::dontSendNotification); threadsModeBtn.setToggleState(centerMode == 3, juce::dontSendNotification);
     pluginsTabBtn.setToggleState(centerMode == 0, juce::dontSendNotification); effectsTabBtn.setToggleState(centerMode == 1, juce::dontSendNotification);
     myPluginsBtn.setToggleState(centerMode == 2, juce::dontSendNotification); pendingBtn.setToggleState(centerMode == 4, juce::dontSendNotification);
@@ -2079,7 +2151,7 @@ void KyotoAudioProcessorEditor::resized()
         chainLevels.setVisible(false);
         pluginBackBtn.setBounds(24, 20, 104, 34);
         pluginViewBtn.setVisible(false); newMachineBtn.setVisible(false); randomMachineBtn.setVisible(false);
-        shareBtn.setVisible(false); chainBtn.setVisible(false); fxBtn.setVisible(false); // FX Builder page removed from the VST chrome logoutBtn.setVisible(false); whoLabel.setVisible(false); status.setVisible(false);
+        shareBtn.setVisible(false); chainBtn.setVisible(false); fxBtn.setVisible(false); logoutBtn.setVisible(false); whoLabel.setVisible(false); status.setVisible(false);
         return;
     }
     const int navY = 8;
@@ -2094,7 +2166,8 @@ void KyotoAudioProcessorEditor::resized()
     pluginViewBtn.setBounds(rightX - logoutW - whoW - pluginW - 16, navY, pluginW, 32);
     shareBtn.setBounds(190, navY, 96, 32);
     chainBtn.setBounds(292, navY, 150, 32);
-    fxBtn.setBounds(448, navY, 112, 32);
+    fxBtn.setVisible(false);
+    fxBtn.setBounds(0, 0, 0, 0);
     const int statusX = 572;
     const int statusRight = pluginViewBtn.getX() - 12;
     status.setBounds(statusX, navY, juce::jmax(0, statusRight - statusX), 32);
@@ -2407,8 +2480,9 @@ void KyotoAudioProcessorEditor::reflowSeries()
     repairParents();
     panel.parentOf = [this](int bay) {
         for (auto* w : widgets)
-            if ((int) w->node.getProperty("shellSlot", -1) == bay) return (int) w->node.getProperty("parent", 0);
-        return 0;
+            if ((int) w->node.getProperty("shellSlot", -1) == bay)
+                return (int) w->node.getProperty("parent", -1);
+        return -1;
     };
     panel.selectedSlot = (selectedChainWidget >= 0 && selectedChainWidget < widgets.size())
         ? (int) widgets[selectedChainWidget]->node.getProperty("shellSlot", -1) : -1;
@@ -2628,11 +2702,12 @@ void KyotoAudioProcessorEditor::clearWireFrom(int widgetIndex)
     if (widgetIndex < 0 || widgetIndex >= widgets.size()) return;
     captureSnapshot();
     auto n = widgets[widgetIndex]->node;
-    n.setProperty("parent", 0, nullptr);
+    n.setProperty("parent", -1, nullptr);
     n.setProperty("wiredInto", -1, nullptr);
     rebuildWireGraph();
     rebuildCanvas();
-    status.setText("Cleared wire from " + n.getProperty("label").toString(), juce::dontSendNotification);
+    panel.repaint();
+    status.setText("Cut wire from " + n.getProperty("label").toString(), juce::dontSendNotification);
 }
 
 void KyotoAudioProcessorEditor::putWireInto(int fromWidgetIndex, int intoWidgetIndex)
@@ -2799,8 +2874,8 @@ void KyotoAudioProcessorEditor::placeInSlot(int slot)
     int insertedDsp = -1;
     // Manual wiring only: new parts are unconnected (parent = motherboard).
     // Use left-click select + right-click "Put wire Into" to plug A into B.
-    int parentBay = 0;
-    juce::String parentLabel = "the motherboard (unwired — right-click Put wire Into)";
+    int parentBay = -1; // -1 = unwired (do NOT default-wire to screen/motherboard)
+    juce::String parentLabel = "unwired (use Put wire Into)";
     int parentDsp = 0;
     if (!cosmetic)
     {
@@ -2845,6 +2920,7 @@ void KyotoAudioProcessorEditor::placeInSlot(int slot)
     }
     node.setProperty("series", proc.uiState.getNumChildren(), nullptr);
     node.setProperty("parent", parentBay, nullptr);
+    node.setProperty("wiredInto", -1, nullptr);
     if (insertedDsp >= 0)
     {
         // Parts that used to follow the parent now follow the new part, so the wires show the real signal order.
@@ -2852,7 +2928,7 @@ void KyotoAudioProcessorEditor::placeInSlot(int slot)
         {
             auto other = proc.uiState.getChild(i);
             if (! other.hasType("w")) continue;
-            if ((int) other.getProperty("slot", -1) > insertedDsp && (int) other.getProperty("parent", 0) == parentBay
+            if (parentBay >= 0 && (int) other.getProperty("slot", -1) > insertedDsp && (int) other.getProperty("parent", -1) == parentBay
                 && (int) other.getProperty("shellSlot", -1) != parentBay)
                 other.setProperty("parent", slot, nullptr);
         }
@@ -2880,6 +2956,17 @@ void KyotoAudioProcessorEditor::placeInSlot(int slot)
 
 void KyotoAudioProcessorEditor::rebuildCanvas()
 {
+    // Legacy builds defaulted parent=0 (screen). Treat as unwired unless wiredInto is set.
+    for (int i = 0; i < proc.uiState.getNumChildren(); ++i)
+    {
+        auto child = proc.uiState.getChild(i);
+        if (! child.hasType("w")) continue;
+        if (child.getProperty("kind").toString() == "board") continue;
+        const int par = (int) child.getProperty("parent", -1);
+        const int wi = (int) child.getProperty("wiredInto", -1);
+        if (par == 0 && wi < 0)
+            child.setProperty("parent", -1, nullptr);
+    }
     {
         juce::Array<int> order;
         kt::wire::rebuildOrder(proc.uiState, order);
@@ -3021,9 +3108,8 @@ void KyotoAudioProcessorEditor::randomizeTemplate()
     juce::Random rng((juce::int64) juce::Time::getMillisecondCounterHiRes());
     // New roll -> new random layout for the hidden hardware too.
     proc.uiState.setProperty("internalsSeed", (int) rng.nextInt(1000000) + 1, nullptr);
-    shellIndex = rng.nextInt(pb::kShellCount);
+    // Keep current shell geometry; templates are retired — only re-roll parts on the free grid.
     shellBox.setSelectedId(shellIndex + 1, juce::dontSendNotification);
-    applyShell(shellIndex);
     juce::Array<juce::ValueTree> keep;
     for (int i = proc.uiState.getNumChildren(); --i >= 0;)
     {
@@ -3058,6 +3144,18 @@ void KyotoAudioProcessorEditor::randomizeTemplate()
         ++placed;
     }
     reflowSeries();
+        // Move the screen/motherboard to a fresh grid cell so Randomize actually relocates it.
+    for (int i = 0; i < proc.uiState.getNumChildren(); ++i)
+    {
+        auto child = proc.uiState.getChild(i);
+        if (! child.hasType("w") || child.getProperty("kind").toString() != "board") continue;
+        juce::Random rng2((juce::int64) juce::Time::getMillisecondCounterHiRes() + 17);
+        child.setProperty("gx", 2 + rng2.nextInt(18), nullptr);
+        child.setProperty("gy", 2 + rng2.nextInt(10), nullptr);
+        child.setProperty("gw", juce::jmax(6, (int) child.getProperty("gw", 10)), nullptr);
+        child.setProperty("gh", juce::jmax(4, (int) child.getProperty("gh", 6)), nullptr);
+    }
+    rebuildCanvas();
     status.setText("Random template: essentials covered, " + juce::String(placed) + " parts, limit " + juce::String(limit) + ".", juce::dontSendNotification);
 }
 
@@ -3206,7 +3304,7 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
         menu.addItem(5203, "Publish");
         menu.addItem(5204, "Plugin View");
         menu.addItem(5205, "Undo");
-        menu.addItem(5206, "Randomize Template");
+        menu.addItem(5206, "Randomize Parts");
         menu.addSeparator();
         menu.addItem(5999, "Guide");
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({ screenPos.x, screenPos.y, 1, 1 }),
@@ -3290,12 +3388,12 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
             const auto dstName = widgets[clickHost]->node.getProperty("label").toString();
             menu.addSectionHeader("Wire");
             menu.addItem(6001, "Put wire Into: " + dstName + "  ←  " + srcName);
-            menu.addItem(6002, "Clear wire from " + srcName);
+            menu.addItem(6002, "Cut wire from " + srcName);
             menu.addSeparator();
         }
         else if (selectedChainWidget >= 0)
         {
-            menu.addItem(6002, "Clear wire from selected");
+            menu.addItem(6002, "Cut wire from selected");
             menu.addSeparator();
         }
     }
@@ -3339,17 +3437,13 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
     arMenu.addItem(5104, "Freeform", true, machineDesign.playgroundMode == MachineDesign::PlaygroundMode::Freeform);
     menu.addSubMenu("Aspect Ratio", arMenu);
 
-    // Template/shell submenu
-    juce::PopupMenu shellMenu;
-    for (int i = 0; i < pb::kShellCount; ++i)
-        shellMenu.addItem(5300 + i, pb::kShells[i].name, true, shellIndex == i);
-    menu.addSubMenu("Template", shellMenu);
+    // Templates removed — free playground only.
 
     menu.addSeparator();
 
     // Machine operations
     menu.addItem(5200, "Randomize Machine");
-    menu.addItem(5206, "Randomize Template");
+    menu.addItem(5206, "Randomize Parts");
     menu.addItem(5205, "Undo");
     menu.addSeparator();
     menu.addItem(5201, "Load WAV");
@@ -3388,8 +3482,6 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
             if (result == 5102) { startNewMachine(1); return; }
             if (result == 5103) { startNewMachine(2); return; }
             if (result == 5104) { startNewMachine(3); return; }
-            // Template/shell
-            if (result >= 5300 && result < 5300 + pb::kShellCount) { applyShell(result - 5300); return; }
             // Machine ops
             if (result == 5200) { randomizeMachine(); return; }
             if (result == 5201) { loadWav(); return; }
@@ -3921,26 +4013,42 @@ void KyotoAudioProcessorEditor::logout()
 void KyotoAudioProcessorEditor::sendChat()
 {
     scrollChatOnRefresh = true;
-    const auto text = msgBox.getText().trim(); const auto tokenCopy = token;
+    auto text = msgBox.getText().trim();
+    const auto tokenCopy = token;
     if (tokenCopy.isEmpty()) return;
     if (pendingAttach.existsAsFile() && pendingAttachTarget == 1) { sendWithAttachment(1, text); return; }
     if (text.isEmpty()) return;
+
+    // Default: always post into DreamShare live chat.
+    // Optional: "/d ..." still posts only to Discord for power users.
+    // The Discord bridge bot (not a VST poll loop) mirrors Discord guild traffic into chat with KYTO/TRBN origin tags.
+    bool forceDiscord = false;
+    if (text.startsWithIgnoreCase("/d ") || text.startsWithIgnoreCase("/discord "))
+    {
+        forceDiscord = true;
+        text = text.fromFirstOccurrenceOf(" ", false, false).trim();
+        if (text.isEmpty()) return;
+    }
+
     juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
-    const int modeCopy = railMode;
     const auto accountCopy = account;
-    std::thread([safe, text, tokenCopy, modeCopy, accountCopy] {
+
+    std::thread([safe, text, tokenCopy, accountCopy, forceDiscord] {
         kt::DreamResult r;
-        if (modeCopy == 2)
+        if (forceDiscord)
             r = kt::sendDiscordMessage(tokenCopy, accountCopy, text);
         else
-            r = kt::sendChat(tokenCopy, text);
-        juce::MessageManager::callAsync([safe, r, modeCopy] {
+            r = kt::sendChat(tokenCopy, text); // DreamShare chat is the default path
+        juce::MessageManager::callAsync([safe, r, forceDiscord] {
             if (safe == nullptr) return;
             if (!r.ok) safe->status.setText(r.error, juce::dontSendNotification);
-            else {
+            else
+            {
                 safe->msgBox.clear();
-                if (modeCopy == 2) safe->refreshDiscord();
-                else safe->refreshFeed();
+                // Refresh DreamShare feed only — no constant Discord polling from the VST.
+                safe->refreshFeed();
+                if (forceDiscord)
+                    safe->status.setText("Sent to Discord", juce::dontSendNotification);
             }
         });
     }).detach();
@@ -4578,6 +4686,8 @@ void KyotoAudioProcessorEditor::refreshDiscord()
                         b.text = m->getProperty("text").toString();
                         b.themeId = "trippah";
                         b.dis = true;
+                        b.originTag = m->getProperty("tag").toString();
+                        if (b.originTag.isEmpty()) b.originTag = "KYTO";
                         b.discordId = m->getProperty("discordId").toString();
                         if (b.discordId.isEmpty()) b.discordId = m->getProperty("authorId").toString();
                         bubbles.add(b);
@@ -4622,6 +4732,8 @@ void KyotoAudioProcessorEditor::refreshFeed()
                     b.themeId = m->getProperty("theme").toString();
                     if (b.themeId.isEmpty()) b.themeId = "trippah";
                     b.dis = (bool) m->getProperty("dis");
+                    b.originTag = m->getProperty("tag").toString();
+                    if (b.originTag.isEmpty() && b.dis) b.originTag = "KYTO";
                     bubbles.add(b);
                     log << b.user << ": " << b.text << "\n";
                 }

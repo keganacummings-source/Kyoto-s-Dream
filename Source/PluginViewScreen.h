@@ -627,7 +627,7 @@ private:
             const int bay = (int) node.getProperty("shellSlot", -1);
             if (bay < 0 || bay >= shell.slotCount) continue;
             centre[bay] = pb::slotRect(face, shell.slots[bay]).getCentre();
-            parentOf[bay] = (int) node.getProperty("parent", 0);
+            parentOf[bay] = (int) node.getProperty("parent", -1);
         }
         if (centre.find(0) == centre.end()) return;
         const auto accent = kt::c(editor.machineDesign.palette().accent);
@@ -636,7 +636,8 @@ private:
             const int bay = entry.first;
             if (bay == 0) continue;
             int par = parentOf[bay];
-            if (par == bay || centre.find(par) == centre.end()) par = 0;
+            if (par < 0 || par == bay || centre.find(par) == centre.end())
+                continue; // no automatic motherboard wire
             const auto from = centre[par];
             const auto to = entry.second;
             juce::Path wire;

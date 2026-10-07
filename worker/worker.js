@@ -806,10 +806,14 @@ function presenceAt(v) { return (v && typeof v === 'object') ? Number(v.at || 0)
 function presenceTheme(v) { return (v && typeof v === 'object' && v.theme) ? String(v.theme) : 'trippah'; }
 
 // ---- Kyoto Discord chat (native #general via bot — VST never holds the token) ----
-// Fixed channel: Kyoto server #general
+// Fixed channel: Kyoto server #general (legacy) + multi-guild allow list
 // https://discord.com/channels/1518252339864014929/1518252340707197000
 const KYOTO_DISCORD_GUILD = '1518252339864014929';
 const KYOTO_DISCORD_CHANNEL = '1518252340707197000';
+const KYOTO_DISCORD_GUILDS = [
+  '1518252339864014929',
+  '1440066181624234106'
+];
 
 function formatDreamShareDiscordContent(username, text) {
   const user = String(username || 'KyotoSpxrit').replace(/[\r\n]/g, ' ').trim().slice(0, 32) || 'KyotoSpxrit';
@@ -841,6 +845,8 @@ function parseDreamShareDiscordMessage(m) {
     at: m.timestamp || '',
     fromDreamShare: fromDs,
     dis: true,
+    trbn: true,
+    tag: 'TRBN',
     discordId: authorId,
     authorId: authorId
   };
@@ -1997,6 +2003,11 @@ export default {
           };
           // Discord bridge lines carry a DIS tag in the VST.
           if (bridge && (body.dis === true || body.dis === 1 || body.dis === 'true')) msg.dis = true;
+          // Origin community badge: KYTO (Kyoto) or TRBN (TurboNerdos)
+          if (body.tag) msg.tag = String(body.tag).slice(0, 8).toUpperCase();
+          else if (body.guildId === '1440066181624234106') msg.tag = 'TRBN';
+          else if (body.guildId === '1518252339864014929' || msg.dis) msg.tag = 'KYTO';
+          if (body.guildId) msg.guildId = String(body.guildId).slice(0, 32);
           feed.chat.push(msg);
           // Keep only the last 100 messages — older ones are dropped
           if (feed.chat.length > 100) feed.chat = feed.chat.slice(-100);

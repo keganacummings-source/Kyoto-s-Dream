@@ -1071,7 +1071,7 @@ public:
     std::function<void(int, juce::Point<int>)> onRightClick;
     std::function<bool(int)> occupied;
     std::function<juce::Point<float>(int)> anchor;
-    std::function<int(int)> parentOf;       // bay a part is connected into (0 = motherboard)
+    std::function<int(int)> parentOf;       // bay wired into (-1 = unwired, 0 = motherboard when explicit)
     std::function<void()> onBackgroundClick; // plain click on empty case = deselect
     int selectedSlot = -1;
     int hoverSlot = -1;
@@ -1095,7 +1095,7 @@ public:
         g.drawText("PLUGIN BUILDER", 18, 12, 220, 18, juce::Justification::left);
         g.setColour(kt::c(theme.muted));
         g.setFont(kt::font(theme, 11.5f));
-        g.drawText(juce::String(shell.name) + "  -  click a part, then right-click a free bay: the new part plugs into it", 18, 31, getWidth() - 36, 15, juce::Justification::left);
+        g.drawText("Free playground  -  drag parts on the grid. Select then right-click Put wire Into / Cut wire.", 18, 31, getWidth() - 36, 15, juce::Justification::left);
 
         auto face = faceRect(bounds);
         const float radius = shellRadius(shell);
@@ -1126,13 +1126,14 @@ public:
         g.setColour(accent.withAlpha(0.5f));
         g.drawLine(face.getRight() - 130, face.getBottom() - 9.f, face.getRight() - 20.f, face.getBottom() - 9.f, 1.2f);
 
-        // Bay wiring: every filled bay is joined back to the motherboard, lego-style.
+        // Bay wiring: ONLY explicit Put wire Into links (parent >= 0). Unwired parts have parent -1.
         for (int i = 1; i < shell.slotCount; ++i)
         {
             if (occupied && occupied(i) && anchor)
             {
-                int par = parentOf ? parentOf(i) : 0;
-                if (par < 0 || par == i || par >= shell.slotCount) par = 0;
+                int par = parentOf ? parentOf(i) : -1;
+                if (par < 0 || par == i || par >= shell.slotCount)
+                    continue; // no default wire to the screen/motherboard
                 auto a = anchor(par);
                 auto b = anchor(i);
                 if (a.x > 1.f && b.x > 1.f)
