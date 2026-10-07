@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include "Attach.h"
 
 namespace kt
 {
@@ -30,4 +31,8 @@ DreamResult sendDM(const juce::String& token, const juce::String& peer, const ju
 DreamResult friendRequest(const juce::String& token, const juce::String& action, const juce::String& target);
 DreamResult react(const juce::String& token, const juce::String& kind, const juce::String& id, const juce::String& emoji);
 DreamResult postAction(const juce::String& action, juce::var body, const juce::String& token);
+
+// File attachments (see Attach.h). Both run on a background thread; neither touches the UI.
+bool uploadAttachment(const juce::String& token, const juce::File& file, AttachRef& out, juce::String& error);
+bool downloadAttachment(const juce::String& token, const AttachRef& ref, const juce::File& dest, juce::String& error);
 }

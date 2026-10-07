@@ -98,4 +98,41 @@ inline juce::Font font(const ThemePalette& t, float size, bool bold = false)
     return juce::Font(juce::FontOptions(t.fontFamily, size * t.textScale, bold ? juce::Font::bold : juce::Font::plain));
 }
 
+// ---- DreamShare readability scale -------------------------------------------------------
+// DreamShare (chat, threads, catalog cards) uses dsFont() so text can be made larger or smaller
+// without touching the builders. The value is remembered between sessions.
+inline float& dsScale()
+{
+    static float s = 1.12f;
+    return s;
+}
+
+inline juce::File dsScaleFile()
+{
+    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+        .getChildFile("KyotoSpxrit").getChildFile("dreamshare_ui_scale.txt");
+}
+
+inline void loadDsScale()
+{
+    auto f = dsScaleFile();
+    if (f.existsAsFile())
+    {
+        const float v = f.loadFileAsString().trim().getFloatValue();
+        if (v >= 0.8f && v <= 1.6f) dsScale() = v;
+    }
+}
+
+inline void saveDsScale()
+{
+    auto f = dsScaleFile();
+    f.getParentDirectory().createDirectory();
+    f.replaceWithText(juce::String(dsScale(), 2));
+}
+
+inline juce::Font dsFont(const ThemePalette& t, float size, bool bold = false)
+{
+    return font(t, size * dsScale(), bold);
+}
+
 } // namespace kt

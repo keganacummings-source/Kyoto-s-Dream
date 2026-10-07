@@ -83,37 +83,20 @@ public:
         if (geekOn) drawInternals(g, interior);
 
         // 2) The top cover: faceplate, bay wiring and the placed parts running live.
-        g.setColour(kt::c(theme.bg).withAlpha(0.95f));
+        //    In Geek mode the cover fades to a faint ghost, so the whole machine can be read at a glance
+        //    (no more jumping spot-lights - it is meant to be watched, not hunted).
+        const float cover = 1.f - 0.84f * geekReveal;
+        g.setColour(kt::c(theme.bg).withAlpha(0.95f * cover));
         g.fillRoundedRectangle(face, bodyRadius);
         g.setColour(accent.withAlpha(0.45f));
         g.drawRoundedRectangle(face, bodyRadius, 1.3f);
+        if (geekOn) g.beginTransparencyLayer(juce::jmax(0.14f, cover));
         drawBayWiring(g, face, shell);
         drawPlacedParts(g, face, shell);
+        if (geekOn) g.endTransparencyLayer();
 
-        // 3) Geek x-ray: punch drifting transparent spots into the top cover.
-        if (geekOn)
-        {
-            const int holes = 5;
-            for (int i = 0; i < holes; ++i)
-            {
-                const float hx = 0.5f + 0.42f * std::sin(animPhase * 0.7f + (float) i * 2.399f);
-                const float hy = 0.5f + 0.40f * std::cos(animPhase * 0.53f + (float) i * 1.71f);
-                const float cx = interior.getX() + hx * interior.getWidth();
-                const float cy = interior.getY() + hy * interior.getHeight();
-                const float r = interior.getWidth() * (0.075f + 0.02f * (float) (i % 3)) * geekReveal;
-                punchHole(g, interior, cx, cy, r, accent);
-            }
-            if (geekHot >= 0)
-            {
-                const auto& parts = hb::kInternals[shellIdx];
-                if (geekHot < parts.count)
-                {
-                    auto pr = hb::partRect(interior, parts.parts[geekHot]);
-                    punchHole(g, interior, pr.getCentreX(), pr.getCentreY(), juce::jmax(pr.getWidth(), pr.getHeight()) * 0.72f, accent);
-                    drawTooltip(g, interior, geekHot, pr);
-                }
-            }
-        }
+        // 3) Geek x-ray overlay: slow scan band, steady part labels, hovered part tooltip.
+        if (geekOn) drawXrayOverlay(g, interior, accent);
     }
 
     void resized() override
@@ -214,6 +197,64 @@ private:
         const auto& parts = hb::kInternals[shellIdx];
         for (int i = 0; i < parts.count; ++i)
             hb::drawHardwarePart(g, editor.machineDesign.palette(), parts.parts[i], hb::partRect(interior, parts.parts[i]), animPhase, i == geekHot);
+    }
+
+    void drawXrayOverlay(juce::Graphics& g, juce::Rectangle<float> interior, juce::Colour accent) const
+    {
+        const auto& theme = editor.machineDesign.palette();
+        const int shellIdx = juce::jlimit(0, pb::kShellCount - 1, editor.shellIndex);
+        const auto& parts = hb::kInternals[shellIdx];
+        const float reveal = geekReveal;
+
+        // Slow scan band sweeping across the open machine.
+        {
+            g.saveState();
+            g.reduceClipRegion(interior.toNearestInt());
+            const float t = animPhase / juce::MathConstants<float>::twoPi;
+            const float bandW = interior.getWidth() * 0.22f;
+            const float sx = interior.getX() - bandW + t * (interior.getWidth() + 2.f * bandW);
+            juce::ColourGradient grad(accent.withAlpha(0.f), sx - bandW, 0.f, accent.withAlpha(0.f), sx + bandW, 0.f, false);
+            grad.addColour(0.5, accent.withAlpha(0.16f * reveal));
+            g.setGradientFill(grad);
+            g.fillRect(juce::Rectangle<float>(sx - bandW, interior.getY(), bandW * 2.f, interior.getHeight()));
+            g.restoreState();
+        }
+
+        // Faint frame around the readable area.
+        g.setColour(accent.withAlpha(0.22f * reveal));
+        g.drawRoundedRectangle(interior.reduced(1.f), 8.f, 1.f);
+
+        // Steady labels, one per internal part, so a passive viewer can read the machine without hovering.
+        g.setFont(kt::font(theme, 10.f, true));
+        for (int i = 0; i < parts.count; ++i)
+        {
+            const auto pr = hb::partRect(interior, parts.parts[i]);
+            const juce::String name = parts.parts[i].name;
+            const float w = juce::jmin(interior.getWidth() - 8.f, (float) name.length() * 7.0f + 16.f);
+            const float x = juce::jlimit(interior.getX() + 4.f, juce::jmax(interior.getX() + 4.f, interior.getRight() - w - 4.f), pr.getX() + 3.f);
+            const float y = juce::jlimit(interior.getY() + 4.f, juce::jmax(interior.getY() + 4.f, interior.getBottom() - 22.f), pr.getY() + 3.f);
+            auto pill = juce::Rectangle<float>(x, y, w, 17.f);
+            const bool hot = (i == geekHot);
+            g.setColour(kt::c(theme.bg).withAlpha((hot ? 0.92f : 0.78f) * reveal));
+            g.fillRoundedRectangle(pill, 8.f);
+            g.setColour(accent.withAlpha((hot ? 0.95f : 0.45f) * reveal));
+            g.drawRoundedRectangle(pill, 8.f, hot ? 1.6f : 1.f);
+            g.setColour(kt::c(theme.text).withAlpha(reveal));
+            g.drawText(name, pill, juce::Justification::centred, true);
+            if (hot)
+            {
+                g.setColour(accent.withAlpha(0.9f));
+                g.drawRoundedRectangle(pr.expanded(2.f), 6.f, 2.f);
+            }
+        }
+
+        // Caption.
+        g.setColour(kt::c(theme.muted).withAlpha(0.9f * reveal));
+        g.setFont(kt::font(theme, 11.f));
+        g.drawText("X-RAY  -  hover a part for its live readout", interior.withTrimmedTop(interior.getHeight() - 22.f).toNearestInt(), juce::Justification::centred, true);
+
+        if (geekHot >= 0 && geekHot < parts.count)
+            drawTooltip(g, interior, geekHot, hb::partRect(interior, parts.parts[geekHot]));
     }
 
     void punchHole(juce::Graphics& g, juce::Rectangle<float> interior, float cx, float cy, float r, juce::Colour accent) const

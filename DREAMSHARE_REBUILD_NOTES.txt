@@ -1,0 +1,46 @@
+DREAMSHARE REBUILD - what changed and where
+===========================================
+
+CATALOG FIX (the "approved my own plugin and it vanished" bug)
+- Cause: Plugin Builder publishes plugins with face "chain" (FX Builder publishes "fx"/"effect"), but
+  refreshCatalog() only accepted face == "kyoto" on the PLUGINS tab. Approved plugins were returned by
+  the worker and then thrown away by the client filter.
+  Fix: PLUGINS = everything that is not an effect, EFFECTS = fx/effect. (Source/PluginEditor.cpp, refreshCatalog)
+- Approve / Deny / Tag / Remove now refresh the tab you are on (refreshCurrentCenter). Before, approving from
+  PENDING reloaded the public catalog into the pending view.
+- Public catalog hides pending/denied cards (they stay in MY PLUGINS / PENDING). The builders still receive
+  the full list.
+- Stale replies are ignored, search is debounced (260 ms), empty tabs show a friendly card instead of a blank
+  panel, errors say what failed.
+
+CHAT
+- SocialRail rewritten: bubbles size to their text (word-wrapped, no more clipped 2-liners), your own messages
+  are tinted and tagged "(you)", wider rail, larger text.
+
+READABILITY / ASPECT
+- New kt::dsFont / kt::dsScale (Source/Themes.h). DreamShare text defaults to 112% and has A- / A+ buttons on
+  the home toolbar; the size is remembered (userApplicationData/KyotoSpxrit/dreamshare_ui_scale.txt).
+- Catalog / thread cards re-flow with window width (1-3 columns) and with text size. Open threads are a
+  single readable column where every post is as tall as its text.
+- Cards, hero text, chat and file chips all use the scale. Builders are untouched.
+
+DRAG & DROP FILES
+- Drop a file on the chat column -> staged as a chip above the composer -> SEND posts it in Live Chat.
+- With a thread open, drop on the thread -> staged above the reply bar -> COMMENT attaches it to your comment.
+- Dropping shows a highlighted "DROP TO ..." overlay. Click the chip to remove the staged file.
+- Files appear as clickable FILE chips in chat and threads; click -> Save As dialog -> downloads.
+- Limit 20 MB per file. Audio dropped anywhere outside DreamShare still loads as a sound sample as before.
+- How it works: the file is uploaded in 1.5 MB chunks with the existing worker action audio_part_b64, and the
+  message carries a small token  [[file:<id>:<parts>:<bytes>:<name>]]  (Source/Attach.h). No change to how
+  chat/comments are stored. New worker action file_part reads a chunk back (worker.js + the 3 identical copies).
+- NEEDS: DREAMSHARE_R2 or DREAMSHARE_KV bound on the production worker (same requirement as WAV sharing).
+  Without it the chip stays staged and the status bar says so.
+- Uploaded files are not auto-expired. Deploy the updated worker.js to Cloudflare before testing attachments.
+
+GEEK MODE (Plugin View)
+- Removed the drifting "spot-light" holes. The cover now fades to a ghost so the whole open machine is
+  visible, with a slow scan band, steady part labels, and the hover tooltip with live values.
+
+NOT VERIFIED (no JUCE toolchain / network in the authoring sandbox)
+- Nothing was compiled or run in a DAW. Run the CI build and check: chat bubbles, A-/A+, drag overlay,
+  attach + save round-trip, Geek view. Worker JS passes a syntax check.

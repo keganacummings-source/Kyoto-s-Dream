@@ -2,6 +2,7 @@
 #include "PluginProcessor.h"
 #include "ChainLevelControls.h"
 #include "Themes.h"
+#include "Attach.h"
 #include "MachineDesign.h"
 #include "ModularParts.h"
 #include "WaveDisplay.h"
@@ -83,6 +84,7 @@ public:
     std::function<void(const Bubble&, juce::Point<int>)> onBubbleMenu;
     std::function<void(const Person&)> onPersonClick;
     std::function<void(const Person&, juce::Point<int>)> onPersonMenu;
+    std::function<void(const kt::AttachRef&)> onFileClick;
 
     void setBubbles(const juce::Array<Bubble>& next) { bubbles = next; syncSize(); }
     void setPeople(const juce::Array<Person>& next) { people = next; syncSize(); }
@@ -90,7 +92,9 @@ public:
     void setPhase(float next) { phase = next; repaint(); }
     void setHostTheme(const kt::ThemePalette& t) { host = t; repaint(); }
     void setShowDirectory(bool on) { showDirectory = on; syncSize(); }
-    int contentHeight() const;
+    void setSelfUser(const juce::String& name) { selfUser = name; repaint(); }
+    int contentHeight() const { return contentHeightFor(getWidth()); }
+    int contentHeightFor(int width) const;
     void paint(juce::Graphics& g) override;
     void mouseDown(const juce::MouseEvent& e) override;
 
@@ -103,6 +107,7 @@ private:
     int mode = 0;
     float phase = 0.f;
     bool showDirectory = false;
+    juce::String selfUser;
 };
 
 // Full-screen viewer surface for Pluggin mode. Defined in PluginViewScreen.h; it installs
@@ -120,6 +125,10 @@ public:
     void mouseDown(const juce::MouseEvent&) override;
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
     void filesDropped(const juce::StringArray& files, int x, int y) override;
+    void fileDragEnter(const juce::StringArray& files, int x, int y) override;
+    void fileDragMove(const juce::StringArray& files, int x, int y) override;
+    void fileDragExit(const juce::StringArray& files) override;
+    void paintOverChildren(juce::Graphics&) override;
     void parentHierarchyChanged() override;
     bool keyPressed(const juce::KeyPress&) override;
     bool inPluginView() const { return pluginView; }
@@ -154,6 +163,14 @@ private:
     void refreshFeed();
     void chatUtility(const juce::String& action);
     void refreshCatalog();
+    void refreshCurrentCenter();
+    void layoutCenterHolder();
+    void applyDsScale();
+    int dropTargetAt(int x, int y) const;
+    void stageAttachment(const juce::File& file, int target);
+    void clearAttachment();
+    void sendWithAttachment(int target, const juce::String& text);
+    void saveAttachmentAs(const kt::AttachRef& ref);
     void deleteCatalogId(const juce::String& id);
     void loadCatalogId(const juce::String& id, const juce::String& name);
     void applyTheme(const juce::String& id);
@@ -257,6 +274,11 @@ private:
     juce::TextButton catalogModeBtn { "CATALOG" }, threadsModeBtn { "THREADS" }, railChatBtn { "CHAT" }, railOnlineBtn { "SOCIALS" };
     juce::TextButton pluginsTabBtn { "PLUGINS" }, effectsTabBtn { "EFFECTS" }, myPluginsBtn { "MY PLUGINS" }, pendingBtn { "PENDING" };
     juce::TextEditor tagSearchBox;
+    juce::TextButton textMinusBtn { "A-" }, textPlusBtn { "A+" }, attachChip { "" };
+    juce::File pendingAttach;
+    int pendingAttachTarget = 0; // 0 none, 1 live chat, 2 open thread
+    int dragTarget = 0;
+    int searchTick = 0, catalogSeq = 0;
     int centerMode = 0; // 0=community plugins, 1=effects, 2=my plugins, 3=threads, 4=pending
     int railMode = 0;
     bool scrollChatOnRefresh = true;

@@ -1569,6 +1569,28 @@ export default {
         const result=await handleAudioPartB64(env,body,user);
         return json(result,result.ok?200:(result.code==='no-sink'?400:413));
       }
+      // DreamShare file attachments: read back one stored chunk (logged-in users only).
+      if (action === 'file_part') {
+        const upload=String(body.upload||'').replace(/[^A-Za-z0-9_\-]/g,'').slice(0,48);
+        const index=parseInt(body.index,10);
+        if (!/^[A-Za-z0-9][A-Za-z0-9_\-]{3,47}$/.test(upload) || !Number.isFinite(index) || index<0 || index>49)
+          return json({ok:false,error:'bad file reference'},400);
+        let bytes=null;
+        try {
+          if (env && env.DREAMSHARE_R2) {
+            const o=await env.DREAMSHARE_R2.get('wav/'+upload+'/'+index);
+            if (o) bytes=new Uint8Array(await o.arrayBuffer());
+          }
+          if (!bytes && env && env.DREAMSHARE_KV) {
+            const ab=await env.DREAMSHARE_KV.get('wav:'+upload+':'+index,'arrayBuffer');
+            if (ab) bytes=new Uint8Array(ab);
+          }
+        } catch (_) {}
+        if (!bytes) return json({ok:false,error:'File part not found (it may have expired)'},404);
+        let bin='';
+        for (let i=0;i<bytes.length;i+=0x8000) bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));
+        return json({ok:true,index:index,b64:btoa(bin)});
+      }
 
       // Lightweight session check (VST / homepage can refresh role + user)
       if (action === 'session' || action === 'whoami' || action === 'me') {

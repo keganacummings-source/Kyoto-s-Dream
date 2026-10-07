@@ -165,4 +165,60 @@ DreamResult react(const juce::String& token, const juce::String& kind, const juc
     auto* o = new juce::DynamicObject(); o->setProperty("kind", kind); o->setProperty("id", id); o->setProperty("emoji", emoji);
     return postAction("react", juce::var(o), token);
 }
+bool uploadAttachment(const juce::String& token, const juce::File& file, AttachRef& out, juce::String& error)
+{
+    if (! file.existsAsFile()) { error = "File not found"; return false; }
+    const juce::int64 total = file.getSize();
+    if (total <= 0) { error = "File is empty"; return false; }
+    if (total > kAttachMaxBytes) { error = "File is over " + humanBytes(kAttachMaxBytes) + " (" + humanBytes(total) + ")"; return false; }
+    std::unique_ptr<juce::FileInputStream> in(file.createInputStream());
+    if (in == nullptr) { error = "Could not read file"; return false; }
+
+    const int parts = (int) ((total + kAttachChunkBytes - 1) / kAttachChunkBytes);
+    const auto upload = "f" + juce::String::toHexString(juce::Random::getSystemRandom().nextInt64())
+                      + juce::String::toHexString(juce::Time::currentTimeMillis() & 0xffffff);
+    juce::MemoryBlock chunk;
+    for (int i = 0; i < parts; ++i)
+    {
+        chunk.reset();
+        chunk.setSize((size_t) kAttachChunkBytes);
+        const int got = in->read(chunk.getData(), kAttachChunkBytes);
+        if (got <= 0) { error = "Read failed"; return false; }
+        auto* o = new juce::DynamicObject();
+        o->setProperty("upload", upload);
+        o->setProperty("index", i);
+        o->setProperty("parts", parts);
+        o->setProperty("b64", juce::Base64::toBase64(chunk.getData(), (size_t) got));
+        auto r = postAction("audio_part_b64", juce::var(o), token);
+        if (! r.ok) { error = r.error.isEmpty() ? juce::String("Upload failed") : r.error; return false; }
+    }
+    out.upload = upload;
+    out.name = file.getFileName();
+    out.parts = parts;
+    out.bytes = total;
+    return true;
+}
+
+bool downloadAttachment(const juce::String& token, const AttachRef& ref, const juce::File& dest, juce::String& error)
+{
+    if (! ref.valid()) { error = "Bad attachment"; return false; }
+    dest.deleteFile();
+    juce::FileOutputStream outStream(dest);
+    if (! outStream.openedOk()) { error = "Could not write " + dest.getFullPathName(); return false; }
+    for (int i = 0; i < ref.parts; ++i)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty("upload", ref.upload);
+        o->setProperty("index", i);
+        auto r = postAction("file_part", juce::var(o), token);
+        if (! r.ok) { error = r.error.isEmpty() ? juce::String("Download failed") : r.error; return false; }
+        juce::MemoryOutputStream bytes;
+        if (auto* obj = r.parsed.getDynamicObject())
+            if (! juce::Base64::convertFromBase64(bytes, obj->getProperty("b64").toString())) { error = "Bad file data"; return false; }
+        outStream.write(bytes.getData(), bytes.getDataSize());
+    }
+    outStream.flush();
+    return true;
+}
+
 }

@@ -680,6 +680,14 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     addAndMakeVisible(threadBackBtn); addAndMakeVisible(threadReactBtn); addAndMakeVisible(threadShareFxBtn); addAndMakeVisible(threadSharePluginBtn);
     addAndMakeVisible(pluginsTabBtn); addAndMakeVisible(effectsTabBtn); addAndMakeVisible(myPluginsBtn); addAndMakeVisible(pendingBtn); addAndMakeVisible(tagSearchBox);
     addAndMakeVisible(themeBox);
+    addAndMakeVisible(textMinusBtn); addAndMakeVisible(textPlusBtn); addAndMakeVisible(attachChip);
+    kt::loadDsScale();
+    textMinusBtn.setTooltip("Smaller DreamShare text");
+    textPlusBtn.setTooltip("Larger DreamShare text");
+    textMinusBtn.onClick = [this] { kt::dsScale() = juce::jlimit(0.85f, 1.6f, kt::dsScale() - 0.08f); kt::saveDsScale(); applyDsScale(); status.setText("DreamShare text " + juce::String(juce::roundToInt(kt::dsScale() * 100.f)) + "%", juce::dontSendNotification); };
+    textPlusBtn.onClick = [this] { kt::dsScale() = juce::jlimit(0.85f, 1.6f, kt::dsScale() + 0.08f); kt::saveDsScale(); applyDsScale(); status.setText("DreamShare text " + juce::String(juce::roundToInt(kt::dsScale() * 100.f)) + "%", juce::dontSendNotification); };
+    attachChip.setTooltip("Click to remove the attached file");
+    attachChip.onClick = [this] { clearAttachment(); status.setText("Attachment removed", juce::dontSendNotification); };
     addAndMakeVisible(catalogView);
     addAndMakeVisible(chatView);
     addAndMakeVisible(nameBox);
@@ -824,12 +832,18 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     socialRail.onBubbleMenu = [this](const SocialRail::Bubble& b, juce::Point<int> pos) { showBubbleMenu(b, pos); };
     socialRail.onPersonClick = [this](const SocialRail::Person& person) { openWavRequest(person.name); };
     socialRail.onPersonMenu = [this](const SocialRail::Person& person, juce::Point<int> pos) { showPersonMenu(person, pos); };
+    socialRail.onFileClick = [this](const kt::AttachRef& ref) { saveAttachmentAs(ref); };
+    applyDsScale();
     socialRail.setShowDirectory(isAdmin);
     pluginsTabBtn.onClick = [this] { setCenterMode(0); refreshCatalog(); };
     effectsTabBtn.onClick = [this] { setCenterMode(1); refreshCatalog(); };
     myPluginsBtn.onClick = [this] { setCenterMode(2); refreshMyModules(); };
     pendingBtn.onClick = [this] { setCenterMode(4); refreshPending(); };
-    tagSearchBox.onTextChange = [this] { refreshCatalog(); };
+    tagSearchBox.onTextChange = [this] {
+        const int tick = ++searchTick;
+        juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
+        juce::Timer::callAfterDelay(260, [safe, tick] { if (safe != nullptr && safe->searchTick == tick) safe->refreshCatalog(); });
+    };
     tagSearchBox.setTextToShowWhenEmpty("Search tags...", juce::Colour(0x80808080));
     catalogModeBtn.setClickingTogglesState(true);
     threadsModeBtn.setClickingTogglesState(true);
@@ -1063,9 +1077,77 @@ void drawThemeField(juce::Graphics& g, const kt::ThemePalette& t, juce::Rectangl
 }
 }
 
-int SocialRail::contentHeight() const
+namespace
 {
-    if (mode == 0) return juce::jmax(140, bubbles.size() * 74 + 18);
+// ---- DreamShare chat bubble layout (shared by paint, hit-testing and height) ----------------
+constexpr float kBubblePad = 12.f;
+constexpr float kBubbleGap = 8.f;
+
+struct BubbleLayout
+{
+    juce::String clean;
+    kt::AttachRef ref;
+    float textH = 0.f;
+    float nameH = 0.f;
+    float chipH = 0.f;
+    float h = 0.f;
+};
+
+BubbleLayout layoutBubble(const SocialRail::Bubble& b, const kt::ThemePalette& pal, float width)
+{
+    BubbleLayout L;
+    L.ref = kt::parseAttach(b.text, L.clean);
+    const float s = kt::dsScale();
+    L.nameH = 16.f * s;
+    if (L.clean.isNotEmpty())
+    {
+        juce::AttributedString as;
+        as.append(L.clean, kt::dsFont(pal, 12.f), kt::c(pal.text));
+        as.setWordWrap(juce::AttributedString::byWord);
+        juce::TextLayout tl;
+        tl.createLayout(as, juce::jmax(40.f, width - 2.f * kBubblePad));
+        L.textH = tl.getHeight() + 2.f;
+    }
+    L.chipH = L.ref.valid() ? 30.f : 0.f;
+    L.h = 8.f + L.nameH + (L.textH > 0.f ? 3.f + L.textH : 0.f) + (L.chipH > 0.f ? 6.f + L.chipH : 0.f) + 10.f;
+    return L;
+}
+
+juce::Rectangle<float> bubbleChipRect(const juce::Rectangle<float>& card, const BubbleLayout& L)
+{
+    return { card.getX() + kBubblePad, card.getBottom() - 10.f - L.chipH, card.getWidth() - 2.f * kBubblePad, L.chipH };
+}
+
+void drawFileChip(juce::Graphics& g, const kt::ThemePalette& pal, juce::Rectangle<float> r, const kt::AttachRef& ref)
+{
+    g.setColour(kt::c(pal.accent).withAlpha(0.16f));
+    g.fillRoundedRectangle(r, 7.f);
+    g.setColour(kt::c(pal.accent).withAlpha(0.75f));
+    g.drawRoundedRectangle(r, 7.f, 1.f);
+    auto inner = r.reduced(9.f, 0.f);
+    g.setColour(kt::c(pal.accent));
+    g.setFont(kt::dsFont(pal, 9.f, true));
+    g.drawText("FILE", inner.removeFromLeft(34.f), juce::Justification::centredLeft);
+    g.setColour(kt::c(pal.text));
+    g.setFont(kt::dsFont(pal, 11.f, true));
+    auto right = inner.removeFromRight(juce::jmin(120.f, inner.getWidth() * 0.45f));
+    g.drawText(ref.name, inner, juce::Justification::centredLeft, true);
+    g.setColour(kt::c(pal.muted));
+    g.setFont(kt::dsFont(pal, 10.f));
+    g.drawText(kt::humanBytes(ref.bytes) + "  -  SAVE", right, juce::Justification::centredRight, true);
+}
+}
+
+int SocialRail::contentHeightFor(int width) const
+{
+    if (mode == 0)
+    {
+        float h = 12.f;
+        const float w = (float) juce::jmax(220, width) - 16.f;
+        for (const auto& m : bubbles)
+            h += layoutBubble(m, kt::themeById(m.themeId.isEmpty() ? "trippah" : m.themeId), w).h + kBubbleGap;
+        return juce::jmax(140, (int) std::ceil(h) + 8);
+    }
     int h = 12;
     auto count = [this](const juce::String& kind) {
         int n = 0; for (const auto& person : people) if (person.kind == kind) ++n; return n;
@@ -1087,33 +1169,46 @@ void SocialRail::paint(juce::Graphics& g)
         if (bubbles.isEmpty())
         {
             g.setColour(kt::c(host.muted));
-            g.setFont(kt::font(host, 11.f));
-            g.drawText("Live chat stays on this rail. Right-click a message.", 12, 16, getWidth() - 24, 20, juce::Justification::left);
+            g.setFont(kt::dsFont(host, 12.f));
+            g.drawFittedText("No messages yet.\nSay hi - or drop a file on this panel to share it.",
+                             juce::Rectangle<int>(14, 18, getWidth() - 28, 60), juce::Justification::topLeft, 3);
             return;
         }
-        int y = 8;
+        float y = 8.f;
+        const float w = (float) getWidth() - 16.f;
         for (const auto& m : bubbles)
         {
             const auto pal = kt::themeById(m.themeId.isEmpty() ? "trippah" : m.themeId);
-            auto card = juce::Rectangle<float>(8.f, (float) y, (float) getWidth() - 16.f, 66.f);
-            g.setColour(kt::c(pal.panel));
-            g.fillRoundedRectangle(card, 9.f);
-            g.setColour(kt::c(pal.accent).withAlpha(0.9f));
-            g.fillRoundedRectangle(card.getX(), card.getY(), 3.5f, card.getHeight(), 2.f);
+            const auto L = layoutBubble(m, pal, w);
+            const bool mine = selfUser.isNotEmpty() && m.user.equalsIgnoreCase(selfUser);
+            auto card = juce::Rectangle<float>(8.f, y, w, L.h);
+            g.setColour(mine ? kt::c(pal.panel).interpolatedWith(kt::c(pal.accent), 0.20f) : kt::c(pal.panel));
+            g.fillRoundedRectangle(card, 10.f);
+            g.setColour(kt::c(pal.accent).withAlpha(mine ? 0.9f : 0.55f));
+            g.fillRoundedRectangle(mine ? card.getRight() - 4.f : card.getX(), card.getY() + 3.f, 4.f, card.getHeight() - 6.f, 2.f);
+            g.setColour(kt::c(pal.border).withAlpha(0.8f));
+            g.drawRoundedRectangle(card, 10.f, 1.f);
+
             g.setColour(kt::c(pal.accent));
-            g.drawRoundedRectangle(card, 9.f, 1.f);
-            g.setFont(kt::font(pal, 11.f, true));
-            g.drawText(m.user, card.getX() + 12, card.getY() + 6, card.getWidth() - 20, 16, juce::Justification::left);
-            g.setColour(kt::c(pal.text));
-            g.setFont(kt::font(pal, 10.f));
-            g.drawFittedText(m.text, juce::Rectangle<int>((int) card.getX() + 12, (int) card.getY() + 24, (int) card.getWidth() - 20, 36), juce::Justification::topLeft, 2);
-            y += 74;
+            g.setFont(kt::dsFont(pal, 11.f, true));
+            g.drawText(mine ? m.user + "  (you)" : m.user, (int) (card.getX() + kBubblePad), (int) (card.getY() + 8.f),
+                       (int) (card.getWidth() - 2.f * kBubblePad), (int) L.nameH, juce::Justification::centredLeft, true);
+            float ty = card.getY() + 8.f + L.nameH + 3.f;
+            if (L.clean.isNotEmpty())
+            {
+                juce::AttributedString as;
+                as.append(L.clean, kt::dsFont(pal, 12.f), kt::c(pal.text));
+                as.setWordWrap(juce::AttributedString::byWord);
+                as.draw(g, juce::Rectangle<float>(card.getX() + kBubblePad, ty, card.getWidth() - 2.f * kBubblePad, L.textH + 2.f));
+            }
+            if (L.chipH > 0.f) drawFileChip(g, pal, bubbleChipRect(card, L), L.ref);
+            y += L.h + kBubbleGap;
         }
         return;
     }
     auto drawHeader = [&](int& y, const juce::String& title) {
         g.setColour(kt::c(host.accent));
-        g.setFont(kt::font(host, 10.f, true));
+        g.setFont(kt::dsFont(host, 10.f, true));
         g.drawText(title, 12, y, getWidth() - 24, 16, juce::Justification::left);
         y += 20;
     };
@@ -1125,10 +1220,10 @@ void SocialRail::paint(juce::Graphics& g)
         g.setColour(person.online ? kt::c(pal.accent) : kt::c(pal.muted));
         g.fillEllipse(card.getX() + 10, card.getY() + 12, 10, 10);
         g.setColour(kt::c(pal.accent));
-        g.setFont(kt::font(pal, 11.f, true));
+        g.setFont(kt::dsFont(pal, 11.f, true));
         g.drawText(person.name, card.getX() + 28, card.getY() + 4, card.getWidth() - 36, 16, juce::Justification::left);
         g.setColour(kt::c(pal.muted));
-        g.setFont(kt::font(pal, 9.f));
+        g.setFont(kt::dsFont(pal, 9.f));
         g.drawText(person.detail, card.getX() + 28, card.getY() + 20, card.getWidth() - 36, 14, juce::Justification::left);
         y += h;
     };
@@ -1136,31 +1231,41 @@ void SocialRail::paint(juce::Graphics& g)
     bool any = false;
     drawHeader(y, "INVITES");
     for (const auto& person : people) if (person.kind == "invite") { drawPerson(y, person, 48); any = true; }
-    if (! any) { g.setColour(kt::c(host.muted)); g.setFont(kt::font(host, 10.f)); g.drawText("No friend invites.", 12, y, getWidth() - 24, 16, juce::Justification::left); y += 22; }
+    if (! any) { g.setColour(kt::c(host.muted)); g.setFont(kt::dsFont(host, 10.f)); g.drawText("No friend invites.", 12, y, getWidth() - 24, 16, juce::Justification::left); y += 22; }
     any = false;
     drawHeader(y, "FRIENDS");
     for (const auto& person : people) if (person.kind == "friend") { drawPerson(y, person, 52); any = true; }
-    if (! any) { g.setColour(kt::c(host.muted)); g.setFont(kt::font(host, 10.f)); g.drawText("No friends yet. Right-click a name to add one.", 12, y, getWidth() - 24, 16, juce::Justification::left); y += 22; }
+    if (! any) { g.setColour(kt::c(host.muted)); g.setFont(kt::dsFont(host, 10.f)); g.drawText("No friends yet. Right-click a name to add one.", 12, y, getWidth() - 24, 16, juce::Justification::left); y += 22; }
     if (showDirectory)
     {
         drawHeader(y, "ALL ACTIVE");
         bool saw = false;
         for (const auto& person : people) if (person.kind == "active") { drawPerson(y, person, 44); saw = true; }
-        if (! saw) { g.setColour(kt::c(host.muted)); g.setFont(kt::font(host, 10.f)); g.drawText("Nobody else is active.", 12, y, getWidth() - 24, 16, juce::Justification::left); }
+        if (! saw) { g.setColour(kt::c(host.muted)); g.setFont(kt::dsFont(host, 10.f)); g.drawText("Nobody else is active.", 12, y, getWidth() - 24, 16, juce::Justification::left); }
     }
 }
 
 void SocialRail::mouseDown(const juce::MouseEvent& e)
 {
-    auto hitBubble = [this](int y, Bubble& out) {
-        int row = 8;
+    if (mode == 0)
+    {
+        float y = 8.f;
+        const float w = (float) getWidth() - 16.f;
         for (const auto& m : bubbles)
         {
-            if (y >= row && y < row + 66) { out = m; return true; }
-            row += 74;
+            const auto pal = kt::themeById(m.themeId.isEmpty() ? "trippah" : m.themeId);
+            const auto L = layoutBubble(m, pal, w);
+            auto card = juce::Rectangle<float>(8.f, y, w, L.h);
+            if (card.contains(e.position))
+            {
+                if (e.mods.isPopupMenu()) { if (onBubbleMenu) onBubbleMenu(m, e.getScreenPosition()); }
+                else if (L.chipH > 0.f && bubbleChipRect(card, L).contains(e.position) && onFileClick) onFileClick(L.ref);
+                return;
+            }
+            y += L.h + kBubbleGap;
         }
-        return false;
-    };
+        return;
+    }
     auto hitPerson = [this](int y, Person& out) {
         int row = 8;
         auto section = [&](const juce::String& kind, int h, bool always) {
@@ -1180,13 +1285,6 @@ void SocialRail::mouseDown(const juce::MouseEvent& e)
         if (showDirectory && section("active", 44, true)) return true;
         return false;
     };
-    if (mode == 0)
-    {
-        Bubble bubble;
-        if (! hitBubble(e.y, bubble)) return;
-        if (e.mods.isPopupMenu() && onBubbleMenu) onBubbleMenu(bubble, e.getScreenPosition());
-        return;
-    }
     Person person;
     if (! hitPerson(e.y, person)) return;
     if (e.mods.isPopupMenu()) { if (onPersonMenu) onPersonMenu(person, e.getScreenPosition()); }
@@ -1196,52 +1294,109 @@ void SocialRail::mouseDown(const juce::MouseEvent& e)
 struct BoardCard : public juce::Component
 {
     juce::String title, meta, body, themeId, status, tags;
+    kt::AttachRef attach;
+    bool grow = false; // thread detail cards grow to fit their text; grid cards clip it
     std::function<void()> onOpen;
     std::function<void(juce::Point<int>)> onContextMenu;
+    std::function<void(const kt::AttachRef&)> onFile;
+
+    // Splits a raw message into readable text plus an optional file attachment.
+    void setBodyRaw(const juce::String& raw)
+    {
+        juce::String clean;
+        attach = kt::parseAttach(raw, clean);
+        body = clean;
+    }
+
+    juce::AttributedString bodyText(const kt::ThemePalette& pal) const
+    {
+        juce::AttributedString as;
+        as.append(body, kt::dsFont(pal, 12.f), kt::c(pal.text));
+        as.setWordWrap(juce::AttributedString::byWord);
+        return as;
+    }
+
+    float headerHeight() const
+    {
+        const float s = kt::dsScale();
+        return 10.f + 20.f * s + 16.f * s + (tags.isNotEmpty() ? 15.f * s : 0.f);
+    }
+
+    int preferredHeight(int width) const
+    {
+        const auto pal = kt::themeById(themeId.isEmpty() ? "trippah" : themeId);
+        float h = headerHeight();
+        if (body.isNotEmpty())
+        {
+            juce::TextLayout tl;
+            tl.createLayout(bodyText(pal), juce::jmax(40.f, (float) width - 28.f));
+            h += 4.f + tl.getHeight();
+        }
+        if (attach.valid()) h += 8.f + 30.f;
+        return juce::jmax(84, (int) std::ceil(h + 14.f));
+    }
+
+    juce::Rectangle<float> chipRect() const
+    {
+        return { 14.f, (float) getHeight() - 10.f - 30.f, (float) getWidth() - 28.f, 30.f };
+    }
+
     void paint(juce::Graphics& g) override
     {
         const auto pal = kt::themeById(themeId.isEmpty() ? "trippah" : themeId);
+        const float s = kt::dsScale();
         auto r = getLocalBounds().toFloat().reduced(1.f);
         g.setColour(kt::c(pal.panel));
         g.fillRoundedRectangle(r, 10.f);
         // Theme-aligned accent bar
         g.setColour(kt::c(pal.accent).withAlpha(0.9f));
         g.fillRoundedRectangle(r.getX(), r.getY(), 4.f, r.getHeight(), 2.f);
-        g.setColour(kt::c(pal.accent).withAlpha(0.55f));
+        g.setColour(kt::c(pal.accent).withAlpha(0.45f));
         g.drawRoundedRectangle(r, 10.f, 1.f);
         // Status badge
         if (status == "pending" || status == "denied")
         {
             const juce::String badge = status == "pending" ? "PENDING" : "DENIED";
             const juce::Colour badgeCol = status == "pending" ? juce::Colour(0xffe0a020) : juce::Colour(0xffcc3030);
-            auto br = juce::Rectangle<float>(r.getRight() - 70.f, r.getY() + 4.f, 62.f, 14.f);
-            g.setColour(badgeCol.withAlpha(0.85f));
+            auto br = juce::Rectangle<float>(r.getRight() - 78.f * s, r.getY() + 7.f, 70.f * s, 16.f * s);
+            g.setColour(badgeCol.withAlpha(0.9f));
             g.fillRoundedRectangle(br, 4.f);
-            g.setColour(juce::Colours::white);
-            g.setFont(juce::Font(8.f, juce::Font::bold));
+            g.setColour(juce::Colours::black);
+            g.setFont(juce::Font(9.f * s, juce::Font::bold));
             g.drawText(badge, br, juce::Justification::centred);
         }
+        float y = 8.f;
         g.setColour(kt::c(pal.accent));
-        g.setFont(kt::font(pal, 12.f, true));
-        g.drawText(title, 14, 8, getWidth() - (status.isNotEmpty() ? 80 : 22), 18, juce::Justification::left);
+        g.setFont(kt::dsFont(pal, 13.f, true));
+        g.drawText(title, 14, (int) y, getWidth() - (status.isNotEmpty() && status != "approved" ? (int) (96.f * s) : 28), (int) (20.f * s), juce::Justification::centredLeft, true);
+        y += 20.f * s;
         g.setColour(kt::c(pal.muted));
-        g.setFont(kt::font(pal, 9.f));
-        g.drawText(meta, 14, 28, getWidth() - 22, 14, juce::Justification::left);
-        // Tags
+        g.setFont(kt::dsFont(pal, 10.f));
+        g.drawText(meta, 14, (int) y, getWidth() - 28, (int) (16.f * s), juce::Justification::centredLeft, true);
+        y += 16.f * s;
         if (tags.isNotEmpty())
         {
-            g.setColour(kt::c(pal.accent).withAlpha(0.7f));
-            g.setFont(kt::font(pal, 8.f));
-            g.drawText("#" + tags.replace(",", " #"), 14, 42, getWidth() - 22, 12, juce::Justification::left);
+            g.setColour(kt::c(pal.accent).withAlpha(0.8f));
+            g.setFont(kt::dsFont(pal, 10.f));
+            g.drawText("#" + tags.replace(",", " #"), 14, (int) y, getWidth() - 28, (int) (15.f * s), juce::Justification::centredLeft, true);
+            y += 15.f * s;
         }
-        g.setColour(kt::c(pal.text));
-        g.setFont(kt::font(pal, 10.f));
-        g.drawFittedText(body, juce::Rectangle<int>(14, tags.isNotEmpty() ? 54 : 46, getWidth() - 24, getHeight() - (tags.isNotEmpty() ? 62 : 54)), juce::Justification::topLeft, 2);
+        if (body.isNotEmpty())
+        {
+            const float bottom = (float) getHeight() - (attach.valid() ? 48.f : 8.f);
+            auto area = juce::Rectangle<float>(14.f, y + 4.f, (float) getWidth() - 28.f, juce::jmax(0.f, bottom - (y + 4.f)));
+            g.saveState();
+            g.reduceClipRegion(area.toNearestInt());
+            bodyText(pal).draw(g, area.withHeight(2000.f));
+            g.restoreState();
+        }
+        if (attach.valid()) drawFileChip(g, pal, chipRect(), attach);
     }
     void mouseUp(const juce::MouseEvent& e) override
     {
         if (e.mods.isPopupMenu() && onContextMenu)
             onContextMenu(e.getScreenPosition());
+        else if (attach.valid() && chipRect().contains(e.position) && onFile) onFile(attach);
         else if (onOpen && ! e.mouseWasDraggedSinceMouseDown()) onOpen();
     }
     void mouseDown(const juce::MouseEvent& e) override
@@ -1296,13 +1451,13 @@ void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
         g.setFont(kt::font(theme, 20.f, true));
         g.drawText("DREAMSHARE HOME", hero.getX()+18, hero.getY()+12, 300, 26, juce::Justification::left);
         g.setColour(kt::c(theme.text));
-        g.setFont(kt::font(theme, 13.f, false));
-        g.drawFittedText("Chat on the left. Community plugins and effects on the right. Search by tags.", juce::Rectangle<float>(hero.getX()+18, hero.getY()+42, juce::jmax(120.f, hero.getWidth()-250.f), 28.f).toNearestInt(), juce::Justification::topLeft, 2);
+        g.setFont(kt::dsFont(theme, 13.f, false));
+        g.drawFittedText("Chat on the left. Community plugins and effects on the right. Search by tags.", juce::Rectangle<float>(hero.getX()+18, hero.getY()+42, juce::jmax(120.f, hero.getWidth()-250.f), 36.f).toNearestInt(), juce::Justification::topLeft, 2);
         g.setColour(kt::c(theme.accent));
-        g.setFont(kt::font(theme, 12.f, true));
+        g.setFont(kt::dsFont(theme, 12.f, true));
         g.drawText("LIVE  -  " + (account.isEmpty() ? juce::String("SIGNED IN") : account.toUpperCase()), hero.getRight()-220, hero.getY()+18, 200, 18, juce::Justification::right);
         g.setColour(kt::c(theme.muted));
-        g.setFont(kt::font(theme, 11.f));
+        g.setFont(kt::dsFont(theme, 11.f));
         g.drawText("Theme: " + juce::String(theme.name) + "  -  " + juce::String(kt::kThemeCount) + " presets", hero.getRight()-220, hero.getY()+40, 200, 16, juce::Justification::right);
 
         g.setColour(kt::c(theme.border).withAlpha(0.55f));
@@ -1457,6 +1612,8 @@ void KyotoAudioProcessorEditor::showTab(int next)
     pluginsTabBtn.setVisible(share && loggedIn); effectsTabBtn.setVisible(share && loggedIn); myPluginsBtn.setVisible(share && loggedIn);
     pendingBtn.setVisible(share && loggedIn && isAdmin);
     tagSearchBox.setVisible(share && loggedIn && (centerMode == 0 || centerMode == 1));
+    textMinusBtn.setVisible(share && loggedIn); textPlusBtn.setVisible(share && loggedIn);
+    attachChip.setVisible(share && loggedIn && pendingAttach != juce::File() && ((pendingAttachTarget == 1 && railMode == 0) || (pendingAttachTarget == 2 && threadOpen)));
     railChatBtn.setVisible(share && loggedIn); railOnlineBtn.setVisible(share && loggedIn);
     adminDeleteBtn.setVisible(false); // replaced by right-click context menu
     msgBox.setVisible(share && loggedIn && railMode == 0); sendBtn.setVisible(share && loggedIn && railMode == 0); feedBtn.setVisible(share && loggedIn);
@@ -1550,6 +1707,8 @@ void KyotoAudioProcessorEditor::resized()
     {
         area.removeFromTop(88); // dashboard hero
         auto top = area.removeFromTop(36);
+        textPlusBtn.setBounds(top.removeFromRight(34).reduced(0, 2)); top.removeFromRight(4);
+        textMinusBtn.setBounds(top.removeFromRight(34).reduced(0, 2)); top.removeFromRight(8);
         themeBox.setBounds(top.removeFromLeft(150)); top.removeFromLeft(8);
         proToggleBtn.setBounds(top.removeFromLeft(110)); top.removeFromLeft(8);
         pluginsTabBtn.setBounds(top.removeFromLeft(84)); top.removeFromLeft(6);
@@ -1569,12 +1728,13 @@ void KyotoAudioProcessorEditor::resized()
             tagRow.removeFromLeft(8);
         }
         // Chat on the LEFT, catalog on the RIGHT
-        const int railW = juce::jlimit(236, 286, getWidth() / 5);
+        const int railW = juce::jlimit(260, 360, getWidth() / 4);
         auto rail = area.removeFromLeft(railW);
         area.removeFromLeft(10);
         if (threadOpen)
         {
             auto reply = area.removeFromBottom(34);
+            if (attachChip.isVisible() && pendingAttachTarget == 2) attachChip.setBounds(area.removeFromBottom(30).reduced(0, 2));
             threadBackBtn.setBounds(reply.removeFromLeft(92)); reply.removeFromLeft(6);
             threadReactBtn.setBounds(reply.removeFromLeft(72)); reply.removeFromLeft(6);
             threadShareFxBtn.setBounds(reply.removeFromLeft(86)); reply.removeFromLeft(6);
@@ -1593,6 +1753,7 @@ void KyotoAudioProcessorEditor::resized()
         if (railMode == 0)
         {
             auto composer = rail.removeFromBottom(34);
+            if (attachChip.isVisible() && pendingAttachTarget == 1) attachChip.setBounds(rail.removeFromBottom(30).reduced(0, 2));
             msgBox.setBounds(composer.removeFromLeft(juce::jmax(120, composer.getWidth() - 72)));
             composer.removeFromLeft(6);
             sendBtn.setBounds(composer);
@@ -1603,24 +1764,14 @@ void KyotoAudioProcessorEditor::resized()
         }
         chatView.setBounds(rail.reduced(0, 4));
         const int savedChatY = chatView.getViewPositionY();
-        socialRail.setBounds(0, 0, juce::jmax(200, chatView.getWidth() - 8), socialRail.contentHeight());
+        const int railInnerW = juce::jmax(200, chatView.getWidth() - 8);
+        socialRail.setBounds(0, 0, railInnerW, socialRail.contentHeightFor(railInnerW));
         chatView.setViewedComponent(&socialRail, false);
         if (scrollChatOnRefresh && railMode == 0)
             chatView.setViewPosition(0, socialRail.getHeight());
         else
             chatView.setViewPosition(0, savedChatY);
-        const int catalogW = juce::jmax(220, catalogView.getWidth()-18);
-        const int cols = catalogW >= 500 ? 2 : 1;
-        const int gap = 8;
-        const int cardW = juce::jmax(160, (catalogW - gap * (cols + 1)) / cols);
-        const int cardH = 84;
-        catalogHolder.setSize(catalogW, juce::jmax(catalogView.getHeight(), ((catalog.size()+cols-1)/cols) * (cardH+gap) + gap));
-        for (int i = 0; i < catalogHolder.getNumChildComponents(); ++i)
-        {
-            auto* card = catalogHolder.getChildComponent(i);
-            const int col = i % cols, row = i / cols;
-            card->setBounds(gap + col * (cardW + gap), gap + row * (cardH + gap), cardW, cardH);
-        }
+        layoutCenterHolder();
         for (int i=0;i<feedEffectButtons.size();++i)
         {
             const int bw = juce::jmin(240, chatView.getWidth()-16);
@@ -2276,7 +2427,7 @@ void KyotoAudioProcessorEditor::editEffectPopup(int widgetIndex)
 
 bool KyotoAudioProcessorEditor::isInterestedInFileDrag(const juce::StringArray& files)
 {
-    if (threadOpen) return files.size() > 0;
+    if (tab == 0 && loggedIn) return files.size() > 0; // DreamShare: any file can be attached to chat / a thread
     for (auto& f : files)
     {
         const auto ext = f.fromLastOccurrenceOf(".", false, false).toLowerCase();
@@ -2285,12 +2436,21 @@ bool KyotoAudioProcessorEditor::isInterestedInFileDrag(const juce::StringArray& 
     return false;
 }
 
-void KyotoAudioProcessorEditor::filesDropped(const juce::StringArray& files, int, int)
+void KyotoAudioProcessorEditor::filesDropped(const juce::StringArray& files, int x, int y)
 {
-    if (threadOpen)
+    dragTarget = 0;
+    repaint();
+    if (tab == 0 && loggedIn)
     {
-        for (auto& f : files) postThreadComment("file: " + juce::File(f).getFileName());
-        status.setText("File named in the thread. Audio still stays under  the worker tape limit.", juce::dontSendNotification);
+        const int target = dropTargetAt(x, y);
+        if (target == 0)
+        {
+            status.setText(centerMode == 3 && ! threadOpen ? "Open a thread first, then drop the file on it - or drop it on the chat to share it there."
+                                                           : "Drop files on the chat (left) or inside an open thread.", juce::dontSendNotification);
+            return;
+        }
+        if (files.size() > 0) stageAttachment(juce::File(files[0]), target);
+        if (files.size() > 1) status.setText("One file per message - attached " + juce::File(files[0]).getFileName(), juce::dontSendNotification);
         return;
     }
     for (auto& f : files)
@@ -2318,6 +2478,143 @@ void KyotoAudioProcessorEditor::filesDropped(const juce::StringArray& files, int
         status.setText("Sound sample loaded: " + juce::File(f).getFileName(), juce::dontSendNotification);
         return;
     }
+}
+
+int KyotoAudioProcessorEditor::dropTargetAt(int x, int y) const
+{
+    if (tab != 0 || ! loggedIn) return 0;
+    const int railRight = catalogView.getX() - 4;
+    if (x < railRight && y >= railChatBtn.getY()) return 1;      // the whole chat column
+    if (x >= railRight && threadOpen && y >= catalogView.getY()) return 2; // an open thread
+    return 0;
+}
+
+void KyotoAudioProcessorEditor::fileDragEnter(const juce::StringArray&, int x, int y)
+{
+    const int t = dropTargetAt(x, y);
+    if (t != dragTarget) { dragTarget = t; repaint(); }
+}
+
+void KyotoAudioProcessorEditor::fileDragMove(const juce::StringArray&, int x, int y)
+{
+    const int t = dropTargetAt(x, y);
+    if (t != dragTarget) { dragTarget = t; repaint(); }
+}
+
+void KyotoAudioProcessorEditor::fileDragExit(const juce::StringArray&)
+{
+    if (dragTarget != 0) { dragTarget = 0; repaint(); }
+}
+
+void KyotoAudioProcessorEditor::paintOverChildren(juce::Graphics& g)
+{
+    if (dragTarget == 0 || tab != 0) return;
+    juce::Rectangle<int> area = dragTarget == 1
+        ? juce::Rectangle<int>(chatView.getX(), railChatBtn.getY(), chatView.getWidth(), juce::jmax(40, msgBox.getBottom() - railChatBtn.getY()))
+        : catalogView.getBounds();
+    auto r = area.toFloat().reduced(2.f);
+    g.setColour(kt::c(theme.bg).withAlpha(0.72f));
+    g.fillRoundedRectangle(r, 12.f);
+    g.setColour(kt::c(theme.accent).withAlpha(0.20f));
+    g.fillRoundedRectangle(r, 12.f);
+    g.setColour(kt::c(theme.accent));
+    g.drawRoundedRectangle(r.reduced(3.f), 10.f, 2.5f);
+    g.setFont(kt::dsFont(theme, 15.f, true));
+    g.drawFittedText(dragTarget == 1 ? "DROP TO SEND IN LIVE CHAT" : "DROP TO ATTACH TO YOUR COMMENT",
+                     area.reduced(18), juce::Justification::centred, 3);
+}
+
+void KyotoAudioProcessorEditor::stageAttachment(const juce::File& file, int target)
+{
+    if (! file.existsAsFile()) { status.setText("That is not a file I can attach", juce::dontSendNotification); return; }
+    if (file.getSize() > kt::kAttachMaxBytes)
+    {
+        status.setText("Too big to share: " + kt::humanBytes(file.getSize()) + " (limit " + kt::humanBytes(kt::kAttachMaxBytes) + ")", juce::dontSendNotification);
+        return;
+    }
+    pendingAttach = file;
+    pendingAttachTarget = target;
+    if (target == 1 && railMode != 0) setRailMode(0);
+    attachChip.setButtonText("FILE  " + kt::cleanAttachName(file.getFileName()) + "  (" + kt::humanBytes(file.getSize()) + ")   x");
+    showTab(tab);
+    resized();
+    status.setText(target == 1 ? "File ready - write a message (optional) and press SEND" : "File ready - write a comment (optional) and press COMMENT", juce::dontSendNotification);
+}
+
+void KyotoAudioProcessorEditor::clearAttachment()
+{
+    pendingAttach = juce::File();
+    pendingAttachTarget = 0;
+    attachChip.setVisible(false);
+    resized();
+}
+
+void KyotoAudioProcessorEditor::sendWithAttachment(int target, const juce::String& text)
+{
+    const auto file = pendingAttach;
+    if (! file.existsAsFile() || token.isEmpty()) { clearAttachment(); return; }
+    const auto tokenCopy = token, threadId = selectedThreadId;
+    juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
+    status.setText("Uploading " + file.getFileName() + " (" + kt::humanBytes(file.getSize()) + ")...", juce::dontSendNotification);
+    attachChip.setEnabled(false);
+    sendBtn.setEnabled(false); utilityGoBtn.setEnabled(false);
+    std::thread([safe, tokenCopy, threadId, file, target, text] {
+        kt::AttachRef ref;
+        juce::String err;
+        kt::DreamResult r;
+        if (kt::uploadAttachment(tokenCopy, file, ref, err))
+        {
+            const auto typed = text.trim().substring(0, target == 1 ? 300 : 380);
+            const auto msg = (typed + " " + kt::attachToken(ref)).trim();
+            if (target == 1) r = kt::sendChat(tokenCopy, msg);
+            else
+            {
+                auto* o = new juce::DynamicObject();
+                o->setProperty("threadId", threadId);
+                o->setProperty("text", msg);
+                r = kt::postAction("comment", juce::var(o), tokenCopy);
+            }
+        }
+        else r.error = err;
+        juce::MessageManager::callAsync([safe, r, target] {
+            if (safe == nullptr) return;
+            safe->attachChip.setEnabled(true);
+            safe->sendBtn.setEnabled(true); safe->utilityGoBtn.setEnabled(true);
+            if (! r.ok)
+            {
+                safe->status.setText("Attach failed: " + (r.error.isEmpty() ? juce::String("unknown error") : r.error), juce::dontSendNotification);
+                return; // keep the file staged so it can be retried
+            }
+            safe->clearAttachment();
+            if (target == 1) { safe->msgBox.clear(); safe->scrollChatOnRefresh = true; }
+            else { safe->utilityBox.clear(); safe->scrollChatOnRefresh = false; }
+            safe->refreshFeed();
+            safe->status.setText("Sent with file", juce::dontSendNotification);
+        });
+    }).detach();
+}
+
+void KyotoAudioProcessorEditor::saveAttachmentAs(const kt::AttachRef& ref)
+{
+    if (! ref.valid() || token.isEmpty()) return;
+    const auto tokenCopy = token;
+    juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
+    auto chooser = std::make_shared<juce::FileChooser>("Save " + ref.name,
+        juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile(ref.name), "*");
+    chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting,
+        [safe, chooser, ref, tokenCopy](const juce::FileChooser& fc) {
+            const auto dest = fc.getResult();
+            if (dest == juce::File() || safe == nullptr) return;
+            safe->status.setText("Downloading " + ref.name + "...", juce::dontSendNotification);
+            std::thread([safe, ref, tokenCopy, dest] {
+                juce::String err;
+                const bool ok = kt::downloadAttachment(tokenCopy, ref, dest, err);
+                juce::MessageManager::callAsync([safe, ok, err, dest] {
+                    if (safe == nullptr) return;
+                    safe->status.setText(ok ? "Saved " + dest.getFileName() : "Download failed: " + err, juce::dontSendNotification);
+                });
+            }).detach();
+        });
 }
 
 void KyotoAudioProcessorEditor::undoLast()
@@ -2496,7 +2793,9 @@ void KyotoAudioProcessorEditor::sendChat()
 {
     scrollChatOnRefresh = true;
     const auto text = msgBox.getText().trim(); const auto tokenCopy = token;
-    if (text.isEmpty() || tokenCopy.isEmpty()) return;
+    if (tokenCopy.isEmpty()) return;
+    if (pendingAttach.existsAsFile() && pendingAttachTarget == 1) { sendWithAttachment(1, text); return; }
+    if (text.isEmpty()) return;
     juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
     std::thread([safe, text, tokenCopy] {
         auto r = kt::sendChat(tokenCopy, text);
@@ -2570,7 +2869,7 @@ void KyotoAudioProcessorEditor::deleteCatalogId(const juce::String& id)
 {
     if (id.isEmpty()) return;
     const auto tokenCopy = token; juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
-    std::thread([safe, id, tokenCopy] { auto r=kt::deleteModule(tokenCopy,id); juce::MessageManager::callAsync([safe,r]{ if(safe==nullptr)return; safe->status.setText(r.ok?"CATALOG ITEM REMOVED":"REMOVE FAILED: "+r.error,juce::dontSendNotification); if(r.ok){safe->selectedCatalogId.clear();safe->refreshCatalog();} }); }).detach();
+    std::thread([safe, id, tokenCopy] { auto r=kt::deleteModule(tokenCopy,id); juce::MessageManager::callAsync([safe,r]{ if(safe==nullptr)return; safe->status.setText(r.ok?"CATALOG ITEM REMOVED":"REMOVE FAILED: "+r.error,juce::dontSendNotification); if(r.ok){safe->selectedCatalogId.clear();safe->refreshCurrentCenter();} }); }).detach();
 }
 
 void KyotoAudioProcessorEditor::clearEffectLinks()
@@ -2607,6 +2906,13 @@ void KyotoAudioProcessorEditor::renderEffectLinks(const juce::String& text)
 
 void KyotoAudioProcessorEditor::setCenterMode(int mode)
 {
+    if (threadOpen)
+    {
+        // Switching tabs leaves the open thread (otherwise the thread view and the board fight over the viewport).
+        threadOpen = false;
+        selectedThreadId.clear();
+        if (pendingAttachTarget == 2) clearAttachment();
+    }
     centerMode = juce::jlimit(0, 4, mode);
     catalogModeBtn.setToggleState(centerMode == 0, juce::dontSendNotification);
     threadsModeBtn.setToggleState(centerMode == 3, juce::dontSendNotification);
@@ -2632,18 +2938,54 @@ void KyotoAudioProcessorEditor::setRailMode(int mode)
 
 void KyotoAudioProcessorEditor::rebuildCenter()
 {
+    layoutCenterHolder();
+}
+
+void KyotoAudioProcessorEditor::layoutCenterHolder()
+{
     const int catalogW = juce::jmax(220, catalogView.getWidth() - 18);
-    const int cols = catalogW >= 640 ? 3 : (catalogW >= 420 ? 2 : 1);
     const int gap = 8;
+    const bool detail = threadOpen && centerMode == 3;
+    auto* holder = (centerMode == 3 && ! threadOpen) ? &threadHolder : &catalogHolder;
+    if (detail)
+    {
+        // Open thread: one readable column, every post as tall as its text needs.
+        const int w = catalogW - gap * 2;
+        int y = gap;
+        for (int i = 0; i < holder->getNumChildComponents(); ++i)
+        {
+            auto* child = holder->getChildComponent(i);
+            int h = 96;
+            if (auto* card = dynamic_cast<BoardCard*>(child)) h = card->preferredHeight(w);
+            child->setBounds(gap, y, w, h);
+            y += h + gap;
+        }
+        holder->setSize(catalogW, juce::jmax(catalogView.getHeight(), y));
+        return;
+    }
+    const int cols = catalogW >= 720 ? 3 : (catalogW >= 440 ? 2 : 1);
     const int cardW = juce::jmax(160, (catalogW - gap * (cols + 1)) / cols);
-    const int cardH = 96;
-    auto* holder = centerMode == 3 ? &threadHolder : &catalogHolder;
-    holder->setSize(catalogW, juce::jmax(catalogView.getHeight(), ((holder->getNumChildComponents() + cols - 1) / juce::jmax(1, cols)) * (cardH + gap) + gap));
-    for (int i = 0; i < holder->getNumChildComponents(); ++i)
+    const int cardH = (int) std::ceil(104.f + 14.f * kt::dsScale());
+    const int n = holder->getNumChildComponents();
+    holder->setSize(catalogW, juce::jmax(catalogView.getHeight(), ((n + cols - 1) / juce::jmax(1, cols)) * (cardH + gap) + gap));
+    for (int i = 0; i < n; ++i)
     {
         const int col = i % cols, row = i / cols;
         holder->getChildComponent(i)->setBounds(gap + col * (cardW + gap), gap + row * (cardH + gap), cardW, cardH);
     }
+}
+
+void KyotoAudioProcessorEditor::applyDsScale()
+{
+    const float s = kt::dsScale();
+    const auto f = juce::Font(14.f * s);
+    msgBox.setFont(f);
+    utilityBox.setFont(f);
+    tagSearchBox.setFont(f);
+    socialRail.setSize(socialRail.getWidth(), socialRail.contentHeight());
+    if (threadOpen) rebuildThreadDetail(); else if (centerMode == 3) rebuildThreadBoard();
+    resized();
+    repaint();
 }
 
 void KyotoAudioProcessorEditor::rebuildThreadBoard()
@@ -2832,7 +3174,8 @@ void KyotoAudioProcessorEditor::openThread(const juce::String& id)
     threadOpen = true;
     centerMode = 3;
     utilityBox.clear();
-    utilityBox.setTextToShowWhenEmpty("Comment, drop a file, or share a plugin / effect", juce::Colour(0x80808080));
+    utilityBox.setTextToShowWhenEmpty("Comment, drop a file here, or share a plugin / effect", juce::Colour(0x80808080));
+    catalogView.setViewedComponent(&catalogHolder, false);
     rebuildThreadDetail();
     showTab(0);
     status.setText("Thread open. Chat and Socials stay on the left.", juce::dontSendNotification);
@@ -2842,12 +3185,15 @@ void KyotoAudioProcessorEditor::closeThread()
 {
     threadOpen = false;
     selectedThreadId.clear();
+    if (pendingAttachTarget == 2) clearAttachment();
     setCenterMode(3);
 }
 
 void KyotoAudioProcessorEditor::postThreadComment(const juce::String& text)
 {
-    if (selectedThreadId.isEmpty() || text.trim().isEmpty() || token.isEmpty()) return;
+    if (selectedThreadId.isEmpty() || token.isEmpty()) return;
+    if (pendingAttach.existsAsFile() && pendingAttachTarget == 2) { sendWithAttachment(2, text); return; }
+    if (text.trim().isEmpty()) return;
     auto* o = new juce::DynamicObject();
     o->setProperty("threadId", selectedThreadId);
     o->setProperty("text", text.trim());
@@ -2897,7 +3243,9 @@ void KyotoAudioProcessorEditor::rebuildThreadDetail()
     auto* head = new BoardCard();
     head->title = found->title.isEmpty() ? "Thread" : found->title;
     head->meta = found->user + "  -  " + found->themeId;
-    head->body = found->text;
+    head->setBodyRaw(found->text);
+    head->grow = true;
+    head->onFile = [this](const kt::AttachRef& r) { saveAttachmentAs(r); };
     head->themeId = found->themeId.isEmpty() ? theme.id : found->themeId;
     catalogHolder.addAndMakeVisible(head);
     for (const auto& c : found->commentList)
@@ -2905,7 +3253,9 @@ void KyotoAudioProcessorEditor::rebuildThreadDetail()
         auto* card = new BoardCard();
         card->title = c.user;
         card->meta = "comment";
-        card->body = c.text;
+        card->setBodyRaw(c.text);
+        card->grow = true;
+        card->onFile = [this](const kt::AttachRef& r) { saveAttachmentAs(r); };
         card->themeId = c.themeId.isEmpty() ? theme.id : c.themeId;
         const auto cid = c.id;
         card->onContextMenu = [this, cid](juce::Point<int> pos) {
@@ -2950,6 +3300,7 @@ void KyotoAudioProcessorEditor::refreshFeed()
             const int viewY = safe->chatView.getViewPositionY();
             const bool nearBottom = safe->socialRail.getHeight() > safe->chatView.getViewHeight()
                 && viewY + safe->chatView.getViewHeight() >= safe->socialRail.getHeight() - 36;
+            safe->socialRail.setSelfUser(safe->account);
             safe->socialRail.setBubbles(bubbles);
             if (safe->railMode == 0 && (safe->scrollChatOnRefresh || nearBottom))
                 safe->chatView.setViewPosition(0, safe->socialRail.getHeight());
@@ -3014,21 +3365,34 @@ void KyotoAudioProcessorEditor::refreshCatalog()
     const auto tagText = tagSearchBox.getText().trim().toLowerCase();
     const auto faceFilter = centerMode == 1 ? juce::String("fx") : juce::String("kyoto");
     const auto tokenCopy = token; juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
-    std::thread([safe, tokenCopy, tagText, faceFilter] {
+    const int seq = ++catalogSeq;
+    status.setText("Loading catalog...", juce::dontSendNotification);
+    std::thread([safe, tokenCopy, tagText, faceFilter, seq] {
         auto r = tagText.isNotEmpty() ? kt::getCatalogTagged(tokenCopy, tagText) : kt::getCatalog(tokenCopy);
-        juce::MessageManager::callAsync([safe, r, faceFilter, tagText] {
+        juce::MessageManager::callAsync([safe, r, faceFilter, tagText, seq] {
             if (safe == nullptr) return;
-            safe->catalog.clear(); safe->catalogHolder.removeAllChildren();
+            if (seq != safe->catalogSeq) return; // a newer request is already on its way
+            // Called from the builders too (after publishing): then only refresh the data, never the cards on screen.
+            const bool showCards = (safe->centerMode == 0 || safe->centerMode == 1);
+            safe->catalog.clear();
+            if (showCards) safe->catalogHolder.removeAllChildren();
             auto* mods = r.parsed.getDynamicObject() ? r.parsed.getDynamicObject()->getProperty("modules").getArray() : nullptr;
-            if (mods == nullptr) { safe->status.setText(r.ok?"Catalog empty":"Catalog needs module_list on the worker", juce::dontSendNotification); safe->refreshEffectBox(); return; }
+            if (mods == nullptr) { safe->status.setText(r.ok?"Catalog empty":(r.error.isEmpty() ? juce::String("Could not load the catalog") : "Catalog: " + r.error), juce::dontSendNotification); safe->refreshEffectBox(); return; }
             int i=0;
             for (auto& item:*mods)
             {
                 auto* m=item.getDynamicObject(); if(!m) continue;
-                const auto face = m->getProperty("face").toString();
-                // Filter by face (plugins vs effects)
-                if (faceFilter == "kyoto" && face != "kyoto") continue;
-                if (faceFilter == "fx" && face != "fx" && face != "effect") continue;
+                const auto face = m->getProperty("face").toString().toLowerCase();
+                // PLUGINS shows every plugin face the builders publish ("kyoto", "chain", ...);
+                // EFFECTS shows "fx"/"effect". (The old filter only accepted "kyoto", so approved
+                // plugins published from the Plugin Builder as "chain" never appeared.)
+                const bool isEffect = face == "fx" || face == "effect";
+                if (faceFilter == "kyoto" && isEffect) continue;
+                if (faceFilter == "fx" && ! isEffect) continue;
+                // The public catalog is approved items only. Your own pending/denied work lives in MY PLUGINS,
+                // moderation lives in PENDING (admins used to get everything mixed into the catalog).
+                const auto itemStatus = m->getProperty("status").toString().toLowerCase();
+                const bool hiddenFromPublic = (itemStatus == "pending" || itemStatus == "denied");
                 // Client-side tag filter as fallback
                 if (tagText.isNotEmpty())
                 {
@@ -3042,7 +3406,8 @@ void KyotoAudioProcessorEditor::refreshCatalog()
                 c.author = m->getProperty("author").toString();
                 c.status = m->getProperty("status").toString();
                 c.tags = tagsToText(m->getProperty("tags"));
-                safe->catalog.add(c);
+                safe->catalog.add(c); // builders still see the full list
+                if (hiddenFromPublic) continue;
                 auto* card=new BoardCard();
                 card->title=c.name;
                 card->meta=c.face+"  -  "+c.author;
@@ -3053,12 +3418,34 @@ void KyotoAudioProcessorEditor::refreshCatalog()
                 const auto id=c.id, name=c.name, author=c.author;
                 card->onOpen=[safe,id,name]{ if(safe!=nullptr){safe->selectedCatalogId=id;safe->loadCatalogId(id,name);} };
                 card->onContextMenu=[safe,id,name,author](juce::Point<int> pos){ if(safe!=nullptr) safe->showCatalogCardMenu(id,name,author,pos); };
-                safe->catalogHolder.addAndMakeVisible(card); ++i;
+                if (showCards) safe->catalogHolder.addAndMakeVisible(card); else delete card;
+                ++i;
             }
-            safe->catalogHolder.setSize(juce::jmax(220, safe->catalogView.getWidth()-18), juce::jmax(220, ((i+1)/2)*92)); safe->catalogView.setViewedComponent(&safe->catalogHolder,false); safe->resized(); safe->refreshEffectBox();
-            safe->status.setText(juce::String(i) + " items" + (tagText.isNotEmpty() ? "  -  tag: " + tagText : ""), juce::dontSendNotification);
+            if (! showCards) { safe->refreshEffectBox(); return; }
+            if (i == 0)
+            {
+                auto* empty = new BoardCard();
+                empty->title = tagText.isNotEmpty() ? "No matches" : (faceFilter == "fx" ? "No effects yet" : "No plugins yet");
+                empty->body = tagText.isNotEmpty() ? "Nothing is tagged or named \"" + tagText + "\". Clear the search to see everything."
+                                                   : "Approved items show up here. Check MY PLUGINS for your own uploads and their approval status.";
+                empty->themeId = safe->theme.id;
+                safe->catalogHolder.addAndMakeVisible(empty);
+            }
+            safe->catalogView.setViewedComponent(&safe->catalogHolder,false); safe->resized(); safe->refreshEffectBox();
+            safe->status.setText(juce::String(i) + (i == 1 ? " item" : " items") + (tagText.isNotEmpty() ? "  -  tag: " + tagText : ""), juce::dontSendNotification);
         });
     }).detach();
+}
+
+void KyotoAudioProcessorEditor::refreshCurrentCenter()
+{
+    switch (centerMode)
+    {
+        case 2: refreshMyModules(); break;
+        case 4: refreshPending(); break;
+        case 3: refreshFeed(); break;
+        default: refreshCatalog(); break;
+    }
 }
 
 void KyotoAudioProcessorEditor::refreshMyModules()
@@ -3163,21 +3550,21 @@ void KyotoAudioProcessorEditor::approveCatalogId(const juce::String& id)
 {
     if (!isAdmin || id.isEmpty()) return;
     const auto tokenCopy = token; juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
-    std::thread([safe, id, tokenCopy] { auto r=kt::approveModule(tokenCopy,id); juce::MessageManager::callAsync([safe,r]{ if(safe==nullptr)return; safe->status.setText(r.ok?"APPROVED":"Approve failed: "+r.error,juce::dontSendNotification); if(r.ok) safe->refreshCatalog(); }); }).detach();
+    std::thread([safe, id, tokenCopy] { auto r=kt::approveModule(tokenCopy,id); juce::MessageManager::callAsync([safe,r]{ if(safe==nullptr)return; safe->status.setText(r.ok?"APPROVED - it is now in the public catalog":"Approve failed: "+r.error,juce::dontSendNotification); if(r.ok) safe->refreshCurrentCenter(); }); }).detach();
 }
 
 void KyotoAudioProcessorEditor::denyCatalogId(const juce::String& id)
 {
     if (!isAdmin || id.isEmpty()) return;
     const auto tokenCopy = token; juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
-    std::thread([safe, id, tokenCopy] { auto r=kt::denyModule(tokenCopy,id); juce::MessageManager::callAsync([safe,r]{ if(safe==nullptr)return; safe->status.setText(r.ok?"DENIED":"Deny failed: "+r.error,juce::dontSendNotification); if(r.ok) safe->refreshCatalog(); }); }).detach();
+    std::thread([safe, id, tokenCopy] { auto r=kt::denyModule(tokenCopy,id); juce::MessageManager::callAsync([safe,r]{ if(safe==nullptr)return; safe->status.setText(r.ok?"DENIED":"Deny failed: "+r.error,juce::dontSendNotification); if(r.ok) safe->refreshCurrentCenter(); }); }).detach();
 }
 
 void KyotoAudioProcessorEditor::tagCatalogId(const juce::String& id, const juce::String& tags)
 {
     if (!isAdmin || id.isEmpty()) return;
     const auto tokenCopy = token; juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
-    std::thread([safe, id, tags, tokenCopy] { auto r=kt::tagModule(tokenCopy,id,tags); juce::MessageManager::callAsync([safe,r]{ if(safe==nullptr)return; safe->status.setText(r.ok?"TAGS ADDED":"Tag failed: "+r.error,juce::dontSendNotification); if(r.ok) safe->refreshCatalog(); }); }).detach();
+    std::thread([safe, id, tags, tokenCopy] { auto r=kt::tagModule(tokenCopy,id,tags); juce::MessageManager::callAsync([safe,r]{ if(safe==nullptr)return; safe->status.setText(r.ok?"TAGS ADDED":"Tag failed: "+r.error,juce::dontSendNotification); if(r.ok) safe->refreshCurrentCenter(); }); }).detach();
 }
 
 float KyotoAudioProcessorEditor::scaledFont(float baseSize) const
