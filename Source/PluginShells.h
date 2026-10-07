@@ -950,7 +950,6 @@ public:
     kt::ThemePalette theme = kt::kThemes[0];
     std::function<void(int)> onSlot;
     std::function<void(int, juce::Point<int>)> onRightClick;
-    std::function<void(int, juce::Point<int>)> onWireRightClick; // child bay of the wire that was right-clicked
     std::function<bool(int)> occupied;
     std::function<juce::Point<float>(int)> anchor;
     std::function<int(int)> parentOf;       // bay a part is connected into (0 = motherboard)
@@ -1081,37 +1080,6 @@ public:
         }
     }
 
-    // Wire from a parent bay to a child bay: same cubic the painter strokes.
-    static juce::Point<float> wirePoint(juce::Point<float> a, juce::Point<float> b, float t)
-    {
-        const float u = 1.f - t, my = (a.y + b.y) * 0.5f;
-        const float x = u*u*u*a.x + 3.f*u*u*t*a.x + 3.f*u*t*t*b.x + t*t*t*b.x;
-        const float y = u*u*u*a.y + 3.f*u*u*t*my  + 3.f*u*t*t*my  + t*t*t*b.y;
-        return { x, y };
-    }
-
-    // Returns the child bay of the wire under pos (within 7 px), or -1.
-    int wireAt(juce::Point<float> pos) const
-    {
-        if (! occupied || ! anchor) return -1;
-        const auto& shell = kShells[juce::jlimit(0, kShellCount - 1, shellIndex)];
-        int best = -1; float bestD = 7.f;
-        for (int i = 1; i < shell.slotCount; ++i)
-        {
-            if (! occupied(i)) continue;
-            int par = parentOf ? parentOf(i) : 0;
-            if (par < 0 || par == i || par >= shell.slotCount) par = 0;
-            const auto a = anchor(par), b = anchor(i);
-            if (a.x <= 1.f || b.x <= 1.f) continue;
-            for (int k = 0; k <= 32; ++k)
-            {
-                const float d = wirePoint(a, b, (float) k / 32.f).getDistanceFrom(pos);
-                if (d < bestD) { bestD = d; best = i; }
-            }
-        }
-        return best;
-    }
-
     int slotAt(juce::Point<float> pos) const
     {
         if (! placing) return -1;
@@ -1148,9 +1116,6 @@ public:
             int hit = -1;
             for (int i = 0; i < shell.slotCount; ++i)
                 if (slotRect(face, shell.slots[i]).contains(e.position)) { hit = i; break; }
-            // A wire under the cursor wins over empty case, but a part's own bay wins over the wire.
-            const int wire = (hit < 0 || ! (occupied && occupied(hit))) ? wireAt(e.position) : -1;
-            if (wire > 0 && onWireRightClick) { onWireRightClick(wire, e.getScreenPosition()); return; }
             if (onRightClick) onRightClick(hit, e.getScreenPosition());
             return;
         }

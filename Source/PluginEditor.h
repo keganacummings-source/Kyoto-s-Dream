@@ -287,7 +287,6 @@ private:
     void persistEditorSession();
     void restoreEditorSession();
     void showSlotMenu(int slot, juce::Point<int> screenPos);
-    void showWireMenu(int childBay, juce::Point<int> screenPos);
     void editEffectPopup(int widgetIndex);
     void placeKindInSlot(const juce::String& kind, int slot, int fxIndex, const juce::String& label);
     void syncMachineDesignToUi();

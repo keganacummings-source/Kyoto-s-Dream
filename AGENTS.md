@@ -77,9 +77,3 @@ The `docker run -d ... bash -c '... cmake ...'` recipe above exits as soon as cm
 ## Discord DIS rendering (native UI)
 - `SocialRail::Bubble::dis` and `SocialDirectory::Row::dis` drive a small DIS chip beside the author name in the chat feed and in the Socials online list; the editor reads `dis` from chat messages and from `onlineUsers`.
 - `PluginEditor.cpp` compiles clean for both targets (object compile; only a pre-existing class of JUCE deprecation warning). The rendered chip itself still needs a DAW check — the browser preview cannot show native UI.
-
-## Builder rework (this branch) - NOT yet compiled
-- New instance opens on a blank canvas (`rollNewInstanceTemplate` only ensures the motherboard; no random parts, no default FX).
-- Themed popup menus (`KyotoLookAndFeel::drawPopupMenu*`), wire right-click (`BuilderCanvas::wireAt`, `showWireMenu`: cut / re-route / remove), 13 visualizer modes (`WaveDisplay::Mode`, per-widget `vizMode`, right-click > Visualizer Style).
-- `JV_WORKER.js` re-synced to `worker.js`. CI gained `linux-check` (compile+link) and `worker-check` (node --check + copy sync) jobs.
-- Verified here only by delimiter balance + `node --check`; the sandbox had no JUCE/cmake/network. Push the branch and read the `linux-check` job first.

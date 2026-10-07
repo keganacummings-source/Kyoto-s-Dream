@@ -43,63 +43,6 @@ public:
         return kt::font(theme, 13.0f);
     }
 
-    void drawPopupMenuBackground(juce::Graphics& g, int width, int height) override
-    {
-        auto r = juce::Rectangle<float>(0.f, 0.f, (float) width, (float) height);
-        g.fillAll(kt::c(theme.panel));
-        g.setColour(kt::c(theme.accent).withAlpha(0.85f));
-        g.drawRect(r.reduced(0.5f), 1.f);
-    }
-
-    void drawPopupMenuItem(juce::Graphics& g, const juce::Rectangle<int>& area, bool isSeparator, bool isActive,
-                           bool isHighlighted, bool isTicked, bool hasSubMenu, const juce::String& text,
-                           const juce::String& shortcutKeyText, const juce::Drawable*, const juce::Colour*) override
-    {
-        if (isSeparator)
-        {
-            g.setColour(kt::c(theme.border).withAlpha(0.8f));
-            g.fillRect(area.reduced(8, 0).withHeight(1).withY(area.getCentreY()));
-            return;
-        }
-        auto r = area.reduced(3, 1).toFloat();
-        const bool lit = isHighlighted && isActive;
-        if (lit)
-        {
-            g.setColour(kt::c(theme.accent).withAlpha(0.30f));
-            g.fillRoundedRectangle(r, 5.f);
-            g.setColour(kt::c(theme.accent));
-            g.drawRoundedRectangle(r, 5.f, 1.f);
-        }
-        g.setColour(! isActive ? kt::c(theme.muted).withAlpha(0.6f) : (lit || isTicked) ? kt::c(theme.accent) : kt::c(theme.text));
-        g.setFont(kt::font(theme, 13.0f, isTicked));
-        auto tr = area.reduced(12, 0);
-        if (isTicked) { g.fillEllipse((float) area.getX() + 4.f, (float) area.getCentreY() - 2.5f, 5.f, 5.f); }
-        if (hasSubMenu) tr.removeFromRight(14);
-        g.drawFittedText(text, tr, juce::Justification::centredLeft, 1);
-        if (shortcutKeyText.isNotEmpty())
-        {
-            g.setColour(kt::c(theme.muted));
-            g.drawText(shortcutKeyText, tr, juce::Justification::centredRight);
-        }
-        if (hasSubMenu)
-        {
-            const float cx = (float) area.getRight() - 10.f, cy = (float) area.getCentreY();
-            juce::Path arrow;
-            arrow.addTriangle(cx - 3.f, cy - 4.f, cx - 3.f, cy + 4.f, cx + 2.f, cy);
-            g.setColour(lit ? kt::c(theme.accent) : kt::c(theme.muted));
-            g.fillPath(arrow);
-        }
-    }
-
-    void drawPopupMenuSectionHeader(juce::Graphics& g, const juce::Rectangle<int>& area, const juce::String& sectionName) override
-    {
-        g.setColour(kt::c(theme.accent));
-        g.setFont(kt::font(theme, 11.f, true));
-        g.drawFittedText(sectionName.toUpperCase(), area.reduced(12, 0), juce::Justification::centredLeft, 1);
-        g.setColour(kt::c(theme.border).withAlpha(0.8f));
-        g.fillRect(area.getX() + 8, area.getBottom() - 1, area.getWidth() - 16, 1);
-    }
-
     juce::Font getSliderPopupFont(juce::Slider&) override
     {
         return kt::font(theme, 12.0f);
@@ -220,7 +163,6 @@ CanvasWidget::CanvasWidget(KyotoAudioProcessor& p, juce::ValueTree n)
     {
         waveDisplay = std::make_unique<WaveDisplay>(proc);
         waveDisplay->setTheme(theme);
-        waveDisplay->setMode((WaveDisplay::Mode) juce::jlimit(0, WaveDisplay::kModeCount - 1, (int) node.getProperty("vizMode", 0)));
         addAndMakeVisible(*waveDisplay);
     }
     if (kind == Kind::Dial || kind == Kind::Slider)
@@ -2226,7 +2168,6 @@ void KyotoAudioProcessorEditor::reflowSeries()
     panel.placing = placing;
     panel.armedStyle = armedStyle;
     panel.onRightClick = [this](int slot, juce::Point<int> pos) { showSlotMenu(slot, pos); };
-    panel.onWireRightClick = [this](int bay, juce::Point<int> pos) { showWireMenu(bay, pos); };
     repairParents();
     panel.parentOf = [this](int bay) {
         for (auto* w : widgets)
@@ -2706,16 +2647,14 @@ void KyotoAudioProcessorEditor::randomizeTemplate()
 
 void KyotoAudioProcessorEditor::rollNewInstanceTemplate()
 {
-    // A brand-new instance opens on a blank canvas: just the motherboard/screen of the chosen
-    // template, no pre-placed parts and no default FX. A restored build is left alone.
+    // A brand-new instance opens on a randomly generated template; a restored build is left alone.
     for (int i = 0; i < proc.uiState.getNumChildren(); ++i)
     {
         auto child = proc.uiState.getChild(i);
         if (child.hasType("w") && child.getProperty("kind").toString() != "board")
             return;
     }
-    ensureMotherboard();
-    status.setText("Blank canvas - left-click a bay to place a part, right-click for the full menu.", juce::dontSendNotification);
+    randomizeTemplate();
 }
 
 void KyotoAudioProcessorEditor::swapPartInBay(int bay, const juce::String& kind, int fxIndex, const juce::String& label)
@@ -2795,58 +2734,6 @@ void KyotoAudioProcessorEditor::swapPartInBay(int bay, const juce::String& kind,
     status.setText("Swapped in " + (label.isNotEmpty() ? label : kind) + ".", juce::dontSendNotification);
 }
 
-void KyotoAudioProcessorEditor::showWireMenu(int childBay, juce::Point<int> screenPos)
-{
-    int childIdx = -1;
-    for (int i = 0; i < widgets.size(); ++i)
-        if ((int) widgets[i]->node.getProperty("shellSlot", -1) == childBay) { childIdx = i; break; }
-    if (childIdx < 0) return;
-    const int selBay = (selectedChainWidget >= 0 && selectedChainWidget < widgets.size())
-        ? (int) widgets[selectedChainWidget]->node.getProperty("shellSlot", -1) : -1;
-    const int curParent = (int) widgets[childIdx]->node.getProperty("parent", 0);
-
-    // Re-routing onto a part that hangs below the child would close a loop.
-    bool canReroute = selBay > 0 && selBay != childBay && selBay != curParent;
-    for (int guard = 0, up = selBay; canReroute && up > 0 && guard < 64; ++guard)
-    {
-        int next = 0;
-        for (auto* w : widgets)
-            if ((int) w->node.getProperty("shellSlot", -1) == up) { next = (int) w->node.getProperty("parent", 0); break; }
-        if (next == childBay) canReroute = false;
-        up = next;
-    }
-
-    juce::PopupMenu menu;
-    menu.addSectionHeader("Wire: " + widgets[childIdx]->node.getProperty("label").toString());
-    menu.addItem(1, "Cut wire (plug into motherboard)", curParent != 0);
-    menu.addItem(2, "Re-route into highlighted part", canReroute);
-    menu.addSeparator();
-    menu.addItem(3, "Remove part");
-    stopTimer();
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({ screenPos.x, screenPos.y, 1, 1 }),
-        [this, childBay, selBay](int result)
-        {
-            startTimerHz(12);
-            if (result == 0) return;
-            int idx = -1;
-            for (int i = 0; i < widgets.size(); ++i)
-                if ((int) widgets[i]->node.getProperty("shellSlot", -1) == childBay) { idx = i; break; }
-            if (idx < 0) return;
-            if (result == 1 || result == 2)
-            {
-                captureSnapshot();
-                widgets[idx]->node.setProperty("parent", result == 1 ? 0 : selBay, nullptr);
-                rebuildCanvas();
-                status.setText(result == 1 ? "Wire cut - part now plugs into the motherboard." : "Wire re-routed.", juce::dontSendNotification);
-            }
-            else if (result == 3)
-            {
-                selectedChainWidget = idx;
-                removeSelectedChainStep();
-            }
-        });
-}
-
 void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPos)
 {
     const auto local = panel.getLocalPoint(nullptr, screenPos.toFloat());
@@ -2871,7 +2758,6 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
     parts.addItem(1, "Dial %");
     parts.addItem(2, "Slider (follows module ratio)");
     parts.addItem(3, "Button toggle");
-    parts.addItem(4, "Visualizer");
     parts.addItem(5, "Key (MIDI)");
     parts.addItem(6, "Sound (one sample)");
     add.addSubMenu("Part", parts);
@@ -2891,7 +2777,6 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
         swapParts.addItem(3001, "Dial %");
         swapParts.addItem(3002, "Slider (follows module ratio)");
         swapParts.addItem(3003, "Button toggle");
-        swapParts.addItem(3004, "Visualizer");
         swapParts.addItem(3005, "Key (MIDI)");
         swapParts.addItem(3006, "Sound (one sample)");
         swap.addSubMenu("Part", swapParts);
@@ -2904,13 +2789,6 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
             swap.addSubMenu(kt::kFxFamilyNames[fam], famMenu);
         }
         menu.addSubMenu("Swap Part", swap);
-        if (widgets[selectedChainWidget]->node.getProperty("kind").toString() == "wave")
-        {
-            juce::PopupMenu viz;
-            const int curViz = (int) widgets[selectedChainWidget]->node.getProperty("vizMode", 0);
-            for (int i = 0; i < WaveDisplay::kModeCount; ++i) viz.addItem(5000 + i, WaveDisplay::modeName(i), true, i == curViz);
-            menu.addSubMenu("Visualizer Style", viz);
-        }
         menu.addItem(7, "FX EDIT");
         menu.addItem(8, "Remove");
     }
@@ -2933,18 +2811,6 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
                 for (auto* w : widgets) w->repaint();
                 panel.repaint();
                 status.setText(juce::String("Screen changed to ") + pb::kScreenTypes[result - 2000], juce::dontSendNotification);
-                return;
-            }
-            if (result >= 5000 && result < 5000 + WaveDisplay::kModeCount)
-            {
-                if (selectedChainWidget >= 0 && selectedChainWidget < widgets.size())
-                {
-                    auto* w = widgets[selectedChainWidget];
-                    w->node.setProperty("vizMode", result - 5000, nullptr);
-                    if (w->waveDisplay) w->waveDisplay->setMode((WaveDisplay::Mode) (result - 5000));
-                    w->repaint();
-                    status.setText(juce::String("Visualizer: ") + WaveDisplay::modeName(result - 5000), juce::dontSendNotification);
-                }
                 return;
             }
             if (result == 7) { editEffectPopup(selectedChainWidget); return; }
