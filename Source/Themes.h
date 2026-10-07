@@ -95,7 +95,8 @@ inline juce::Colour c(juce::uint32 argb) { return juce::Colour(argb); }
 
 inline juce::Font font(const ThemePalette& t, float size, bool bold = false)
 {
-    return juce::Font(juce::FontOptions(t.fontFamily, size * t.textScale, bold ? juce::Font::bold : juce::Font::plain));
+    auto opts = juce::FontOptions(t.fontFamily, size * t.textScale, bold ? juce::Font::bold : juce::Font::plain);
+    return juce::Font(opts.withFallbacks({ "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji" }));
 }
 
 } // namespace kt

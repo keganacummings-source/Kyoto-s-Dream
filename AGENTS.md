@@ -49,22 +49,8 @@ curl -s -X POST localhost:3000/ -H 'Content-Type: application/json' \
 ```
 Container healthcheck: `node -e "fetch('http://127.0.0.1:3000/')..."` (no curl/wget in node image).
 
-## Discord Lite (Threads → Discord relay)
-- The DreamShare home "THREADS" tab now has a **DISCORD** toggle button. When on, the
-  board shows the Discord channels the bot can see (Discord Lite); tapping a channel
-  loads its recent 50 messages, with a `< CHANNELS` back button.
-- The worker proxies Discord REST (`discord.com/api/v10`) with the bot token so the
-  token never reaches the VST. Actions: `discord_channels` (lists text/announcement
-  channels of the guild) and `discord_messages` (`{ channelId }` → recent messages).
-- Secrets `DISCORD_BOT_TOKEN` + `DISCORD_GUILD_ID` are delivered via `/run/base44/app.env`
-  (compose `env_file:`). The compose startup writes them into `.dev.vars` (gitignored)
-  so wrangler local dev exposes them as worker `env` bindings. Without them the
-  `discord_*` actions return a clear "not configured" error and the rest of the app is
-  unaffected.
-- A 403 from `discord_channels` means the token is valid but the bot is not in the
-  guild (or lacks View Channels / Read Message History). Invite the bot with those
-  permissions; enable the Message Content Intent in the Developer Portal.
-- C++ compile-check note: `randomizeTemplate` used `StringArray::removeAndReturn` (no
-  such method) and `editEffectPopup`'s modal lambda needed `mutable` to call
-  `ValueTree::setProperty` on a by-value capture. Both were pre-existing and are now
-  fixed so the plugin objects compile on Linux GCC.
+## Compile-check notes
+- `randomizeTemplate` uses `essentials[0]; essentials.remove(0)` (StringArray has no
+  `removeAndReturn`) and `editEffectPopup`'s modal lambda is `mutable` so it can call
+  `ValueTree::setProperty` on a by-value capture. Both were pre-existing fixes so the
+  plugin objects compile on Linux GCC.

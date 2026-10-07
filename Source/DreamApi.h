@@ -23,7 +23,5 @@ DreamResult getDM(const juce::String& token, const juce::String& peer);
 DreamResult sendDM(const juce::String& token, const juce::String& peer, const juce::String& text);
 DreamResult friendRequest(const juce::String& token, const juce::String& action, const juce::String& target);
 DreamResult react(const juce::String& token, const juce::String& kind, const juce::String& id, const juce::String& emoji);
-DreamResult getDiscordChannels(const juce::String& token);
-DreamResult getDiscordMessages(const juce::String& token, const juce::String& channelId);
 DreamResult postAction(const juce::String& action, juce::var body, const juce::String& token);
 }

@@ -2,18 +2,5 @@
   "previewPort": 3000,
   "healthPath": "/",
   "startCommand": "docker compose -f docker-compose.base44.yml up -d",
-  "secrets": [
-    {
-      "name": "DISCORD_BOT_TOKEN",
-      "description": "Discord bot token (Discord Developer Portal > application > Bot > Reset Token). Used by the DreamShare worker to relay channels/messages to the VST Discord Lite view.",
-      "requiredAtBoot": false,
-      "generatedForDevelopment": false
-    },
-    {
-      "name": "DISCORD_GUILD_ID",
-      "description": "Discord server (guild) ID whose channels the bot lists. Enable Developer Mode in Discord, right-click the server > Copy ID.",
-      "requiredAtBoot": false,
-      "generatedForDevelopment": false
-    }
-  ]
+  "secrets": []
 }

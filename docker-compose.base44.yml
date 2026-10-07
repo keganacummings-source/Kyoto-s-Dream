@@ -10,7 +10,7 @@ services:
     volumes:
       - .:/app
       - npm-cache:/root/.npm
-    command: ["sh", "-ec", "npm install --no-audit --no-fund && printf 'DISCORD_BOT_TOKEN=%s\nDISCORD_GUILD_ID=%s\n' \"$${DISCORD_BOT_TOKEN}\" \"$${DISCORD_GUILD_ID}\" > .dev.vars; exec npx wrangler dev --port 3000 --ip 0.0.0.0"]
+    command: ["sh", "-ec", "npm install --no-audit --no-fund && exec npx wrangler dev --port 3000 --ip 0.0.0.0"]
     ports:
       - "3000:3000"
     env_file:

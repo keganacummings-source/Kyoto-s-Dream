@@ -538,13 +538,12 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
                      &addBtn, &saveBtn, &upBtn, &wavBtn, &chainBreakBtn, &chainMixBtn, &chainRemoveBtn, &chainUndoBtn,
                      &fxAddBtn, &fxSaveBtn, &fxUpBtn, &fxShareChatBtn, &fxShareThreadBtn, &fxRemoveBtn, &fxUndoBtn,
                      &fxBreakBtn, &fxMixBtn, &fxRandomBtn, &fxClearBtn, &pluginViewBtn, &pluginBackBtn, &newMachineBtn, &randomMachineBtn, &chatRefreshBtn, &threadsBtn, &socialBtn, &dmBtn, &adminDeleteBtn, &utilityGoBtn, &catalogModeBtn, &threadsModeBtn, &railChatBtn, &railOnlineBtn,
-                     &discordBtn, &discordBackBtn, &proToggleBtn, &wizardNextBtn, &wizardSkipBtn })
+                     &proToggleBtn, &wizardNextBtn, &wizardSkipBtn })
     {
         addAndMakeVisible(b);
         b->setClickingTogglesState(false);
     }
     proToggleBtn.setClickingTogglesState(true);
-    discordBtn.setClickingTogglesState(true);
 
     shareBtn.onClick = [this] { showTab(0); };
     chainBtn.onClick = [this]
@@ -724,8 +723,6 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     randomMachineBtn.setTooltip("Randomize the machine design");
     catalogModeBtn.setTooltip("Show the catalog card browser");
     threadsModeBtn.setTooltip("Show community threads");
-    discordBtn.setTooltip("Browse Discord channels the bot can see (Discord Lite)");
-    discordBackBtn.setTooltip("Back to the Discord channel list");
     railChatBtn.setTooltip("Show the side chat");
     railOnlineBtn.setTooltip("Show friends and who is online");
     proToggleBtn.setTooltip("Toggle pro machine editing");
@@ -827,20 +824,6 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     threadsModeBtn.onClick = [this] { setCenterMode(1); refreshFeed(); };
     railChatBtn.onClick = [this] { setRailMode(0); refreshFeed(); };
     railOnlineBtn.onClick = [this] { setRailMode(1); refreshFeed(); chatUtility("social_list"); };
-    discordBtn.onClick = [this] {
-        discordMode = discordBtn.getToggleState();
-        discordView = 0;
-        selectedDiscordChannel.clear();
-        if (discordMode) refreshDiscord();
-        else rebuildThreadBoard();
-        showTab(tab);
-    };
-    discordBackBtn.onClick = [this] {
-        discordView = 0;
-        selectedDiscordChannel.clear();
-        rebuildThreadBoard();
-        showTab(tab);
-    };
     catalogModeBtn.setClickingTogglesState(true);
     threadsModeBtn.setClickingTogglesState(true);
     railChatBtn.setClickingTogglesState(true);
@@ -959,7 +942,8 @@ void KyotoAudioProcessorEditor::timerCallback()
     chainLevels.refresh();
     socialRail.setPhase(animPhase);
     socialRail.setHostTheme(theme);
-    repaint();
+    if (tab != 0)
+        repaint();
     for (auto* w : widgets)
         if (w->kind == CanvasWidget::Kind::Wave || w->kind == CanvasWidget::Kind::Stack)
             w->repaint();
@@ -1094,6 +1078,13 @@ void SocialRail::paint(juce::Graphics& g)
             g.drawRoundedRectangle(card, 9.f, 1.f);
             g.setFont(kt::font(pal, 11.f, true));
             g.drawText(m.user, card.getX() + 12, card.getY() + 6, card.getWidth() - 20, 16, juce::Justification::left);
+            if (m.tag.isNotEmpty())
+            {
+                const int nameW = kt::font(pal, 11.f, true).getStringWidth(m.user);
+                g.setFont(kt::font(pal, 8.f, true));
+                g.setColour(kt::c(pal.accent).withAlpha(0.85f));
+                g.drawText("[" + m.tag + "]", card.getX() + 14 + nameW, card.getY() + 8, 80, 12, juce::Justification::left);
+            }
             g.setColour(kt::c(pal.text));
             g.setFont(kt::font(pal, 10.f));
             g.drawFittedText(m.text, juce::Rectangle<int>((int) card.getX() + 12, (int) card.getY() + 24, (int) card.getWidth() - 20, 36), juce::Justification::topLeft, 2);
@@ -1205,7 +1196,7 @@ void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
         g.drawText("DREAMSHARE HOME", hero.getX()+18, hero.getY()+12, 300, 26, juce::Justification::left);
         g.setColour(kt::c(theme.text));
         g.setFont(kt::font(theme, 13.f, false));
-        g.drawFittedText("Catalog in the center. Threads on their own tab - flip to DISCORD for a Discord Lite channel browser. Chat stays on the side rail.", juce::Rectangle<float>(hero.getX()+18, hero.getY()+42, juce::jmax(120.f, hero.getWidth()-250.f), 28.f).toNearestInt(), juce::Justification::topLeft, 2);
+        g.drawFittedText("Catalog in the center. Threads on their own tab. Chat stays on the side rail.", juce::Rectangle<float>(hero.getX()+18, hero.getY()+42, juce::jmax(120.f, hero.getWidth()-250.f), 28.f).toNearestInt(), juce::Justification::topLeft, 2);
         g.setColour(kt::c(theme.accent));
         g.setFont(kt::font(theme, 12.f, true));
         g.drawText("LIVE  -  " + (account.isEmpty() ? juce::String("SIGNED IN") : account.toUpperCase()), hero.getRight()-220, hero.getY()+18, 200, 18, juce::Justification::right);
@@ -1224,7 +1215,7 @@ void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
         g.setColour(kt::c(theme.accent));
         g.setFont(kt::font(theme, 12.f, true));
         g.drawText(railMode == 0 ? "SIDE CHAT" : "FRIENDS / ONLINE", chatCard.getX()+12, chatCard.getY()+6, 180, 18, juce::Justification::left);
-        g.drawText(centerMode == 0 ? "CATALOG BROWSER" : (discordMode ? (discordView == 1 ? "DISCORD  -  #" + selectedDiscordName : "DISCORD  -  CHANNELS") : "THREADS"), catalogCard.getX()+12, catalogCard.getY()+6, 260, 18, juce::Justification::left);
+        g.drawText(centerMode == 0 ? "CATALOG BROWSER" : "THREADS", catalogCard.getX()+12, catalogCard.getY()+6, 260, 18, juce::Justification::left);
     }
 
     if (tab == 1)
@@ -1352,14 +1343,12 @@ void KyotoAudioProcessorEditor::showTab(int next)
     const bool fx = tab == 2;
 
     logBox.setVisible(false);
-    utilityBox.setVisible(share && loggedIn && (railMode == 1 || (centerMode == 1 && ! discordMode)));
+    utilityBox.setVisible(share && loggedIn && (railMode == 1 || centerMode == 1));
     utilityActionBox.setVisible(share && loggedIn && railMode == 1);
-    utilityGoBtn.setVisible(share && loggedIn && (railMode == 1 || (centerMode == 1 && ! discordMode)));
+    utilityGoBtn.setVisible(share && loggedIn && (railMode == 1 || centerMode == 1));
     chatRefreshBtn.setVisible(false); threadsBtn.setVisible(false); socialBtn.setVisible(false); dmBtn.setVisible(false);
     catalogModeBtn.setVisible(share && loggedIn); threadsModeBtn.setVisible(share && loggedIn);
     railChatBtn.setVisible(share && loggedIn); railOnlineBtn.setVisible(share && loggedIn);
-    discordBtn.setVisible(share && loggedIn && centerMode == 1);
-    discordBackBtn.setVisible(share && loggedIn && centerMode == 1 && discordMode && discordView == 1);
     adminDeleteBtn.setVisible(share && loggedIn && isAdmin); msgBox.setVisible(share && loggedIn && railMode == 0); sendBtn.setVisible(share && loggedIn && railMode == 0); feedBtn.setVisible(share && loggedIn);
     themeBox.setVisible(share && loggedIn); // global UI theme only on DreamShare home
     const bool wizard = chain && builderWizardStep > 0;
@@ -1454,7 +1443,6 @@ void KyotoAudioProcessorEditor::resized()
         catalogModeBtn.setBounds(top.removeFromLeft(92)); top.removeFromLeft(6);
         threadsModeBtn.setBounds(top.removeFromLeft(92)); top.removeFromLeft(6);
         feedBtn.setBounds(top.removeFromLeft(84));
-        if (centerMode == 1 && top.getWidth() > 92) { top.removeFromLeft(6); discordBtn.setBounds(top.removeFromLeft(92)); }
         if (isAdmin && top.getWidth() > 84) { top.removeFromLeft(6); adminDeleteBtn.setBounds(top.removeFromLeft(78)); }
         if (top.getWidth() > 116) { top.removeFromLeft(10); newMachineBtn.setBounds(top.removeFromLeft(106)); }
         if (top.getWidth() > 152) { top.removeFromLeft(8); randomMachineBtn.setBounds(top.removeFromLeft(136)); }
@@ -1464,11 +1452,6 @@ void KyotoAudioProcessorEditor::resized()
         if (centerMode == 1)
         {
             auto reply = area.removeFromBottom(34);
-            if (discordMode && discordView == 1)
-            {
-                discordBackBtn.setBounds(reply.removeFromLeft(120));
-            }
-            else if (! discordMode)
             {
                 utilityBox.setBounds(reply.removeFromLeft(juce::jmax(160, reply.getWidth() - 92)));
                 reply.removeFromLeft(8);
@@ -2065,12 +2048,15 @@ void KyotoAudioProcessorEditor::randomizeTemplate()
     {
         if (shell.slots[s].kind == pb::SlotKind::Board || shell.slots[s].w < 0.02f) continue;
         juce::String kind;
-        if (essentials.size() > 0) { kind = essentials[0]; essentials.remove(0); }
+        const bool fromEssentials = essentials.size() > 0;
+        if (fromEssentials) kind = essentials[0];
         else
         {
             const char* pool[] = { "dial", "slider", "button", "wave", "key" };
             kind = pool[rng.nextInt(5)];
         }
+        if (!pb::styleFits(kind == "slider" ? "slider" : kind, shell.slots[s].kind)) continue;
+        if (fromEssentials) essentials.remove(0);
         if (kind == "slider" && shell.slots[s].w > shell.slots[s].h) kind = "slider";
         const int fx = rng.nextInt(kt::kFxCount);
         placeKindInSlot(kind, s, kind == "dial" || kind == "slider" || kind == "button" ? fx : -1, kind == "sound" ? "Sound" : kt::kFx[fx].name);
@@ -2492,10 +2478,8 @@ void KyotoAudioProcessorEditor::renderEffectLinks(const juce::String& text)
 void KyotoAudioProcessorEditor::setCenterMode(int mode)
 {
     centerMode = mode == 1 ? 1 : 0;
-    if (centerMode == 0) { discordMode = false; discordBtn.setToggleState(false, juce::dontSendNotification); }
     catalogModeBtn.setToggleState(centerMode == 0, juce::dontSendNotification);
     threadsModeBtn.setToggleState(centerMode == 1, juce::dontSendNotification);
-    discordBtn.setToggleState(discordMode, juce::dontSendNotification);
     catalogView.setViewedComponent(centerMode == 0 ? static_cast<juce::Component*>(&catalogHolder) : static_cast<juce::Component*>(&threadHolder), false);
     if (centerMode == 1) rebuildThreadBoard();
     showTab(tab);
@@ -2531,55 +2515,6 @@ void KyotoAudioProcessorEditor::rebuildCenter()
 void KyotoAudioProcessorEditor::rebuildThreadBoard()
 {
     threadHolder.removeAllChildren();
-    if (discordMode)
-    {
-        if (discordView == 1)
-        {
-            for (const auto& m : discordMessages)
-            {
-                auto* card = new BoardCard();
-                card->title = m.user;
-                card->meta = "# " + selectedDiscordName;
-                card->body = m.text.isEmpty() ? "(empty message)" : m.text;
-                card->themeId = theme.id;
-                threadHolder.addAndMakeVisible(card);
-            }
-            if (discordMessages.isEmpty())
-            {
-                auto* card = new BoardCard();
-                card->title = "No messages";
-                card->meta = "# " + selectedDiscordName;
-                card->body = "This channel has no recent messages, or the bot cannot read its history.";
-                card->themeId = theme.id;
-                threadHolder.addAndMakeVisible(card);
-            }
-        }
-        else
-        {
-            for (const auto& ch : discordChannels)
-            {
-                auto* card = new BoardCard();
-                card->title = "# " + ch.name;
-                card->meta = ch.topic.isEmpty() ? "text channel" : ch.topic;
-                card->body = "Tap to view recent messages";
-                card->themeId = theme.id;
-                const auto id = ch.id, name = ch.name;
-                card->onOpen = [this, id, name] { openDiscordChannel(id, name); };
-                threadHolder.addAndMakeVisible(card);
-            }
-            if (discordChannels.isEmpty())
-            {
-                auto* card = new BoardCard();
-                card->title = "Discord not connected";
-                card->meta = "Discord Lite";
-                card->body = "No channels loaded. Make sure DISCORD_BOT_TOKEN + DISCORD_GUILD_ID are set on the worker, then press DISCORD again.";
-                card->themeId = theme.id;
-                threadHolder.addAndMakeVisible(card);
-            }
-        }
-        rebuildCenter();
-        return;
-    }
     int i = 0;
     for (const auto& t : threads)
     {
@@ -2597,68 +2532,6 @@ void KyotoAudioProcessorEditor::rebuildThreadBoard()
     rebuildCenter();
 }
 
-void KyotoAudioProcessorEditor::refreshDiscord()
-{
-    if (token.isEmpty()) return;
-    const auto tokenCopy = token; juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
-    status.setText("Loading Discord channels...", juce::dontSendNotification);
-    std::thread([safe, tokenCopy] {
-        auto r = kt::getDiscordChannels(tokenCopy);
-        juce::MessageManager::callAsync([safe, r] {
-            if (safe == nullptr) return;
-            if (! r.ok) { safe->discordChannels.clear(); safe->rebuildThreadBoard(); safe->status.setText("Discord: " + r.error, juce::dontSendNotification); return; }
-            safe->discordChannels.clear();
-            if (auto* arr = r.parsed.getDynamicObject() ? r.parsed.getDynamicObject()->getProperty("channels").getArray() : nullptr)
-                for (auto& item : *arr) if (auto* c = item.getDynamicObject())
-                {
-                    DiscordChannel ch;
-                    ch.id = c->getProperty("id").toString();
-                    ch.name = c->getProperty("name").toString();
-                    ch.topic = c->getProperty("topic").toString();
-                    safe->discordChannels.add(ch);
-                }
-            safe->discordView = 0;
-            safe->selectedDiscordChannel.clear();
-            safe->rebuildThreadBoard();
-            safe->showTab(safe->tab);
-            safe->status.setText(safe->discordChannels.isEmpty() ? "Discord: no channels visible" : "Discord: " + juce::String(safe->discordChannels.size()) + " channels", juce::dontSendNotification);
-        });
-    }).detach();
-}
-
-void KyotoAudioProcessorEditor::openDiscordChannel(const juce::String& id, const juce::String& name)
-{
-    if (token.isEmpty() || id.isEmpty()) return;
-    selectedDiscordChannel = id;
-    selectedDiscordName = name;
-    discordView = 1;
-    discordMessages.clear();
-    rebuildThreadBoard();
-    showTab(tab);
-    status.setText("Loading #" + name + "...", juce::dontSendNotification);
-    const auto tokenCopy = token; juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
-    std::thread([safe, tokenCopy, id, name] {
-        auto r = kt::getDiscordMessages(tokenCopy, id);
-        juce::MessageManager::callAsync([safe, r, name] {
-            if (safe == nullptr) return;
-            if (! r.ok) { safe->discordMessages.clear(); safe->rebuildThreadBoard(); safe->status.setText("Discord: " + r.error, juce::dontSendNotification); return; }
-            safe->discordMessages.clear();
-            if (auto* arr = r.parsed.getDynamicObject() ? r.parsed.getDynamicObject()->getProperty("messages").getArray() : nullptr)
-                for (auto& item : *arr) if (auto* m = item.getDynamicObject())
-                {
-                    DiscordMessage msg;
-                    msg.id = m->getProperty("id").toString();
-                    msg.user = m->getProperty("user").toString();
-                    msg.text = m->getProperty("text").toString();
-                    safe->discordMessages.add(msg);
-                }
-            safe->rebuildThreadBoard();
-            safe->showTab(safe->tab);
-            safe->status.setText("#" + name + ": " + juce::String(safe->discordMessages.size()) + " messages", juce::dontSendNotification);
-        });
-    }).detach();
-}
-
 void KyotoAudioProcessorEditor::refreshFeed()
 {
     if (token.isEmpty()) return;
@@ -2670,7 +2543,10 @@ void KyotoAudioProcessorEditor::refreshFeed()
             if (!r.ok) { safe->clearEffectLinks(); safe->status.setText(r.error.isEmpty()?"DreamShare feed failed":r.error, juce::dontSendNotification); safe->logBox.setText(r.raw); return; }
             juce::String log;
             juce::Array<SocialRail::Bubble> bubbles;
-            if (auto* arr = r.parsed.getDynamicObject() ? r.parsed.getDynamicObject()->getProperty("chat").getArray() : nullptr)
+            auto* feedRoot = r.parsed.getDynamicObject();
+            auto* rolesMap = feedRoot ? feedRoot->getProperty("roles").getDynamicObject() : nullptr;
+            auto* customRolesMap = feedRoot ? feedRoot->getProperty("customRoles").getDynamicObject() : nullptr;
+            if (auto* arr = feedRoot ? feedRoot->getProperty("chat").getArray() : nullptr)
                 for (auto& item : *arr) if (auto* m=item.getDynamicObject())
                 {
                     SocialRail::Bubble b;
@@ -2679,18 +2555,33 @@ void KyotoAudioProcessorEditor::refreshFeed()
                     b.text = m->getProperty("text").toString();
                     b.themeId = m->getProperty("theme").toString();
                     if (b.themeId.isEmpty()) b.themeId = "trippah";
+                    const auto userKey = b.user.toLowerCase();
+                    if (customRolesMap && customRolesMap->hasProperty(userKey))
+                        if (auto* cr = customRolesMap->getProperty(userKey).getDynamicObject())
+                            b.tag = cr->getProperty("label").toString();
+                    if (b.tag.isEmpty() && rolesMap && rolesMap->hasProperty(userKey))
+                    {
+                        const auto role = rolesMap->getProperty(userKey).toString();
+                        if (role == "super") b.tag = "SUPER";
+                        else if (role == "mod") b.tag = "MOD";
+                    }
                     bubbles.add(b);
                     log << b.user << ": " << b.text << "\n";
                 }
             // Keep the newest messages in view on open, but preserve a reader's
             // position if they have deliberately scrolled into the history.
+            const int savedY = safe->chatView.getViewPositionY();
             const bool followLatest = safe->scrollChatOnRefresh
-                || safe->chatView.getViewPositionY() + safe->chatView.getViewHeight()
-                    >= safe->socialRail.getHeight() - 24;
+                || savedY + safe->chatView.getViewHeight() >= safe->socialRail.getHeight() - 24;
             safe->socialRail.setBubbles(bubbles);
-            if (safe->railMode == 0 && followLatest)
-                safe->chatView.setViewPosition(0, safe->socialRail.getHeight());
-            if (safe->railMode == 0) safe->scrollChatOnRefresh = false;
+            if (safe->railMode == 0)
+            {
+                if (followLatest)
+                    safe->chatView.setViewPosition(0, safe->socialRail.getHeight());
+                else
+                    safe->chatView.setViewPosition(0, savedY);
+                safe->scrollChatOnRefresh = false;
+            }
             safe->threads.clear();
             if (auto* arr = r.parsed.getDynamicObject() ? r.parsed.getDynamicObject()->getProperty("threads").getArray() : nullptr)
                 for (auto& item : *arr) if (auto* t=item.getDynamicObject())
@@ -2810,6 +2701,12 @@ void KyotoAudioProcessorEditor::loadCatalogId(const juce::String& id, const juce
                     w.setProperty("kind", wsrc->getProperty("kind").toString(), nullptr);
                     w.setProperty("slotCount", (int)propertyOr(wsrc, "slotCount", 1), nullptr);
                     w.setProperty("peaks", wsrc->getProperty("peaks").toString(), nullptr);
+                    w.setProperty("x", (int)propertyOr(wsrc, "x", 0), nullptr);
+                    w.setProperty("y", (int)propertyOr(wsrc, "y", 0), nullptr);
+                    w.setProperty("w", (int)propertyOr(wsrc, "w", 0), nullptr);
+                    w.setProperty("h", (int)propertyOr(wsrc, "h", 0), nullptr);
+                    w.setProperty("shellSlot", (int)propertyOr(wsrc, "shellSlot", 0), nullptr);
+                    w.setProperty("style", wsrc->getProperty("style").toString(), nullptr);
                     proc.uiState.appendChild(w, nullptr);
                 }
             }
@@ -3300,6 +3197,10 @@ void KyotoAudioProcessorEditor::saveLocal()
         o->setProperty("peaks", w.getProperty("peaks").toString());
         o->setProperty("x", (int) w.getProperty("x"));
         o->setProperty("y", (int) w.getProperty("y"));
+        o->setProperty("w", (int) w.getProperty("w"));
+        o->setProperty("h", (int) w.getProperty("h"));
+        o->setProperty("shellSlot", (int) w.getProperty("shellSlot", 0));
+        o->setProperty("style", w.getProperty("style").toString());
         widgetsArr.add(juce::var(o));
     }
     obj->setProperty("chainLevels", proc.exportChainLevels());
