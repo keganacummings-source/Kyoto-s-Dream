@@ -162,6 +162,7 @@ CanvasWidget::CanvasWidget(KyotoAudioProcessor& p, juce::ValueTree n)
     {
         waveDisplay = std::make_unique<WaveDisplay>(proc);
         waveDisplay->setTheme(theme);
+        waveDisplay->setModeInt((int) node.getProperty("vizMode", 0));
         addAndMakeVisible(*waveDisplay);
     }
     if (kind == Kind::Dial || kind == Kind::Slider)
@@ -2092,6 +2093,25 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
     {
         menu.addItem(7, "Edit Effect");
         menu.addItem(8, "Remove");
+
+        // Visualizer mode submenu for placed screen/wave widgets.
+        if (widgets[selectedChainWidget]->kind == CanvasWidget::Kind::Wave)
+        {
+            juce::PopupMenu viz;
+            static const char* vizNames[] = {
+                "Oscilloscope", "Stereo Scope", "Spectrum", "Spectrogram", "Ghost Wave",
+                "Broken Wave", "Vector / XY",
+                "Spectrum Bars", "Radial Spectrum", "Particle Field",
+                "Peak Meter", "Waveform Bars", "Ripple"
+            };
+            const int currentViz = widgets[selectedChainWidget]->waveDisplay
+                ? widgets[selectedChainWidget]->waveDisplay->getModeInt() : 0;
+            for (int i = 0; i < WaveDisplay::kModeCount; ++i)
+            {
+                viz.addItem(2000 + i, vizNames[i], true, i == currentViz);
+            }
+            menu.addSubMenu("Visualizer", viz);
+        }
     }
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({ screenPos.x, screenPos.y, 1, 1 }),
         [this, slot](int result)
@@ -2099,6 +2119,18 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
             if (result == 0) return;
             if (result == 7) { editEffectPopup(selectedChainWidget); return; }
             if (result == 8) { removeSelectedChainStep(); return; }
+            if (result >= 2000 && result < 2000 + WaveDisplay::kModeCount)
+            {
+                const int vizMode = result - 2000;
+                if (selectedChainWidget >= 0 && selectedChainWidget < widgets.size()
+                    && widgets[selectedChainWidget]->waveDisplay)
+                {
+                    widgets[selectedChainWidget]->waveDisplay->setModeInt(vizMode);
+                    widgets[selectedChainWidget]->node.setProperty("vizMode", vizMode, nullptr);
+                    status.setText("Visualizer: " + juce::String(WaveDisplay::kModeCount) + " modes available.", juce::dontSendNotification);
+                }
+                return;
+            }
             const char* kinds[] = { "", "dial", "slider", "button", "wave", "key", "sound" };
             if (result >= 1 && result <= 6)
                 placeKindInSlot(kinds[result], slot, 0, kinds[result]);
