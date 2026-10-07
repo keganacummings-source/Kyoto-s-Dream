@@ -54,3 +54,16 @@ curl -s -X POST localhost:3000/ -H 'Content-Type: application/json' \
   -d '{"action":"login","user":"dev_test","pass":"x"}'  # returns token
 ```
 Container healthcheck: `node -e "fetch('http://127.0.0.1:3000/')..."` (no curl/wget in node image).
+
+The `docker run -d ... bash -c '... cmake ...'` recipe above exits as soon as cmake configure finishes, so the follow-up `docker exec ninja` fails with "container is not running". Start the container with `sleep infinity` and run apt/cmake/ninja as separate `docker exec` steps instead.
+
+## Discord bridge (`discord/`)
+- `discord/worker.js` + `discord/wrangler.toml` are a **separate** Cloudflare Worker (one Durable Object gateway) that relays Discord <-> DreamShare chat and publishes guild presence. The user deploys it on their own Cloudflare account and registers `/dream`; nothing in it runs in this sandbox.
+- DreamShare side is gated on `env.DREAMSHARE_BRIDGE_KEY`. A request carrying a matching `x-dreamshare-bridge` header skips session auth for the actions the bot uses, `chat_send` accepts `dis:true` plus a `DreamUser:<name>` author (the VST draws that as a DIS tag), and `POST /?op=discord_presence` stores the guild online list, which `readPresence` merges into `onlineUsers` with `dis:true`.
+- With the key unset every bridge route stays closed and the API behaves exactly as before — verified by diffing the 401/400 responses with and without the header, and by checking that a bridge-authed write never reaches the shared extendsclass bin (empty-text `chat_send` is rejected before persisting).
+- The local key lives in `.dev.vars` (gitignored). Wrangler reads it only at startup: after creating or changing `.dev.vars`, run `docker compose -f docker-compose.base44.yml restart worker` — live reload does not pick up a newly created file.
+- `worker/worker.js` and `WORKER_DREAMSHARE.js` are byte copies of `worker.js` and were re-synced after the bridge change. `JV_WORKER.js` had already drifted before this work and was left alone.
+
+## Discord DIS rendering (native UI)
+- `SocialRail::Bubble::dis` and `SocialDirectory::Row::dis` drive a small DIS chip beside the author name in the chat feed and in the Socials online list; the editor reads `dis` from chat messages and from `onlineUsers`.
+- `PluginEditor.cpp` compiles clean for both targets (object compile; only a pre-existing class of JUCE deprecation warning). The rendered chip itself still needs a DAW check — the browser preview cannot show native UI.

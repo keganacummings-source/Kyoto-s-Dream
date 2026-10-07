@@ -100,7 +100,7 @@ private:
 class SocialRail : public juce::Component
 {
 public:
-    struct Bubble { juce::String id, user, text, themeId; };
+    struct Bubble { juce::String id, user, text, themeId; bool dis = false; };
     struct Person { juce::String name, detail, themeId, kind, requestId; bool online = false; };
 
     std::function<void(const Bubble&, juce::Point<int>)> onBubbleMenu;
@@ -138,7 +138,7 @@ private:
 class SocialDirectory : public juce::Component
 {
 public:
-    struct Row { juce::String name, detail, themeId; bool online = false, isFriend = false, self = false; };
+    struct Row { juce::String name, detail, themeId; bool online = false, isFriend = false, self = false, dis = false; };
 
     std::function<void(const Row&, juce::Point<int>)> onRowMenu;
     std::function<void(const Row&)> onRowClick;

@@ -1277,10 +1277,26 @@ void SocialRail::paint(juce::Graphics& g)
             g.setColour(kt::c(pal.border).withAlpha(0.8f));
             g.drawRoundedRectangle(card, 10.f, 1.f);
 
+            const auto nameText = mine ? m.user + "  (you)" : m.user;
+            const auto nameFont = kt::dsFont(pal, 11.f, true);
             g.setColour(kt::c(pal.accent));
-            g.setFont(kt::dsFont(pal, 11.f, true));
-            g.drawText(mine ? m.user + "  (you)" : m.user, (int) (card.getX() + kBubblePad), (int) (card.getY() + 8.f),
+            g.setFont(nameFont);
+            g.drawText(nameText, (int) (card.getX() + kBubblePad), (int) (card.getY() + 8.f),
                        (int) (card.getWidth() - 2.f * kBubblePad), (int) L.nameH, juce::Justification::centredLeft, true);
+            // Discord-relayed lines keep their DIS tag beside the DreamUser name.
+            if (m.dis)
+            {
+                juce::Rectangle<float> chip(card.getX() + kBubblePad + (float) juce::GlyphArrangement::getStringWidthInt(nameFont, nameText) + 6.f,
+                                            card.getY() + 8.f + (L.nameH - 13.f) * 0.5f, 28.f, 13.f);
+                if (chip.getRight() < card.getRight() - 6.f)
+                {
+                    g.setColour(kt::c(pal.accent).withAlpha(0.18f));
+                    g.fillRoundedRectangle(chip, 3.f);
+                    g.setColour(kt::c(pal.accent));
+                    g.setFont(kt::dsFont(pal, 8.f, true));
+                    g.drawText("DIS", chip, juce::Justification::centred);
+                }
+            }
             float ty = card.getY() + 8.f + L.nameH + 3.f;
             if (L.clean.isNotEmpty())
             {
@@ -1455,9 +1471,24 @@ void SocialDirectory::paint(juce::Graphics& g)
             g.drawRoundedRectangle(card, 8.f, 1.f);
             g.setColour(it.row.online ? kt::c(pal.accent) : kt::c(pal.muted));
             g.fillEllipse(card.getX() + 10.f, card.getCentreY() - 5.f, 10.f, 10.f);
+            const auto rowName = it.row.name + (it.row.self ? "  (you)" : "");
+            const auto rowFont = kt::dsFont(pal, 12.f, true);
             g.setColour(kt::c(pal.accent));
-            g.setFont(kt::dsFont(pal, 12.f, true));
-            g.drawText(it.row.name + (it.row.self ? "  (you)" : ""), (int) card.getX() + 28, (int) card.getY() + 5, (int) card.getWidth() - 36, 16, juce::Justification::centredLeft, true);
+            g.setFont(rowFont);
+            g.drawText(rowName, (int) card.getX() + 28, (int) card.getY() + 5, (int) card.getWidth() - 36, 16, juce::Justification::centredLeft, true);
+            // Members online in Discord carry a DIS tag next to their name.
+            if (it.row.dis)
+            {
+                juce::Rectangle<float> chip(card.getX() + 28.f + (float) juce::GlyphArrangement::getStringWidthInt(rowFont, rowName) + 6.f, card.getY() + 6.f, 28.f, 13.f);
+                if (chip.getRight() < card.getRight() - 6.f)
+                {
+                    g.setColour(kt::c(pal.accent).withAlpha(0.18f));
+                    g.fillRoundedRectangle(chip, 3.f);
+                    g.setColour(kt::c(pal.accent));
+                    g.setFont(kt::dsFont(pal, 8.f, true));
+                    g.drawText("DIS", chip, juce::Justification::centred);
+                }
+            }
             g.setColour(kt::c(pal.muted));
             g.setFont(kt::dsFont(pal, 9.5f));
             g.drawText(it.row.detail, (int) card.getX() + 28, (int) card.getY() + 22, (int) card.getWidth() - 36, 14, juce::Justification::centredLeft, true);
@@ -3582,16 +3613,22 @@ void KyotoAudioProcessorEditor::setDirectoryData(const juce::var& socialParsed, 
                 else friendNames.add(item.toString());
             }
 
-    juce::StringArray onlineNames;
+    juce::StringArray onlineNames, discordNames;
     juce::HashMap<juce::String, juce::String> onlineThemes;
     if (auto* presence = presenceParsed.getDynamicObject())
         if (auto* arr = presence->getProperty("onlineUsers").getArray())
             for (auto& item : *arr)
             {
                 juce::String name, themeId;
-                if (auto* o = item.getDynamicObject()) { name = o->getProperty("name").toString(); themeId = o->getProperty("theme").toString(); }
+                bool dis = false;
+                if (auto* o = item.getDynamicObject()) { name = o->getProperty("name").toString(); themeId = o->getProperty("theme").toString(); dis = (bool) o->getProperty("dis"); }
                 else name = item.toString();
-                if (name.isNotEmpty()) { onlineNames.add(name); onlineThemes.set(name.toLowerCase(), themeId); }
+                if (name.isNotEmpty())
+                {
+                    onlineNames.add(name);
+                    if (dis) discordNames.add(name);
+                    onlineThemes.set(name.toLowerCase(), themeId);
+                }
             }
 
     juce::Array<SocialDirectory::Row> rows;
@@ -3606,6 +3643,7 @@ void KyotoAudioProcessorEditor::setDirectoryData(const juce::var& socialParsed, 
         r.self = name.equalsIgnoreCase(account);
         r.isFriend = friendNames.contains(name, true);
         r.online = onlineHint || r.self || onlineNames.contains(name, true);
+        r.dis = discordNames.contains(name, true);
         const auto themeId = onlineThemes[name.toLowerCase()];
         r.themeId = themeId.isNotEmpty() ? themeId : (r.self ? theme.id : juce::String());
         r.detail = r.self ? "you - signed in"
@@ -3847,6 +3885,7 @@ void KyotoAudioProcessorEditor::refreshFeed()
                     b.text = m->getProperty("text").toString();
                     b.themeId = m->getProperty("theme").toString();
                     if (b.themeId.isEmpty()) b.themeId = "trippah";
+                    b.dis = (bool) m->getProperty("dis");
                     bubbles.add(b);
                     log << b.user << ": " << b.text << "\n";
                 }

@@ -4,3 +4,6 @@ build/
 .env
 .env.*
 !.env.example
+
+# wrangler local dev secrets (Discord bridge key etc.)
+.dev.vars
