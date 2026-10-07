@@ -1334,7 +1334,10 @@ export default {
       const kyotoActions = [
         'module_list', 'module_get', 'module_publish', 'module_delete',
         'module_remove', 'catalog', 'catalog_delete', 'community',
-        'community_get', 'community_publish'
+        'community_get', 'community_publish',
+        'module_approve', 'module_deny', 'module_tag', 'module_untag',
+        'module_my', 'my_modules', 'module_pending', 'pending',
+        'catalog_approve', 'catalog_deny', 'tag_add', 'tag_remove'
       ];
       if (kyotoActions.indexOf(action) >= 0) {
         try {

@@ -2651,6 +2651,25 @@ void KyotoAudioProcessorEditor::refreshFeed()
     }).detach();
 }
 
+
+namespace
+{
+juce::String tagsToText(const juce::var& tags)
+{
+    if (auto* arr = tags.getArray())
+    {
+        juce::StringArray parts;
+        for (const auto& item : *arr)
+        {
+            const auto part = item.toString().trim();
+            if (part.isNotEmpty()) parts.add(part);
+        }
+        return parts.joinIntoString(", ");
+    }
+    return tags.toString();
+}
+}
+
 void KyotoAudioProcessorEditor::refreshCatalog()
 {
     if (token.isEmpty()) return;
@@ -2684,7 +2703,7 @@ void KyotoAudioProcessorEditor::refreshCatalog()
                 c.face = face;
                 c.author = m->getProperty("author").toString();
                 c.status = m->getProperty("status").toString();
-                c.tags = m->getProperty("tags").toString();
+                c.tags = tagsToText(m->getProperty("tags"));
                 safe->catalog.add(c);
                 auto* card=new BoardCard();
                 card->title=c.name;
@@ -2722,7 +2741,7 @@ void KyotoAudioProcessorEditor::refreshMyModules()
                 CatalogItem c;
                 c.id=m->getProperty("id").toString(); c.name=m->getProperty("name").toString();
                 c.face=m->getProperty("face").toString(); c.author=m->getProperty("author").toString();
-                c.status=m->getProperty("status").toString(); c.tags=m->getProperty("tags").toString();
+                c.status=m->getProperty("status").toString(); c.tags=tagsToText(m->getProperty("tags"));
                 safe->catalog.add(c);
                 auto* card=new BoardCard(); card->title=c.name; card->meta=c.face+"  -  "+c.author;
                 card->body="Open in the builder"; card->themeId=safe->theme.id; card->status=c.status; card->tags=c.tags;
@@ -2756,7 +2775,7 @@ void KyotoAudioProcessorEditor::refreshPending()
                 CatalogItem c;
                 c.id=m->getProperty("id").toString(); c.name=m->getProperty("name").toString();
                 c.face=m->getProperty("face").toString(); c.author=m->getProperty("author").toString();
-                c.status="pending"; c.tags=m->getProperty("tags").toString();
+                c.status="pending"; c.tags=tagsToText(m->getProperty("tags"));
                 safe->catalog.add(c);
                 auto* card=new BoardCard(); card->title=c.name; card->meta=c.face+"  -  "+c.author;
                 card->body="Right-click to approve or deny"; card->themeId=safe->theme.id; card->status="pending"; card->tags=c.tags;
