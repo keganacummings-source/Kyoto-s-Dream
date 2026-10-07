@@ -1,0 +1,164 @@
+#pragma once
+#include <JuceHeader.h>
+
+// Fallback builder guide (same content as Resources/BuilderGuide.html).
+namespace kt {
+inline juce::String builderGuideHtml()
+{
+    return juce::String(R"KYOTOGUIDE(<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>KyotoSpxrit Builder Guide</title>
+<style>
+  body { font-family: Segoe UI, system-ui, sans-serif; background:#0c1016; color:#e8eef5; line-height:1.45; padding:18px 22px 40px; max-width:720px; margin:0 auto; }
+  h1 { color:#7ec8ff; letter-spacing:0.06em; font-size:1.45rem; margin:0 0 6px; }
+  h2 { color:#9be7ff; font-size:1.05rem; margin:22px 0 8px; border-bottom:1px solid #2a3a4a; padding-bottom:4px; }
+  h3 { color:#c5d4e0; font-size:0.95rem; margin:14px 0 4px; }
+  .tag { display:inline-block; background:#1a2836; color:#7ec8ff; border:1px solid #355063; border-radius:6px; padding:1px 8px; font-size:0.72rem; margin-right:4px; }
+  .step { background:#121a22; border-left:3px solid #2ec4ff; padding:8px 12px; margin:6px 0; border-radius:0 8px 8px 0; }
+  .warn { background:#2a1810; border-left:3px solid #ff7657; padding:8px 12px; margin:8px 0; border-radius:0 8px 8px 0; }
+  .ok { background:#0f2218; border-left:3px solid #4fe07c; padding:8px 12px; margin:8px 0; border-radius:0 8px 8px 0; }
+  ul { margin:4px 0 8px 18px; padding:0; }
+  li { margin:3px 0; }
+  code { background:#1a2430; padding:1px 5px; border-radius:4px; font-size:0.88em; }
+  .muted { color:#8a9aaa; font-size:0.88rem; }
+  table { border-collapse:collapse; width:100%; margin:8px 0 12px; font-size:0.88rem; }
+  td, th { border:1px solid #2a3a4a; padding:6px 8px; text-align:left; }
+  th { background:#15202a; color:#9be7ff; }
+</style>
+</head>
+<body>
+
+<h1>KYOTOSPXRIT — Builder &amp; Playground Guide</h1>
+<p class="muted">Right-click the playground → Guide opens this help. Esc or × closes it.</p>
+
+<h2>1. Big picture</h2>
+<p>
+The Plugin Builder is a visual modular workshop. You place plastic parts on a shell template (the machine body).
+Only effects you place and wire change the sound. Skins, vents, badges, and body cosmetics are visual only.
+</p>
+<div class="ok">
+<strong>Signal path:</strong> Input → wired effect stages (in wire order) → output.
+Screens / WAV modules are visual taps — they show the signal; they do not process audio by themselves.
+</div>
+
+<h2>2. Quick start walkthrough</h2>
+<div class="step"><strong>Step 1 — Motherboard</strong>
+On a blank playground, right-click → Place Motherboard. This is the board/screen of your machine.</div>
+<div class="step"><strong>Step 2 — Template and theme</strong>
+Right-click → Template picks bay layout (knobs, faders, keys). Theme paints shells, chat, and chrome.</div>
+<div class="step"><strong>Step 3 — Place an effect</strong>
+Right-click → Add → pick a family (Delay, Reverb, …) → choose an effect. It snaps into a free knob/fader bay.</div>
+<div class="step"><strong>Step 4 — Wire (manual)</strong>
+Left-click the source part to select it. Right-click the target part → Put wire Into. Signal runs destination first, then the source.</div>
+<div class="step"><strong>Step 5 — Bind a dial</strong>
+Arm a dial, then click an occupied effect bay. Choose Mix %, Decay, Time, Hz, Strength, etc. A satellite dial drives that parameter.</div>
+<div class="step"><strong>Step 6 — Hear and show</strong>
+Right-click → Plugin View for a live faceplate. Geek reveals internals and the signal path.</div>
+<div class="step"><strong>Step 7 — Save / Publish</strong>
+Save Build stores locally. Publish needs DreamShare sign-in.</div>
+
+<h2>3. Systems by importance</h2>
+
+<h3>A. Placement and bays (core)</h3>
+<ul>
+  <li>Shell / Template — Fixed bay map (knob, fader, key, screen, cosmetic). Parts must fit the bay type.</li>
+  <li>PLACE / right-click Add — Arms a part, then click a glowing bay (or Add auto-picks nearest free bay).</li>
+  <li>No auto-wire on place — New parts start unwired on the motherboard. Connect with Put wire Into.</li>
+  <li>Resize grips — Select a part; drag corners/edges. Larger bays get richer plastic detail.</li>
+</ul>
+
+<h3>B. Wiring (core)</h3>
+<ul>
+  <li>Put wire Into — Selected part plugs into the right-clicked part. DSP order updates (wireOrder).</li>
+  <li>Clear wire — Removes the link from the selected part.</li>
+  <li>Order rule — Destination processes first, then the wired source. Screens store tapAfter so later effects are not implied on earlier screens.</li>
+</ul>
+<div class="warn">Wires are intentional. Placing parts no longer chains automatically from the selection.</div>
+
+<h3>C. Effect controls (core)</h3>
+<ul>
+  <li>Each effect stage has: On, Type, Amount, Tone, Motion, Mix, Shape.</li>
+  <li>Dial-on-effect binds a physical dial to one of those (or family aliases: Decay→Amount, Time→Motion, Hz→Tone).</li>
+  <li>FX EDIT (right-click selection) opens numeric editors for the same parameters.</li>
+  <li>Chain Break / Master Mix — Split parallel chains or set overall wet balance.</li>
+  <li>Per-chain levels — Optional volume per chain after Breaks.</li>
+</ul>
+
+<h3>D. Plugin View and Geek (important)</h3>
+<ul>
+  <li>Plugin View — Full-screen live machine; only Back + Geek.</li>
+  <li>Geek — X-ray internals, signal path, stage badges, satellite dial markers, screen TAP labels. Low CPU when closed.</li>
+</ul>
+
+<h3>E. Cosmetics and modular pieces (secondary)</h3>
+<ul>
+  <li>Skins (copper, mint, violet, …) recolour plastic; they do not change DSP.</li>
+  <li>Modular pieces (Snap Dial, Lens Knob, …) are cosmetic look + quirk label.</li>
+  <li>Vents, rails, badges fill cosmetic bays only.</li>
+</ul>
+
+<h3>F. DreamShare social (separate tab)</h3>
+<ul>
+  <li>Chat / Discord rail, threads, catalog of published plugins. Themes style this chrome as well as the builder.</li>
+</ul>
+
+<h2>4. Effect families (by tag)</h2>
+<p class="muted">200 named effects. Use families in Add / Swap menus. Dial-bind options follow the family.</p>
+<table>
+  <tr><th>Family</th><th>What it is for</th><th>Typical dial binds</th></tr>
+  <tr><td>Delay</td><td>Echoes, slap, long trails, ghost repeats</td><td>Mix, Time, Feedback, Tone</td></tr>
+  <tr><td>Reverb</td><td>Rooms, halls, plates, shimmer spaces</td><td>Mix, Decay, Tone, Shape</td></tr>
+  <tr><td>Stereo</td><td>Width, auto-pan, image, mono-bass</td><td>Mix, Amount, Motion, Tone</td></tr>
+  <tr><td>Modulation</td><td>Chorus, flanger, phaser, vibrato, tremolo</td><td>Mix, Motion, Tone, Shape</td></tr>
+  <tr><td>Filter / EQ</td><td>HPF, LPF, notch, shelf, telephone, radio</td><td>Mix, Hz, Strength, Shape</td></tr>
+  <tr><td>Drive</td><td>Saturation, grit, crush, warmth</td><td>Mix, Strength, Tone, Shape</td></tr>
+  <tr><td>Dynamics</td><td>Compress, limit, glue, duck, gates</td><td>Mix, Strength, Tone, Shape</td></tr>
+  <tr><td>Character</td><td>Colour, texture, specialty tones</td><td>Mix, Amount, Tone, Motion, Shape</td></tr>
+</table>
+<div class="ok">Every catalog slot is distinct (per-index DSP fingerprint) even within a family.</div>
+
+<h2>5. Part types</h2>
+<table>
+  <tr><th>Part</th><th>Role</th></tr>
+  <tr><td>Dial / Knob</td><td>Controls a parameter (or hosts an effect + bound controls)</td></tr>
+  <tr><td>Slider / Fader</td><td>Same idea, linear plastic fader</td></tr>
+  <tr><td>Button</td><td>Toggle-style control</td></tr>
+  <tr><td>Key</td><td>MIDI note pad for the instrument path</td></tr>
+  <tr><td>Wave / Screen</td><td>Visual scope / motherboard glass (tapAfter for order)</td></tr>
+  <tr><td>Sound</td><td>One sample module (unique — drop WAV on it)</td></tr>
+  <tr><td>Cosmetic</td><td>Vent / rail / badge — look only</td></tr>
+</table>
+
+<h2>6. Themes and plastic look</h2>
+<ul>
+  <li>Right-click Theme applies playground shell colours and DreamShare UI together.</li>
+  <li>Parts are cartoonish plastic: shell, gloss, accent rim. Resize tiers shift palette (tiny = muted, large = more accent).</li>
+  <li>Dial silhouettes vary (pointer, arc, dual ring, flat, gem) from part identity — still theme-coloured.</li>
+</ul>
+
+<h2>7. Save, randomize, undo</h2>
+<ul>
+  <li>Randomize Template — rolls parts into the current shell (essentials first).</li>
+  <li>Randomize Machine — body / aspect playground cosmetics.</li>
+  <li>Undo — restores last builder snapshot.</li>
+  <li>Save Build / Publish — local file vs DreamShare upload.</li>
+</ul>
+
+<h2>8. Common pitfalls</h2>
+<div class="warn">
+<ul>
+  <li>Effect silent? Check stage On, Mix amount, and that a wire path reaches the output.</li>
+  <li>Cannot place a part? Bay type mismatch or bay full — try another template or Swap Part.</li>
+  <li>Dial will not bind? Click an effect host bay (not empty cosmetic).</li>
+  <li>Closing the UI in FL: timers shut down cleanly — reopen the editor from the mixer.</li>
+</ul>
+</div>
+
+<p class="muted" style="margin-top:28px;">KyotoSpxrit Builder Guide · Esc to close</p>
+</body>
+</html>
+)KYOTOGUIDE");
+}
+}

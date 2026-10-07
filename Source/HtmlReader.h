@@ -92,16 +92,37 @@ private:
     static juce::String stripHtml(const juce::String& html)
     {
         juce::String out;
+        juce::String tag;
         bool inTag = false;
+        auto flushTag = [&]()
+        {
+            const auto t = tag.toLowerCase();
+            if (t.startsWith("br") || t == "/p" || t == "/div" || t == "/tr" || t == "/li"
+                || t == "/h1" || t == "/h2" || t == "/h3" || t == "/table")
+                out += "\n";
+            else if (t == "li" || t.startsWith("li "))
+                out += "\n  • ";
+            else if (t == "h1" || t.startsWith("h1 ") || t == "h2" || t.startsWith("h2 ")
+                     || t == "h3" || t.startsWith("h3 "))
+                out += "\n\n";
+            else if (t == "p" || t.startsWith("p ") || t == "div" || t.startsWith("div "))
+                out += "\n";
+            else if (t == "tr" || t.startsWith("tr "))
+                out += "\n";
+            else if (t == "td" || t.startsWith("td ") || t == "th" || t.startsWith("th "))
+                out += "  ";
+            tag.clear();
+        };
         for (int i = 0; i < html.length(); ++i)
         {
             const auto ch = html[i];
-            if (ch == '<') { inTag = true; continue; }
-            if (ch == '>') { inTag = false; continue; }
-            if (! inTag) out += ch;
+            if (ch == '<') { inTag = true; tag.clear(); continue; }
+            if (ch == '>') { inTag = false; flushTag(); continue; }
+            if (inTag) { tag += ch; continue; }
+            out += ch;
         }
-        out = out.replace("\r\n", "\n").replace("\r", "\n").replace("\t", "    ");
-        // Collapse runs of 3+ blank lines into one.
+        out = out.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+                 .replace("&nbsp;", " ").replace("\r\n", "\n").replace("\r", "\n");
         while (out.contains("\n\n\n"))
             out = out.replace("\n\n\n", "\n\n");
         return out.trim();

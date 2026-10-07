@@ -3207,11 +3207,14 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
         menu.addItem(5204, "Plugin View");
         menu.addItem(5205, "Undo");
         menu.addItem(5206, "Randomize Template");
+        menu.addSeparator();
+        menu.addItem(5999, "Guide");
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({ screenPos.x, screenPos.y, 1, 1 }),
             [this, safeEd = juce::Component::SafePointer<KyotoAudioProcessorEditor>(this)](int result)
             {
                 if (safeEd == nullptr || safeEd->editorClosing) return;
                 if (result == 0) return;
+                if (result == 5999) { safeEd->showBuilderGuide(); return; }
                 if (result == 900) { ensureMotherboard(); rebuildCanvas(); status.setText("Motherboard placed. Right-click to add parts.", juce::dontSendNotification); return; }
                 if (result >= 5000 && result < 5000 + kt::kThemeCount) { const auto& tid = kt::kThemes[result - 5000].id; applyPlaygroundTheme(tid); applyTheme(tid); return; }
                 if (result == 5101) { startNewMachine(0); return; }
@@ -3354,12 +3357,15 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
     menu.addItem(5203, "Publish");
     menu.addSeparator();
     menu.addItem(5204, "Plugin View");
+    menu.addSeparator();
+    menu.addItem(5999, "Guide");
 
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({ screenPos.x, screenPos.y, 1, 1 }),
         [this, safeEd = juce::Component::SafePointer<KyotoAudioProcessorEditor>(this), slot, local, hasSelection, selBay](int result)
         {
             if (safeEd == nullptr || safeEd->editorClosing) return;
             if (result == 0) return;
+            if (result == 5999) { safeEd->showBuilderGuide(); return; }
             // Screen type change
             if (result >= 2000 && result < 2000 + pb::kScreenTypeCount)
             {
@@ -5004,6 +5010,41 @@ void KyotoAudioProcessorEditor::loadCatalogId(const juce::String& id, const juce
             }
         });
     }).detach();
+}
+
+
+void KyotoAudioProcessorEditor::showBuilderGuide()
+{
+    juce::String html;
+    // Prefer Resources/BuilderGuide.html next to the project / binary when present.
+    const juce::File candidates[] = {
+        juce::File::getSpecialLocation(juce::File::currentExecutableFile)
+            .getParentDirectory().getParentDirectory().getParentDirectory()
+            .getChildFile("Resources").getChildFile("BuilderGuide.html"),
+        juce::File::getSpecialLocation(juce::File::currentExecutableFile)
+            .getParentDirectory().getChildFile("Resources").getChildFile("BuilderGuide.html"),
+        juce::File::getCurrentWorkingDirectory().getChildFile("Resources").getChildFile("BuilderGuide.html"),
+    };
+    for (const auto& f : candidates)
+        if (f.existsAsFile())
+        {
+            html = f.loadFileAsString();
+            break;
+        }
+    if (html.isEmpty())
+        html = kt::builderGuideHtml();
+
+    if (htmlOverlay == nullptr)
+    {
+        htmlOverlay = std::make_unique<HtmlOverlay>(theme);
+        addAndMakeVisible(*htmlOverlay);
+    }
+    htmlOverlay->setTheme(theme);
+    htmlOverlay->fileName = "Builder Guide";
+    htmlOverlay->setContent(html);
+    htmlOverlay->setBounds(getLocalBounds());
+    htmlOverlay->setVisible(true);
+    htmlOverlay->toFront(true);
 }
 
 void KyotoAudioProcessorEditor::applyTheme(const juce::String& id)

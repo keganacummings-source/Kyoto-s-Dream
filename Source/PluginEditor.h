@@ -12,6 +12,7 @@
 #include "FlexLayout.h"
 #include "BuilderFit.h"
 #include "WireGraph.h"
+#include "BuilderGuide.h"
 #include "HtmlReader.h"
 #include <vector>
 
@@ -207,6 +208,7 @@ private:
     void placeInSlot(int slot);
     void bindDialToEffect(int shellSlot, int fxDspSlot, int fxType);
     void rebuildWireGraph();
+    void showBuilderGuide();
     void putWireInto(int fromWidgetIndex, int intoWidgetIndex);
     void clearWireFrom(int widgetIndex);
     int findWidgetAtShellSlot(int shellSlot) const;
