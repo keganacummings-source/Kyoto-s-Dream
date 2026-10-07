@@ -59,7 +59,8 @@ struct CanvasWidget : public juce::Component
     bool moving = false;
     int resizeHandle = -1;
     int startGx = 0, startGy = 0, startGw = 1, startGh = 1;
-    juce::Point<int> dragStart;
+    // Parent-relative start so drag delta stays stable while the part moves under the cursor.
+    juce::Point<int> dragStartParent;
     kt::ThemePalette theme = kt::kThemes[0];
 };
 
@@ -228,6 +229,8 @@ private:
     void sendChat();
     void refreshFeed();
     void refreshDiscord();
+    void refreshDiscordChannels();
+    void selectDiscordChannel(const juce::String& channelId);
     void chatUtility(const juce::String& action);
     void refreshCatalog();
     // Chain wiring: new parts connect into the highlighted part (or the end of the chain).
@@ -354,6 +357,7 @@ private:
     juce::TextButton catalogModeBtn { "CATALOG" }, threadsModeBtn { "THREADS" }, railChatBtn { "CHAT" }, railDiscordBtn { "DISCORD" }, railOnlineBtn { "SOCIALS" };
     juce::TextButton pluginsTabBtn { "PLUGINS" }, effectsTabBtn { "EFFECTS" }, myPluginsBtn { "MY PLUGINS" }, pendingBtn { "PENDING" };
     juce::ComboBox sortBox;
+    juce::ComboBox discordChannelBox; // Discord-style channel picker: all channels + server tags
     juce::TextButton textMinusBtn { "A-" }, textPlusBtn { "A+" }, attachChip { "" };
     juce::File pendingAttach;
     int pendingAttachTarget = 0; // 0 none, 1 live chat, 2 open thread
@@ -364,6 +368,12 @@ private:
     bool scrollChatOnRefresh = true;
     bool threadOpen = false;
     juce::String selectedThreadId;
+    // Discord multi-channel (Discord-style home): every channel the bot can see, tagged by server.
+    struct DiscordChannel { juce::String id, name, server, tag; bool alwaysLive = false; };
+    juce::Array<DiscordChannel> discordChannels;
+    juce::String selectedDiscordChannel { "mainstreet" }; // Mainstreet + #general always live-updated
+    juce::int64 lastGeneralRefresh = 0;
+    juce::int64 lastMainstreetRefresh = 0;
     struct ThreadComment { juce::String id, user, text, themeId; };
     struct ThreadItem { juce::String id, user, title, text, themeId; juce::int64 at = 0; int score = 0; int comments = 0; juce::Array<ThreadComment> commentList; };
     juce::TextButton threadBackBtn { "< THREADS" }, threadReactBtn { "REACT" }, threadShareFxBtn { "SHARE FX" }, threadSharePluginBtn { "SHARE PLUGIN" };
@@ -374,7 +384,7 @@ private:
     juce::ComboBox gridStyleBox, presetBox, kindBox, effectBox;
     juce::ComboBox paramBox, pieceBox;
     const kt::ModPiece* pendingPiece = nullptr;
-    juce::TextButton addBtn { "PLACE" }, saveBtn { "SAVE" }, upBtn { "PUBLISH" }, wavBtn { "WAV" }, chainBreakBtn { "BREAK" }, chainMixBtn { "MIX" }, chainRemoveBtn { "REMOVE" }, chainUndoBtn { "UNDO" }, randomTemplateBtn { "RANDOMIZE" };
+    juce::TextButton addBtn { "PLACE" }, saveBtn { "SAVE" }, upBtn { "PUBLISH" }, wavBtn { "WAV" }, chainBreakBtn { "BREAK" }, chainMixBtn { "MIX" }, chainRemoveBtn { "REMOVE" }, chainUndoBtn { "UNDO" }, randomTemplateBtn { "RANDOMIZE PEG" }, clearCanvasBtn { "CLEAR" };
     juce::TextButton fxAddBtn { "ADD FX" }, fxSaveBtn { "SAVE" }, fxUpBtn { "PUBLISH" }, fxShareChatBtn { "CHAT" }, fxShareThreadBtn { "THREAD" }, fxRemoveBtn { "REMOVE" }, fxUndoBtn { "UNDO" };
     juce::Slider fxAmount, fxTone, fxMotion, fxMix, fxShape;
     juce::Label fxAmountLabel, fxToneLabel, fxMotionLabel, fxMixLabel, fxShapeLabel, stackLabel;

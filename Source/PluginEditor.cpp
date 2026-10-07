@@ -474,22 +474,25 @@ void CanvasWidget::mouseDown(const juce::MouseEvent& e)
         return;
     }
     if (onSelect) onSelect();
+    // Capture parent-relative position so drag delta is stable when the part
+    // moves under the cursor (local coords would jump and cause glitching).
+    auto parentPos = e.getEventRelativeTo(getParentComponent()).getPosition();
     resizeHandle = handleAt(e.getPosition());
     if (resizeHandle >= 0)
     {
         resizing = true;
         moving = false;
-        dragStart = e.getPosition();
+        dragStartParent = parentPos;
         startGx = (int) node.getProperty("gx", 0);
         startGy = (int) node.getProperty("gy", 0);
         startGw = juce::jmax(kMinCells, (int) node.getProperty("gw", 4));
         startGh = juce::jmax(kMinCells, (int) node.getProperty("gh", 4));
         return;
     }
-    // Body drag moves the part on the free grid (screen, board, dials, etc.)
+    // Body drag moves the part onto the nearest grid peg cell.
     moving = true;
     resizing = false;
-    dragStart = e.getPosition();
+    dragStartParent = parentPos;
     startGx = (int) node.getProperty("gx", 0);
     startGy = (int) node.getProperty("gy", 0);
     startGw = juce::jmax(kMinCells, (int) node.getProperty("gw", 4));
@@ -527,8 +530,10 @@ void CanvasWidget::mouseDrag(const juce::MouseEvent& e)
     if (face.getWidth() < 4.f || face.getHeight() < 4.f) return;
     const float cw = face.getWidth() / (float) gridCols;
     const float ch = face.getHeight() / (float) gridRows;
-    const int dx = (int) std::lround((e.getPosition().x - dragStart.x) / juce::jmax(1.f, cw));
-    const int dy = (int) std::lround((e.getPosition().y - dragStart.y) / juce::jmax(1.f, ch));
+    // Parent-relative delta → integer peg cells. applyGrid snaps to the nearest peg.
+    const auto parentPos = e.getEventRelativeTo(getParentComponent()).getPosition();
+    const int dx = (int) std::lround((parentPos.x - dragStartParent.x) / juce::jmax(1.f, cw));
+    const int dy = (int) std::lround((parentPos.y - dragStartParent.y) / juce::jmax(1.f, ch));
     int gx = startGx, gy = startGy, gw = startGw, gh = startGh;
     if (moving && ! resizing)
     {
@@ -558,6 +563,13 @@ void CanvasWidget::mouseDrag(const juce::MouseEvent& e)
     gy = juce::jlimit(0, juce::jmax(0, gridRows - gh), gy);
     if (gx + gw > gridCols) gx = juce::jmax(0, gridCols - gw);
     if (gy + gh > gridRows) gy = juce::jmax(0, gridRows - gh);
+    // Only re-apply when the peg cell actually changed — kills visual thrash.
+    const int curGx = (int) node.getProperty("gx", 0);
+    const int curGy = (int) node.getProperty("gy", 0);
+    const int curGw = (int) node.getProperty("gw", 1);
+    const int curGh = (int) node.getProperty("gh", 1);
+    if (gx == curGx && gy == curGy && gw == curGw && gh == curGh)
+        return;
     applyGrid(gx, gy, gw, gh);
     if (onGeometryChanged) onGeometryChanged(this);
 }
@@ -797,7 +809,32 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     };
     randomMachineBtn.onClick = [this] { randomizeMachine(); };
     randomTemplateBtn.onClick = [this] { randomizeTemplate(); };
-    randomTemplateBtn.setTooltip("Roll modules into the template. Essential parts always land. Part count follows module size.");
+    randomTemplateBtn.setTooltip("Shuffle every part onto a fresh random peg cell. No templates — just peg positions.");
+    clearCanvasBtn.onClick = [this] {
+        juce::AlertWindow::showOkCancelBox(
+            juce::AlertWindow::WarningIcon,
+            "Clear playground?",
+            "You sure? This removes every part except the motherboard and starts again.",
+            "Clear", "Cancel", this,
+            juce::ModalCallbackFunction::create([this](int result)
+            {
+                if (result != 1) return;
+                captureSnapshot();
+                for (int i = proc.uiState.getNumChildren(); --i >= 0;)
+                {
+                    auto child = proc.uiState.getChild(i);
+                    if (child.hasType("w") && child.getProperty("kind").toString() != "board")
+                        proc.uiState.removeChild(child, nullptr);
+                }
+                for (int i = 1; i < proc.slotCount(); ++i)
+                    if (auto* on = proc.apvts.getParameter("s" + juce::String(i + 1).paddedLeft('0', 2) + "on"))
+                        on->setValueNotifyingHost(0.f);
+                rebuildCanvas();
+                selectedChainWidget = -1;
+                status.setText("Cleared — motherboard only. Place parts on the peg grid.", juce::dontSendNotification);
+            }));
+    };
+    clearCanvasBtn.setTooltip("Clear all parts (keeps motherboard). Asks for confirmation.");
     logoutBtn.onClick = [this] { logout(); };
     loginBtn.onClick = [this] { login(); };
     sendBtn.onClick = [this] { sendChat(); };
@@ -869,11 +906,27 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
         fxStack.appendChild(step, nullptr); selectFxStep(fxStack.getNumChildren() - 1);
     };
     fxRandomBtn.onClick = [this] { captureSnapshot(); randomizeFxControls(); };
-    fxClearBtn.onClick = [this] { if (fxStack.getNumChildren() > 0) { captureSnapshot(); fxStack.removeAllChildren(nullptr); selectedFxStep = -1; stackLabel.setText("Empty effect  -  ready for a new build", juce::dontSendNotification); } };
+    fxClearBtn.onClick = [this] {
+        if (fxStack.getNumChildren() <= 0) return;
+        juce::AlertWindow::showOkCancelBox(
+            juce::AlertWindow::WarningIcon,
+            "Clear effect?",
+            "You sure? This removes every FX step and starts again.",
+            "Clear", "Cancel", this,
+            juce::ModalCallbackFunction::create([this](int result)
+            {
+                if (result != 1) return;
+                captureSnapshot();
+                fxStack.removeAllChildren(nullptr);
+                selectedFxStep = -1;
+                stackLabel.setText("Empty effect  -  ready for a new build", juce::dontSendNotification);
+            }));
+    };
 
     addAndMakeVisible(status);
     status.setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(pluginViewBtn); addAndMakeVisible(pluginBackBtn); addAndMakeVisible(newMachineBtn); addAndMakeVisible(randomMachineBtn); addAndMakeVisible(randomTemplateBtn);
+    addAndMakeVisible(pluginViewBtn); addAndMakeVisible(pluginBackBtn); addAndMakeVisible(newMachineBtn); addAndMakeVisible(randomMachineBtn); addAndMakeVisible(randomTemplateBtn); addAndMakeVisible(clearCanvasBtn);
+    clearCanvasBtn.setVisible(false); // lives in right-click menu; keep as trigger target
     pluginBackBtn.setVisible(false);
     addAndMakeVisible(whoLabel);
     whoLabel.setJustificationType(juce::Justification::centredRight);
@@ -886,6 +939,8 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     addAndMakeVisible(utilityActionBox); addAndMakeVisible(utilityGoBtn);
     addAndMakeVisible(chatRefreshBtn); addAndMakeVisible(threadsBtn); addAndMakeVisible(socialBtn); addAndMakeVisible(dmBtn); addAndMakeVisible(adminDeleteBtn);
     addAndMakeVisible(catalogModeBtn); addAndMakeVisible(threadsModeBtn); addAndMakeVisible(railChatBtn); addAndMakeVisible(railDiscordBtn); addAndMakeVisible(railOnlineBtn);
+    addAndMakeVisible(discordChannelBox);
+    discordChannelBox.setVisible(false);
     addAndMakeVisible(threadBackBtn); addAndMakeVisible(threadReactBtn); addAndMakeVisible(threadShareFxBtn); addAndMakeVisible(threadSharePluginBtn);
     addAndMakeVisible(pluginsTabBtn); addAndMakeVisible(effectsTabBtn); addAndMakeVisible(myPluginsBtn); addAndMakeVisible(pendingBtn); addAndMakeVisible(sortBox);
     addAndMakeVisible(themeBox);
@@ -1027,7 +1082,26 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     catalogModeBtn.onClick = [this] { setCenterMode(0); };
     threadsModeBtn.onClick = [this] { setCenterMode(3); refreshFeed(); };
     railChatBtn.onClick = [this] { setRailMode(0); refreshFeed(); };
-    railDiscordBtn.onClick = [this] { setRailMode(2); refreshDiscord(); };
+    railDiscordBtn.onClick = [this] {
+        setRailMode(2);
+        if (discordChannels.isEmpty()) refreshDiscordChannels();
+        // Prefer General when opening Discord tab if still on Mainstreet
+        if (selectedDiscordChannel == "mainstreet")
+        {
+            for (const auto& c : discordChannels)
+                if (c.name.equalsIgnoreCase("general") && c.tag == "KYTO")
+                { selectDiscordChannel(c.id); return; }
+            selectDiscordChannel({}); // falls through to Kyoto #general
+            return;
+        }
+        refreshDiscord();
+    };
+    discordChannelBox.onChange = [this] {
+        const int id = discordChannelBox.getSelectedId();
+        if (id <= 0 || id > discordChannels.size()) return;
+        selectDiscordChannel(discordChannels.getReference(id - 1).id);
+    };
+    discordChannelBox.setTooltip("All channels the bot can see, tagged by server. Mainstreet + #general stay live.");
     // SOCIALS takes over the centre: the Threads board is replaced by the full DreamShare directory.
     railOnlineBtn.onClick = [this] { setRailMode(1); setCenterMode(5); };
     threadBackBtn.onClick = [this] { closeThread(); };
@@ -1165,8 +1239,10 @@ void KyotoAudioProcessorEditor::setLoggedIn(bool on)
         passBox.clear();
         setCenterMode(3);
         showTab(0);
+        selectedDiscordChannel = "mainstreet";
         refreshFeed();
         refreshCatalog();
+        refreshDiscordChannels();
     }
     else
         showTab(0);
@@ -2105,6 +2181,7 @@ void KyotoAudioProcessorEditor::showTab(int next)
     textMinusBtn.setVisible(share && loggedIn); textPlusBtn.setVisible(share && loggedIn);
     attachChip.setVisible(share && loggedIn && pendingAttach != juce::File() && ((pendingAttachTarget == 1 && (railMode == 0 || railMode == 2)) || (pendingAttachTarget == 2 && threadOpen)));
     railChatBtn.setVisible(share && loggedIn); railDiscordBtn.setVisible(share && loggedIn); railOnlineBtn.setVisible(share && loggedIn);
+    discordChannelBox.setVisible(share && loggedIn && (railMode == 0 || railMode == 2));
     adminDeleteBtn.setVisible(false); // replaced by right-click context menu
     msgBox.setVisible(share && loggedIn && (railMode == 0 || railMode == 2)); sendBtn.setVisible(share && loggedIn && (railMode == 0 || railMode == 2)); feedBtn.setVisible(share && loggedIn);
     themeBox.setVisible(share && loggedIn); // global UI theme only on DreamShare home
@@ -2122,7 +2199,7 @@ void KyotoAudioProcessorEditor::showTab(int next)
     if (fxBrowser) fxBrowser->setVisible(builderReady || fx);
     chainLevels.setVisible(builderReady && ! pluginView);
     // Builder buttons moved to right-click context menu - keep only name/preset inputs.
-    addBtn.setVisible(false); chainBreakBtn.setVisible(false); chainMixBtn.setVisible(false); chainRemoveBtn.setVisible(false); chainUndoBtn.setVisible(false); randomTemplateBtn.setVisible(false);
+    addBtn.setVisible(false); chainBreakBtn.setVisible(false); chainMixBtn.setVisible(false); chainRemoveBtn.setVisible(false); chainUndoBtn.setVisible(false); randomTemplateBtn.setVisible(false); clearCanvasBtn.setVisible(false);
     nameBox.setVisible(builderReady); presetBox.setVisible(builderReady); saveBtn.setVisible(false); upBtn.setVisible(false); kindBox.setVisible(false); paramBox.setVisible(false); pieceBox.setVisible(false); wavBtn.setVisible(false);
     gridStyleBox.setVisible(false); effectBox.setVisible(false);
     newMachineBtn.setVisible(false); randomMachineBtn.setVisible(false);
@@ -2238,6 +2315,12 @@ void KyotoAudioProcessorEditor::resized()
             railDiscordBtn.setBounds(railHead.removeFromLeft(bw));
             railHead.removeFromLeft(gap);
             railOnlineBtn.setBounds(railHead);
+        }
+        // Discord-style channel picker: every channel + server tag (Mainstreet + #general always live).
+        if (discordChannelBox.isVisible())
+        {
+            rail.removeFromTop(4);
+            discordChannelBox.setBounds(rail.removeFromTop(26));
         }
         rail.removeFromTop(6);
         if (railMode == 0 || railMode == 2)
@@ -3108,59 +3191,56 @@ void KyotoAudioProcessorEditor::placeKindInSlot(const juce::String& kind, int sl
 
 void KyotoAudioProcessorEditor::randomizeTemplate()
 {
+    // Templates are retired. RANDOMIZE PEG just shuffles every existing part
+    // (including the motherboard) onto a fresh random peg cell on the 32x22 grid.
+    // Part kinds, sizes and wiring are preserved — only gx/gy change.
     captureSnapshot();
     juce::Random rng((juce::int64) juce::Time::getMillisecondCounterHiRes());
-    // New roll -> new random layout for the hidden hardware too.
     proc.uiState.setProperty("internalsSeed", (int) rng.nextInt(1000000) + 1, nullptr);
-    // Keep current shell geometry; templates are retired — only re-roll parts on the free grid.
-    shellBox.setSelectedId(shellIndex + 1, juce::dontSendNotification);
-    juce::Array<juce::ValueTree> keep;
-    for (int i = proc.uiState.getNumChildren(); --i >= 0;)
+
+    // Collect occupied cells so we avoid stacking parts on top of each other.
+    struct Occupied { int gx, gy, gw, gh; };
+    juce::Array<Occupied> taken;
+    int moved = 0;
+
+    auto overlaps = [&](int gx, int gy, int gw, int gh) -> bool
     {
-        auto child = proc.uiState.getChild(i);
-        if (child.hasType("w") && child.getProperty("kind").toString() != "board")
-            proc.uiState.removeChild(child, nullptr);
-    }
-    for (int i = 1; i < proc.slotCount(); ++i)
-        if (auto* on = proc.apvts.getParameter("s" + juce::String(i + 1).paddedLeft('0', 2) + "on"))
-            on->setValueNotifyingHost(0.f);
-    rebuildCanvas();
-    const auto& shell = pb::kShells[shellIndex];
-    selectedChainWidget = -1;
-    juce::StringArray essentials { "wave", "sound", "key", "dial" };
-    int placed = 0;
-    const int limit = juce::jmax(4, shell.slotCount - 1);
-    for (int s = 0; s < shell.slotCount && placed < limit; ++s)
-    {
-        if (shell.slots[s].kind == pb::SlotKind::Board || shell.slots[s].w < 0.02f) continue;
-        juce::String kind;
-        if (essentials.size() > 0) { kind = essentials[0]; essentials.remove(0); }
-        else
-        {
-            const char* pool[] = { "dial", "slider", "button", "wave", "key" };
-            kind = pool[rng.nextInt(5)];
-        }
-        if (kind == "slider" && shell.slots[s].w > shell.slots[s].h) kind = "slider";
-        const int fx = rng.nextInt(kt::kFxCount);
-        const int bay = nearestFreeBay(kind, slotAnchor(s), s);
-        if (bay < 0) continue;
-        placeKindInSlot(kind, bay, kind == "dial" || kind == "slider" || kind == "button" ? fx : -1, kind == "sound" ? "Sound" : kt::kFx[fx].name);
-        ++placed;
-    }
-    reflowSeries();
-        // Move the screen/motherboard to a fresh grid cell so Randomize actually relocates it.
+        for (const auto& o : taken)
+            if (gx < o.gx + o.gw && gx + gw > o.gx && gy < o.gy + o.gh && gy + gh > o.gy)
+                return true;
+        return false;
+    };
+
     for (int i = 0; i < proc.uiState.getNumChildren(); ++i)
     {
         auto child = proc.uiState.getChild(i);
-        if (! child.hasType("w") || child.getProperty("kind").toString() != "board") continue;
-        juce::Random rng2((juce::int64) juce::Time::getMillisecondCounterHiRes() + 17);
-        child.setProperty("gx", 2 + rng2.nextInt(18), nullptr);
-        child.setProperty("gy", 2 + rng2.nextInt(10), nullptr);
-        child.setProperty("gw", juce::jmax(6, (int) child.getProperty("gw", 10)), nullptr);
-        child.setProperty("gh", juce::jmax(4, (int) child.getProperty("gh", 6)), nullptr);
+        if (! child.hasType("w")) continue;
+        const int gw = juce::jmax(CanvasWidget::kMinCells, (int) child.getProperty("gw", 4));
+        const int gh = juce::jmax(CanvasWidget::kMinCells, (int) child.getProperty("gh", 4));
+        const int maxX = juce::jmax(0, pb::kGridCols - gw);
+        const int maxY = juce::jmax(0, pb::kGridRows - gh);
+        int nx = 0, ny = 0;
+        bool found = false;
+        for (int attempt = 0; attempt < 48; ++attempt)
+        {
+            nx = rng.nextInt(maxX + 1);
+            ny = rng.nextInt(maxY + 1);
+            if (! overlaps(nx, ny, gw, gh)) { found = true; break; }
+        }
+        if (! found)
+        {
+            // Fallback: sequential scan for any free peg cell.
+            for (int y = 0; y <= maxY && ! found; ++y)
+                for (int x = 0; x <= maxX && ! found; ++x)
+                    if (! overlaps(x, y, gw, gh)) { nx = x; ny = y; found = true; }
+        }
+        child.setProperty("gx", nx, nullptr);
+        child.setProperty("gy", ny, nullptr);
+        taken.add({ nx, ny, gw, gh });
+        ++moved;
     }
     rebuildCanvas();
-    status.setText("Random template: essentials covered, " + juce::String(placed) + " parts, limit " + juce::String(limit) + ".", juce::dontSendNotification);
+    status.setText("Randomized pegs: " + juce::String(moved) + " parts shuffled onto the grid.", juce::dontSendNotification);
 }
 
 void KyotoAudioProcessorEditor::rollNewInstanceTemplate()
@@ -3308,7 +3388,8 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
         menu.addItem(5203, "Publish");
         menu.addItem(5204, "Plugin View");
         menu.addItem(5205, "Undo");
-        menu.addItem(5206, "Randomize Parts");
+        menu.addItem(5206, "Randomize Peg");
+        menu.addItem(5207, "Clear...");
         menu.addSeparator();
         menu.addItem(5999, "Guide");
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({ screenPos.x, screenPos.y, 1, 1 }),
@@ -3330,6 +3411,7 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
                 if (result == 5204) { setPluginView(true); return; }
                 if (result == 5205) { undoLast(); return; }
                 if (result == 5206) { randomizeTemplate(); return; }
+                if (result == 5207) { clearCanvasBtn.triggerClick(); return; }
             });
         return;
     }
@@ -3445,9 +3527,10 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
 
     menu.addSeparator();
 
-    // Machine operations
+    // Machine operations — templates retired; peg shuffle + clear only.
     menu.addItem(5200, "Randomize Machine");
-    menu.addItem(5206, "Randomize Parts");
+    menu.addItem(5206, "Randomize Peg");
+    menu.addItem(5207, "Clear...");
     menu.addItem(5205, "Undo");
     menu.addSeparator();
     menu.addItem(5201, "Load WAV");
@@ -3494,6 +3577,7 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
             if (result == 5204) { setPluginView(true); return; }
             if (result == 5205) { undoLast(); return; }
             if (result == 5206) { randomizeTemplate(); return; }
+            if (result == 5207) { clearCanvasBtn.triggerClick(); return; }
             // Chain break / master mix
             if (result == 1100) { pendingSpecial = true; pendingSpecialType = KyotoAudioProcessor::kBreakType; pendingLabel = "CHAIN BREAK"; armedStyle = "dial"; placing = true; status.setText("Break is a knob part - click a glowing knob bay.", juce::dontSendNotification); panel.placing = true; panel.armedStyle = armedStyle; syncPanelMouse(); panel.repaint(); return; }
             if (result == 1101) { pendingSpecial = true; pendingSpecialType = KyotoAudioProcessor::kMixType; pendingLabel = "MASTER MIX"; armedStyle = "fader"; placing = true; status.setText("Mix is a fader part - click a glowing fader bay.", juce::dontSendNotification); panel.placing = true; panel.armedStyle = armedStyle; syncPanelMouse(); panel.repaint(); return; }
@@ -4023,10 +4107,9 @@ void KyotoAudioProcessorEditor::sendChat()
     if (pendingAttach.existsAsFile() && pendingAttachTarget == 1) { sendWithAttachment(1, text); return; }
     if (text.isEmpty()) return;
 
-    // Default: always post into DreamShare live chat.
-    // Optional: "/d ..." still posts only to Discord for power users.
-    // The Discord bridge bot (not a VST poll loop) mirrors Discord guild traffic into chat with KYTO/TRBN origin tags.
-    bool forceDiscord = false;
+    // Mainstreet / CHAT rail → DreamShare live chat.
+    // Discord rail (or /d prefix) → selected Discord channel.
+    bool forceDiscord = (railMode == 2 && selectedDiscordChannel != "mainstreet");
     if (text.startsWithIgnoreCase("/d ") || text.startsWithIgnoreCase("/discord "))
     {
         forceDiscord = true;
@@ -4036,23 +4119,29 @@ void KyotoAudioProcessorEditor::sendChat()
 
     juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
     const auto accountCopy = account;
+    const auto channelCopy = selectedDiscordChannel;
 
-    std::thread([safe, text, tokenCopy, accountCopy, forceDiscord] {
+    std::thread([safe, text, tokenCopy, accountCopy, forceDiscord, channelCopy] {
         kt::DreamResult r;
         if (forceDiscord)
-            r = kt::sendDiscordMessage(tokenCopy, accountCopy, text);
+            r = kt::sendDiscordMessage(tokenCopy, accountCopy, text, channelCopy);
         else
-            r = kt::sendChat(tokenCopy, text); // DreamShare chat is the default path
+            r = kt::sendChat(tokenCopy, text); // DreamShare Mainstreet
         juce::MessageManager::callAsync([safe, r, forceDiscord] {
             if (safe == nullptr) return;
             if (!r.ok) safe->status.setText(r.error, juce::dontSendNotification);
             else
             {
                 safe->msgBox.clear();
-                // Refresh DreamShare feed only — no constant Discord polling from the VST.
-                safe->refreshFeed();
                 if (forceDiscord)
-                    safe->status.setText("Sent to Discord", juce::dontSendNotification);
+                {
+                    safe->refreshDiscord();
+                    safe->status.setText("Sent to Discord channel", juce::dontSendNotification);
+                }
+                else
+                {
+                    safe->refreshFeed();
+                }
             }
         });
     }).detach();
@@ -4660,23 +4749,111 @@ void KyotoAudioProcessorEditor::rebuildThreadDetail()
 }
 
 
-void KyotoAudioProcessorEditor::refreshDiscord()
+void KyotoAudioProcessorEditor::refreshDiscordChannels()
 {
     if (token.isEmpty()) return;
     const auto tokenCopy = token;
     juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
-    status.setText("Loading Discord #general...", juce::dontSendNotification);
     std::thread([safe, tokenCopy] {
-        auto r = kt::getDiscordMessages(tokenCopy);
+        auto r = kt::getDiscordChannels(tokenCopy);
         juce::MessageManager::callAsync([safe, r] {
+            if (safe == nullptr) return;
+            if (! r.ok) return;
+            safe->discordChannels.clear();
+            safe->discordChannelBox.clear(juce::dontSendNotification);
+            auto* arr = r.parsed.getDynamicObject() ? r.parsed.getDynamicObject()->getProperty("channels").getArray() : nullptr;
+            int idx = 1;
+            int selectId = 1;
+            if (arr != nullptr)
+            {
+                for (auto& item : *arr)
+                {
+                    if (auto* m = item.getDynamicObject())
+                    {
+                        DiscordChannel ch;
+                        ch.id = m->getProperty("id").toString();
+                        ch.name = m->getProperty("name").toString();
+                        ch.server = m->getProperty("server").toString();
+                        ch.tag = m->getProperty("tag").toString();
+                        ch.alwaysLive = (bool) m->getProperty("alwaysLive");
+                        if (ch.id.isEmpty()) continue;
+                        safe->discordChannels.add(ch);
+                        juce::String label = "#" + ch.name;
+                        if (ch.server.isNotEmpty())
+                            label << "  [" << ch.server << "]";
+                        if (ch.alwaysLive)
+                            label << "  ·live";
+                        safe->discordChannelBox.addItem(label, idx);
+                        if (ch.id == safe->selectedDiscordChannel)
+                            selectId = idx;
+                        ++idx;
+                    }
+                }
+            }
+            if (safe->discordChannels.isEmpty())
+            {
+                DiscordChannel main; main.id = "mainstreet"; main.name = "mainstreet"; main.server = "DreamShare"; main.tag = "MAIN"; main.alwaysLive = true;
+                DiscordChannel gen; gen.id = ""; gen.name = "general"; gen.server = "Kyoto"; gen.tag = "KYTO"; gen.alwaysLive = true;
+                safe->discordChannels.add(main);
+                safe->discordChannels.add(gen);
+                safe->discordChannelBox.addItem("#mainstreet  [DreamShare]  ·live", 1);
+                safe->discordChannelBox.addItem("#general  [Kyoto]  ·live", 2);
+            }
+            safe->discordChannelBox.setSelectedId(selectId, juce::dontSendNotification);
+        });
+    }).detach();
+}
+
+void KyotoAudioProcessorEditor::selectDiscordChannel(const juce::String& channelId)
+{
+    selectedDiscordChannel = channelId.isEmpty() ? juce::String("mainstreet") : channelId;
+    scrollChatOnRefresh = true;
+    if (selectedDiscordChannel == "mainstreet")
+    {
+        setRailMode(0);
+        refreshFeed();
+        status.setText("Mainstreet · DreamShare live chat", juce::dontSendNotification);
+        return;
+    }
+    setRailMode(2);
+    refreshDiscord();
+}
+
+void KyotoAudioProcessorEditor::refreshDiscord()
+{
+    if (token.isEmpty()) return;
+    if (selectedDiscordChannel == "mainstreet")
+    {
+        refreshFeed();
+        return;
+    }
+    const auto tokenCopy = token;
+    const auto channelCopy = selectedDiscordChannel;
+    juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
+    juce::String chLabel = channelCopy.isEmpty() ? "#general" : ("#" + channelCopy);
+    for (const auto& c : discordChannels)
+        if (c.id == channelCopy) { chLabel = "#" + c.name + " [" + c.server + "]"; break; }
+    status.setText("Loading " + chLabel + "...", juce::dontSendNotification);
+    std::thread([safe, tokenCopy, channelCopy, chLabel] {
+        auto r = kt::getDiscordMessages(tokenCopy, channelCopy);
+        juce::MessageManager::callAsync([safe, r, chLabel] {
             if (safe == nullptr) return;
             if (!r.ok)
             {
-                safe->status.setText(r.error.isEmpty() ? "Discord #general unavailable (set DISCORD_BOT_TOKEN on the worker)" : r.error, juce::dontSendNotification);
+                safe->status.setText(r.error.isEmpty() ? (chLabel + " unavailable (set DISCORD_BOT_TOKEN on the worker)") : r.error, juce::dontSendNotification);
                 return;
             }
+            if (auto* obj = r.parsed.getDynamicObject())
+                if ((bool) obj->getProperty("virtual"))
+                {
+                    safe->refreshFeed();
+                    return;
+                }
             juce::Array<SocialRail::Bubble> bubbles;
             juce::String log;
+            juce::String channelTag = "KYTO";
+            if (auto* obj = r.parsed.getDynamicObject())
+                channelTag = obj->getProperty("tag").toString();
             auto* arr = r.parsed.getDynamicObject() ? r.parsed.getDynamicObject()->getProperty("messages").getArray() : nullptr;
             if (arr != nullptr)
             {
@@ -4691,11 +4868,11 @@ void KyotoAudioProcessorEditor::refreshDiscord()
                         b.themeId = "trippah";
                         b.dis = true;
                         b.originTag = m->getProperty("tag").toString();
-                        if (b.originTag.isEmpty()) b.originTag = "KYTO";
+                        if (b.originTag.isEmpty()) b.originTag = channelTag.isEmpty() ? "KYTO" : channelTag;
                         b.discordId = m->getProperty("discordId").toString();
                         if (b.discordId.isEmpty()) b.discordId = m->getProperty("authorId").toString();
                         bubbles.add(b);
-                        log << "[DIS] " << b.user << ": " << b.text << "\n";
+                        log << "[" << b.originTag << "] " << b.user << ": " << b.text << "\n";
                     }
                 }
             }
@@ -4709,7 +4886,7 @@ void KyotoAudioProcessorEditor::refreshDiscord()
             else if (safe->railMode == 2)
                 safe->chatView.setViewPosition(0, viewY);
             if (safe->railMode == 2) safe->scrollChatOnRefresh = false;
-            safe->status.setText("Discord #general · " + juce::String(bubbles.size()) + " messages", juce::dontSendNotification);
+            safe->status.setText(chLabel + " · " + juce::String(bubbles.size()) + " messages", juce::dontSendNotification);
             safe->logBox.setText(log.isEmpty() ? r.body : log);
         });
     }).detach();
@@ -5231,7 +5408,7 @@ void KyotoAudioProcessorEditor::applyTheme(const juce::String& id)
     kLookAndFeel.setColour(juce::PopupMenu::textColourId, kt::c(theme.text));
     kLookAndFeel.setColour(juce::PopupMenu::highlightedBackgroundColourId, kt::c(theme.accent).withAlpha(0.32f));
     kLookAndFeel.setColour(juce::PopupMenu::highlightedTextColourId, kt::c(theme.text));
-    for (auto* b : { &shareBtn, &chainBtn, &fxBtn, &logoutBtn, &feedBtn, &chatRefreshBtn, &threadsBtn, &socialBtn, &dmBtn, &adminDeleteBtn, &sendBtn, &utilityGoBtn, &addBtn, &chainBreakBtn, &chainMixBtn, &chainRemoveBtn, &chainUndoBtn, &randomTemplateBtn, &saveBtn, &upBtn, &wavBtn, &fxAddBtn, &fxBreakBtn, &fxMixBtn, &fxRandomBtn, &fxClearBtn, &fxSaveBtn, &fxUpBtn, &fxShareChatBtn, &fxShareThreadBtn, &fxRemoveBtn, &fxUndoBtn, &pluginViewBtn, &pluginBackBtn, &newMachineBtn, &randomMachineBtn, &catalogModeBtn, &threadsModeBtn, &railChatBtn, &railDiscordBtn, &railOnlineBtn })
+    for (auto* b : { &shareBtn, &chainBtn, &fxBtn, &logoutBtn, &feedBtn, &chatRefreshBtn, &threadsBtn, &socialBtn, &dmBtn, &adminDeleteBtn, &sendBtn, &utilityGoBtn, &addBtn, &chainBreakBtn, &chainMixBtn, &chainRemoveBtn, &chainUndoBtn, &randomTemplateBtn, &clearCanvasBtn, &saveBtn, &upBtn, &wavBtn, &fxAddBtn, &fxBreakBtn, &fxMixBtn, &fxRandomBtn, &fxClearBtn, &fxSaveBtn, &fxUpBtn, &fxShareChatBtn, &fxShareThreadBtn, &fxRemoveBtn, &fxUndoBtn, &pluginViewBtn, &pluginBackBtn, &newMachineBtn, &randomMachineBtn, &catalogModeBtn, &threadsModeBtn, &railChatBtn, &railDiscordBtn, &railOnlineBtn })
     {
         b->setColour(juce::TextButton::buttonColourId, kt::c(theme.panel).brighter(0.08f));
         b->setColour(juce::TextButton::buttonOnColourId, kt::c(theme.accent).withAlpha(0.30f));

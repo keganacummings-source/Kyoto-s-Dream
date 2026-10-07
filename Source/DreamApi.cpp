@@ -223,20 +223,40 @@ bool downloadAttachment(const juce::String& token, const AttachRef& ref, const j
 
 DreamResult getDiscordMessages(const juce::String& token)
 {
-    return postAction("discord_messages", juce::var(new juce::DynamicObject()), token);
+    return getDiscordMessages(token, {});
+}
+
+DreamResult getDiscordMessages(const juce::String& token, const juce::String& channelId)
+{
+    auto* o = new juce::DynamicObject();
+    if (channelId.isNotEmpty())
+        o->setProperty("channel", channelId);
+    return postAction("discord_messages", juce::var(o), token);
 }
 
 DreamResult sendDiscordMessage(const juce::String& token, const juce::String& user, const juce::String& text)
 {
+    return sendDiscordMessage(token, user, text, {});
+}
+
+DreamResult sendDiscordMessage(const juce::String& token, const juce::String& user, const juce::String& text, const juce::String& channelId)
+{
     auto* o = new juce::DynamicObject();
     o->setProperty("user", user);
     o->setProperty("text", text);
+    if (channelId.isNotEmpty())
+        o->setProperty("channel", channelId);
     return postAction("discord_send", juce::var(o), token);
 }
 
 DreamResult getDiscordStatus(const juce::String& token)
 {
     return postAction("discord_status", juce::var(new juce::DynamicObject()), token);
+}
+
+DreamResult getDiscordChannels(const juce::String& token)
+{
+    return postAction("discord_channels", juce::var(new juce::DynamicObject()), token);
 }
 
 }

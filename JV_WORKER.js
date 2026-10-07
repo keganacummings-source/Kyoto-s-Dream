@@ -811,9 +811,23 @@ function presenceTheme(v) { return (v && typeof v === 'object' && v.theme) ? Str
 const KYOTO_DISCORD_GUILD = '1518252339864014929';
 const KYOTO_DISCORD_CHANNEL = '1518252340707197000';
 const KYOTO_DISCORD_GUILDS = [
-  '1518252339864014929',
-  '1440066181624234106'
+  { id: '1518252339864014929', tag: 'KYTO', name: 'Kyoto' },
+  { id: '1440066181624234106', tag: 'TRBN', name: 'TurboNerdos' }
 ];
+// Always-live channels the VST keeps refreshing even when another channel is selected.
+const ALWAYS_LIVE = [
+  { id: KYOTO_DISCORD_CHANNEL, name: 'general', guildId: '1518252339864014929', tag: 'KYTO', server: 'Kyoto' },
+  // "Mainstreet" — DreamShare live chat is mirrored here conceptually; tag as MAINSTREET for the UI.
+];
+
+function guildTag(guildId) {
+  const g = KYOTO_DISCORD_GUILDS.find((x) => x.id === String(guildId));
+  return g ? g.tag : 'KYTO';
+}
+function guildName(guildId) {
+  const g = KYOTO_DISCORD_GUILDS.find((x) => x.id === String(guildId));
+  return g ? g.name : 'Kyoto';
+}
 
 function formatDreamShareDiscordContent(username, text) {
   const user = String(username || 'KyotoSpxrit').replace(/[\r\n]/g, ' ').trim().slice(0, 32) || 'KyotoSpxrit';
@@ -822,7 +836,7 @@ function formatDreamShareDiscordContent(username, text) {
   return user + ': ' + body + '\nSent from KyotoSpxrit';
 }
 
-function parseDreamShareDiscordMessage(m) {
+function parseDreamShareDiscordMessage(m, tag) {
   const raw = String((m && m.content) || '');
   const fromDs = /Sent from (DreamShare|KyotoSpxrit)\s*$/i.test(raw);
   let user = (m.author && (m.author.global_name || m.author.username)) || 'discord';
@@ -845,7 +859,7 @@ function parseDreamShareDiscordMessage(m) {
     at: m.timestamp || '',
     fromDreamShare: fromDs,
     dis: true,
-    tag: 'KYTO', // native Kyoto #general path; TurboNerdos uses bridge with tag TRBN
+    tag: tag || 'KYTO',
     discordId: authorId,
     authorId: authorId
   };
@@ -860,7 +874,7 @@ async function discordLite(env, action, body) {
       headers: {
         Authorization: 'Bot ' + token,
         'Content-Type': 'application/json',
-        'User-Agent': 'KyotoSpxrit (https://dreamdaw.com, 0.5.1)'
+        'User-Agent': 'KyotoSpxrit (https://dreamdaw.com, 0.6.2)'
       },
       body: payload ? JSON.stringify(payload) : undefined
     });
@@ -875,7 +889,8 @@ async function discordLite(env, action, body) {
   };
 
   const guild = (env && env.DISCORD_GUILD_ID) || KYOTO_DISCORD_GUILD;
-  const channel = KYOTO_DISCORD_CHANNEL;
+  const defaultChannel = KYOTO_DISCORD_CHANNEL;
+  const bodyChannel = body && (body.channel || body.channelId) ? String(body.channel || body.channelId) : '';
 
   if (action === 'discord_status') {
     const me = await call('/users/@me', 'GET');
@@ -885,30 +900,107 @@ async function discordLite(env, action, body) {
       bot: { id: me.data.id, name: me.data.username },
       postsAs: 'bot',
       guild: guild,
-      channel: channel,
-      channelName: 'general'
+      channel: defaultChannel,
+      channelName: 'general',
+      alwaysLive: ['general', 'mainstreet']
     };
   }
 
+  // List every text channel the bot can see across Kyoto + TurboNerdos,
+  // tagged with the server name so the VST can show a Discord-style channel list.
   if (action === 'discord_channels') {
-    return {
-      ok: true,
-      guild: guild,
-      channels: [{ id: channel, name: 'general', parent: '' }]
-    };
+    const channels = [];
+    // Virtual DreamShare "Mainstreet" always first — maps to live DreamShare chat.
+    channels.push({
+      id: 'mainstreet',
+      name: 'mainstreet',
+      parent: '',
+      guildId: 'dreamshare',
+      server: 'DreamShare',
+      tag: 'MAIN',
+      alwaysLive: true
+    });
+    for (const g of KYOTO_DISCORD_GUILDS) {
+      const res = await call('/guilds/' + g.id + '/channels', 'GET');
+      if (!res.ok) continue;
+      const list = Array.isArray(res.data) ? res.data : [];
+      // type 0 = GUILD_TEXT, type 5 = GUILD_ANNOUNCEMENT
+      const textChans = list
+        .filter((c) => c && (c.type === 0 || c.type === 5))
+        .sort((a, b) => (a.position || 0) - (b.position || 0));
+      for (const c of textChans) {
+        const isGeneral = String(c.name || '').toLowerCase() === 'general';
+        channels.push({
+          id: String(c.id),
+          name: String(c.name || 'channel'),
+          parent: c.parent_id ? String(c.parent_id) : '',
+          guildId: g.id,
+          server: g.name,
+          tag: g.tag,
+          alwaysLive: isGeneral
+        });
+      }
+    }
+    // Fallback if bot has no guild access yet
+    if (channels.length <= 1) {
+      channels.push({
+        id: defaultChannel,
+        name: 'general',
+        parent: '',
+        guildId: KYOTO_DISCORD_GUILD,
+        server: 'Kyoto',
+        tag: 'KYTO',
+        alwaysLive: true
+      });
+    }
+    return { ok: true, channels: channels };
   }
 
   if (action === 'discord_messages') {
+    const channel = bodyChannel || defaultChannel;
+    // Virtual Mainstreet — VST should use chat_list / getFeed for this; return empty with flag.
+    if (channel === 'mainstreet') {
+      return { ok: true, channel: 'mainstreet', channelName: 'mainstreet', guild: 'dreamshare', tag: 'MAIN', server: 'DreamShare', messages: [], virtual: true };
+    }
     const msgs = await call('/channels/' + channel + '/messages?limit=50', 'GET');
     if (!msgs.ok) return msgs;
-    const messages = (msgs.data || []).slice().reverse().map(parseDreamShareDiscordMessage);
-    return { ok: true, channel: channel, channelName: 'general', guild: guild, messages: messages };
+    // Infer guild tag from channel membership when possible
+    let tag = 'KYTO';
+    let server = 'Kyoto';
+    let guildId = guild;
+    for (const g of KYOTO_DISCORD_GUILDS) {
+      // Best-effort: if channel id matches known general, use that tag
+      if (channel === KYOTO_DISCORD_CHANNEL && g.id === KYOTO_DISCORD_GUILD) {
+        tag = g.tag; server = g.name; guildId = g.id; break;
+      }
+    }
+    // Try to resolve tag via a lightweight channel fetch
+    const chInfo = await call('/channels/' + channel, 'GET');
+    if (chInfo.ok && chInfo.data && chInfo.data.guild_id) {
+      guildId = String(chInfo.data.guild_id);
+      tag = guildTag(guildId);
+      server = guildName(guildId);
+    }
+    const messages = (msgs.data || []).slice().reverse().map((m) => parseDreamShareDiscordMessage(m, tag));
+    return {
+      ok: true,
+      channel: channel,
+      channelName: (chInfo.ok && chInfo.data && chInfo.data.name) ? String(chInfo.data.name) : 'channel',
+      guild: guildId,
+      tag: tag,
+      server: server,
+      messages: messages
+    };
   }
 
   if (action === 'discord_send') {
     const dreamUser = String(body.user || body.from || body.username || '').trim();
     const text = String(body.text || body.content || '').trim();
     if (!text) return { ok: false, status: 400, error: 'empty message' };
+    const channel = bodyChannel || defaultChannel;
+    if (channel === 'mainstreet') {
+      return { ok: false, status: 400, error: 'Use DreamShare chat for Mainstreet' };
+    }
     const content = formatDreamShareDiscordContent(dreamUser, text);
     const sent = await call('/channels/' + channel + '/messages', 'POST', { content: content });
     if (!sent.ok) return sent;
@@ -925,6 +1017,7 @@ async function discordLite(env, action, body) {
     const message = String(body.message || body.id || '');
     const emoji = encodeURIComponent(String(body.emoji || body.key || '👀'));
     if (!message) return { ok: false, status: 400, error: 'message required' };
+    const channel = bodyChannel || defaultChannel;
     const reacted = await call('/channels/' + channel + '/messages/' + message + '/reactions/' + emoji + '/@me', 'PUT');
     if (!reacted.ok) return reacted;
     return { ok: true };
