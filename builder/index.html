@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>KYOTO Builder — grid bench</title>
+<style>
+  :root { --bg:#12100e; --panel:#1c1814; --line:#3a3128; --copper:#c47a45; --ink:#f3e6d4; --dim:#a89884; --good:#7dcea0; --bad:#e07a6a; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.4 "Segoe UI", sans-serif; }
+  header { display:flex; gap:12px; align-items:center; padding:12px 16px; border-bottom:1px solid var(--line); }
+  header h1 { font-size:16px; margin:0; letter-spacing:.14em; }
+  header span { color:var(--dim); }
+  button, select { background:#2a241e; color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:7px 10px; cursor:pointer; }
+  button.on { outline:2px solid var(--copper); }
+  button:disabled { opacity:.4; }
+  main { display:grid; grid-template-columns: 220px 1fr 240px; min-height: calc(100vh - 92px); }
+  aside, section { padding:12px; }
+  #grid { position:relative; background:
+    linear-gradient(transparent 31px, #2a241c 32px),
+    linear-gradient(90deg, transparent 31px, #2a241c 32px),
+    #171410; background-size:32px 32px; border:1px solid var(--line); height: 22*32px; width: 32*32px; max-width:100%; overflow:auto; }
+  .cell { position:absolute; border-radius:6px; border:1px solid #5a4636; background:#241c16; color:var(--ink); padding:6px; user-select:none; }
+  .cell.sel { outline:2px solid var(--copper); }
+  .cell.board { background:#2c2118; }
+  .cell.screen { background:#0e1c18; border-color:#3d8f72; pointer-events:none; }
+  .cell small { display:block; color:var(--dim); font-size:11px; }
+  #wires { position:absolute; inset:0; pointer-events:none; }
+  footer { padding:8px 16px; border-top:1px solid var(--line); color:var(--dim); }
+  .key { width:42px; height:42px; display:inline-flex; align-items:center; justify-content:center; margin:2px; }
+  #screenRead { font-family: ui-monospace, monospace; color:#9dffc8; min-height:28px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>KYOTO</h1>
+  <span>grid bench · no templates · no pegs</span>
+  <select id="arm">
+    <option value="">Arm a part…</option>
+    <option>DRIVE</option><option>DELAY</option><option>HALL</option><option>CHORUS</option>
+    <option>DIAL</option><option>KEY</option><option>SOUND</option><option>TAP</option>
+  </select>
+  <button id="cut" disabled>Cut wire</button>
+  <button id="plug" disabled>Plug into</button>
+  <button id="geek">Geek</button>
+  <button id="demo">Load demo chain</button>
+</header>
+<main>
+  <aside>
+    <p>First effect plugs into the motherboard. Everything after relays from the previous part.</p>
+    <p>Cut wire opens that cable and drops anything relaying through it. It does not place a part.</p>
+    <p>Plug into, then click the feeder. Loops are rejected. A dial on an effect is a control ribbon.</p>
+    <div id="keys"></div>
+  </aside>
+  <section>
+    <div id="grid"></div>
+  </section>
+  <aside>
+    <h3>wireOrder</h3>
+    <div id="order"></div>
+    <h3>Locked screen</h3>
+    <div id="screenRead">idle</div>
+    <h3>Log</h3>
+    <div id="log"></div>
+  </aside>
+</main>
+<footer id="foot">wireOrder 0</footer>
+<script>
+const COLS = 32, ROWS = 22, CELL = 32;
+const grid = document.getElementById("grid");
+let parts = [];
+let seq = 1;
+let selected = null;
+let arm = "";
+let plugMode = false;
+let geek = false;
+let note = "—";
+
+function log(m){ document.getElementById("log").innerText = m; }
+function isEffect(p){ return ["DRIVE","DELAY","HALL","CHORUS"].includes(p.kind); }
+function chain(){
+  const effects = parts.filter(isEffect);
+  const byId = Object.fromEntries(effects.map(p => [p.id, p]));
+  const start = effects.find(p => p.into === 0);
+  const out = [];
+  let cur = start, guard = 0;
+  while (cur && guard++ < 20){ out.push(cur); cur = effects.find(p => p.into === cur.id); }
+  return out;
+}
+function wireOrder(){ return chain().map(p => p.dsp); }
+
+function downstream(id){
+  const drop = new Set();
+  let grew = true;
+  while (grew){
+    grew = false;
+    for (const p of parts){
+      if (drop.has(p.id)) continue;
+      if (p.into === id || [...drop].some(d => p.into === d)){ drop.add(p.id); grew = true; }
+    }
+  }
+  return drop;
+}
+function wouldLoop(fromId, intoId){
+  let w = intoId, g = 0;
+  while (w && g++ < 20){ if (w === fromId) return true; const n = parts.find(p => p.id === w); w = n ? n.into : 0; }
+  return false;
+}
+function render(){
+  grid.innerHTML = "";
+  const svg = document.createElementNS("http://www.w3.org/2000/svg","svg");
+  svg.setAttribute("id","wires"); svg.setAttribute("width", COLS*CELL); svg.setAttribute("height", ROWS*CELL);
+  grid.appendChild(svg);
+  const center = p => [(p.x + p.w/2)*CELL, (p.y + p.h/2)*CELL];
+  const draw = (a,b,broken) => {
+    const [x1,y1] = center(a), [x2,y2] = center(b);
+    const path = document.createElementNS(svg.namespaceURI,"path");
+    const mx = (x1+x2)/2;
+    path.setAttribute("d", broken ? `M ${x1} ${y1} L ${x1+18} ${y1+10}` : `M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`);
+    path.setAttribute("fill","none");
+    path.setAttribute("stroke", geek ? "#c47a45" : "#6a5344");
+    path.setAttribute("stroke-width", geek ? 3 : 2);
+    if (broken) path.setAttribute("stroke-dasharray","4 3");
+    svg.appendChild(path);
+  };
+  for (const p of parts){
+    if (p.kind === "SCREEN") continue;
+    const feeder = p.into === 0 ? parts.find(x => x.kind === "BOARD") : parts.find(x => x.id === p.into);
+    if (feeder && (isEffect(p) || p.kind === "KEY" || p.kind === "SOUND" || p.ribbon))
+      draw(feeder, p, p.cut);
+  }
+  for (const p of parts){
+    const el = document.createElement("div");
+    el.className = "cell" + (p.id === selected ? " sel" : "") + (p.kind === "BOARD" ? " board" : "") + (p.kind === "SCREEN" ? " screen" : "");
+    el.style.left = p.x*CELL+"px"; el.style.top = p.y*CELL+"px";
+    el.style.width = p.w*CELL-4+"px"; el.style.height = p.h*CELL-4+"px";
+    el.innerHTML = `<b>${p.label}</b><small>${p.ribbon ? "control ribbon" : (p.into === 0 ? "into motherboard" : "relay "+(parts.find(x=>x.id===p.into)?.label||""))}</small>`;
+    if (p.kind === "SCREEN") el.innerHTML = `<b>DISPLAY</b><div id="screenRead">${note}</div>`;
+    if (geek && isEffect(p)) el.innerHTML += `<small>chip @ ${p.x},${p.y}</small>`;
+    el.onmousedown = ev => onCell(p, ev);
+    grid.appendChild(el);
+  }
+  const order = wireOrder();
+  document.getElementById("order").innerText = order.length ? order.join(" → ") : "(empty)";
+  document.getElementById("foot").innerText = "wireOrder " + (order.length ? order.length + 1 : 1) + "  ·  " + (order.length ? "BOARD,"+order.join(",") : "BOARD");
+  document.getElementById("cut").disabled = selected == null;
+}
+function onCell(p, ev){
+  if (p.kind === "SCREEN") return;
+  if (arm){
+    place(arm, p.x, p.y, p);
+    return;
+  }
+  if (plugMode && selected){
+    const src = parts.find(x => x.id === selected);
+    if (!src || src.id === p.id){ log("Cannot wire a part into itself."); return; }
+    if (wouldLoop(src.id, p.id)){ log("Loop rejected."); plugMode = false; return; }
+    src.into = p.id; src.cut = false; plugMode = false;
+    log(src.label + " now relays from " + p.label);
+    render(); return;
+  }
+  selected = p.id;
+  if (p.kind === "KEY"){ note = "KEY " + p.label; log("Locked screen heard " + p.label); }
+  render();
+}
+function place(kind, x, y, host){
+  if (kind === "DIAL" && host && isEffect(host)){
+    parts.push({ id: seq++, kind, label:"DIAL", x: host.x+host.w, y: host.y, w:2, h:2, into: host.id, ribbon:true, dsp:0, cut:false });
+    arm = ""; document.getElementById("arm").value = "";
+    log("Dial is a control ribbon on " + host.label + ", not a stage.");
+    render(); return;
+  }
+  if (kind === "TAP"){
+    parts.push({ id: seq++, kind:"TAP", label:"TAP", x, y, w:4, h:3, into: chain().at(-1)?.id || 0, ribbon:false, dsp:0, cut:false });
+    arm = ""; log("Tap screen listens only. It is not the locked display.");
+    render(); return;
+  }
+  const effects = parts.filter(isEffect);
+  let into = 0;
+  if (["KEY","SOUND"].includes(kind)) into = 0;
+  else if (["DRIVE","DELAY","HALL","CHORUS"].includes(kind)){
+    const tail = selected && parts.find(p => p.id === selected && isEffect(p)) || chain().at(-1);
+    into = tail ? tail.id : 0;
+  }
+  const dsp = isEffect({kind}) ? (effects.length ? Math.max(...effects.map(e => e.dsp))+1 : 2) : 0;
+  parts.push({ id: seq++, kind, label: kind, x, y: Math.min(y, 18), w: kind==="KEY"?2:4, h: kind==="KEY"?2:3, into, ribbon:false, dsp, cut:false });
+  arm = ""; document.getElementById("arm").value = "";
+  log(kind + " relays from " + (into === 0 ? "motherboard" : parts.find(p=>p.id===into).label));
+  render();
+}
+function boot(){
+  parts = [
+    { id: seq++, kind:"BOARD", label:"MOTHERBOARD", x:1, y:1, w:12, h:8, into:null, dsp:1, cut:false },
+    { id: seq++, kind:"SCREEN", label:"DISPLAY", x:2, y:2, w:8, h:4, into:0, lock:true, dsp:0, cut:false }
+  ];
+  selected = parts[0].id;
+  render();
+}
+document.getElementById("arm").onchange = e => { arm = e.target.value; log(arm ? arm+" armed. Click an empty area of the grid." : ""); };
+grid.addEventListener("click", e => {
+  if (!arm || e.target !== grid) return;
+  const x = Math.floor(e.offsetX / CELL), y = Math.floor(e.offsetY / CELL);
+  place(arm, x, y, null);
+});
+document.getElementById("cut").onclick = () => {
+  const p = parts.find(x => x.id === selected);
+  if (!p || p.kind === "BOARD" || p.kind === "SCREEN") return;
+  const drop = downstream(p.id);
+  p.into = -1; p.cut = true;
+  parts = parts.filter(x => !drop.has(x.id));
+  log("Cut wire from " + p.label + ". Relays dropped. No new part placed.");
+  render();
+};
+document.getElementById("plug").onclick = () => { plugMode = true; log("Plug into: click the part that should feed the selection."); };
+document.getElementById("geek").onclick = e => { geek = !geek; e.target.classList.toggle("on", geek); render(); };
+document.getElementById("demo").onclick = () => {
+  boot();
+  const board = parts[0];
+  const drive = { id: seq++, kind:"DRIVE", label:"DRIVE", x:14, y:2, w:4, h:3, into:0, dsp:2, cut:false };
+  const delay = { id: seq++, kind:"DELAY", label:"DELAY", x:14, y:6, w:4, h:3, into: drive.id, dsp:3, cut:false };
+  const hall = { id: seq++, kind:"HALL", label:"HALL", x:14, y:10, w:4, h:3, into: delay.id, dsp:4, cut:false };
+  parts.push(drive, delay, hall);
+  selected = delay.id;
+  log("Demo DRIVE → DELAY → HALL. Select DELAY and Cut wire: HALL leaves, footer stays on wireOrder 3.");
+  render();
+};
+for (const k of ["C","D","E","F","G"]){
+  const b = document.createElement("button");
+  b.className = "key"; b.textContent = k;
+  b.onclick = () => { note = "note " + k; log("Key feeds the motherboard. Locked screen: " + note); render(); };
+  document.getElementById("keys").appendChild(b);
+}
+let drag = null;
+grid.addEventListener("mousedown", e => {
+  const board = parts.find(p => p.kind === "BOARD");
+  if (!board || arm) return;
+  const x = Math.floor(e.offsetX/CELL), y = Math.floor(e.offsetY/CELL);
+  if (x >= board.x && x < board.x+board.w && y >= board.y && y < board.y+board.h)
+    drag = { x, y, bx: board.x, by: board.y };
+});
+window.addEventListener("mousemove", e => {
+  if (!drag) return;
+  const r = grid.getBoundingClientRect();
+  const x = Math.floor((e.clientX - r.left)/CELL), y = Math.floor((e.clientY - r.top)/CELL);
+  const board = parts.find(p => p.kind === "BOARD");
+  const screen = parts.find(p => p.kind === "SCREEN");
+  const nx = Math.max(0, Math.min(COLS-board.w, drag.bx + (x - drag.x)));
+  const ny = Math.max(0, Math.min(ROWS-board.h, drag.by + (y - drag.y)));
+  const dx = nx - board.x, dy = ny - board.y;
+  board.x = nx; board.y = ny;
+  if (screen){ screen.x += dx; screen.y += dy; }
+  render();
+});
+window.addEventListener("mouseup", () => drag = null);
+boot();
+</script>
+</body>
+</html>

@@ -274,8 +274,23 @@ private:
                 if ((int) node.getProperty("slot", -1) != dsp) continue;
                 if ((int) node.getProperty("satellite", 0) != 0) continue;
                 const int bay = (int) node.getProperty("shellSlot", -1);
-                if (bay < 0 || bay >= shell.slotCount) continue;
-                pts.add(pb::slotRect(face, shell.slots[bay]).getCentre());
+                if (node.hasProperty("gx"))
+                {
+                    const float cw = face.getWidth() / (float) pb::kGridCols;
+                    const float ch = face.getHeight() / (float) pb::kGridRows;
+                    const float gx = (float) (int) node.getProperty("gx", 0);
+                    const float gy = (float) (int) node.getProperty("gy", 0);
+                    const float gw = (float) (int) node.getProperty("gw", 4);
+                    const float gh = (float) (int) node.getProperty("gh", 4);
+                    pts.add({ face.getX() + (gx + gw * 0.5f) * cw, face.getY() + (gy + gh * 0.5f) * ch });
+                }
+                else
+                {
+                    if (bay < 0 || bay >= shell.slotCount) continue;
+                    pts.add(pb::slotRect(face, shell.slots[bay]).getCentre());
+                }
+                if ((int) node.getProperty("cut", 0) != 0)
+                    pts.add(pts.getLast() + juce::Point<float>(18.f, 10.f)); // broken stub, not a wire home
                 break;
             }
         }
