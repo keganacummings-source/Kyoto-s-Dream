@@ -221,8 +221,6 @@ bool downloadAttachment(const juce::String& token, const AttachRef& ref, const j
     return true;
 }
 
-}
-
 DreamResult getDiscordMessages(const juce::String& token)
 {
     return postAction("discord_messages", juce::var(new juce::DynamicObject()), token);
@@ -239,4 +237,6 @@ DreamResult sendDiscordMessage(const juce::String& token, const juce::String& us
 DreamResult getDiscordStatus(const juce::String& token)
 {
     return postAction("discord_status", juce::var(new juce::DynamicObject()), token);
+}
+
 }
