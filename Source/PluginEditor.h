@@ -102,7 +102,7 @@ private:
 class SocialRail : public juce::Component
 {
 public:
-    struct Bubble { juce::String id, user, text, themeId; bool dis = false; };
+    struct Bubble { juce::String id, user, text, themeId, discordId; bool dis = false; };
     struct Person { juce::String name, detail, themeId, kind, requestId; bool online = false; };
 
     std::function<void(const Bubble&, juce::Point<int>)> onBubbleMenu;
@@ -343,7 +343,7 @@ private:
     SocialDirectory socialDirectory;
     juce::TextButton catalogModeBtn { "CATALOG" }, threadsModeBtn { "THREADS" }, railChatBtn { "CHAT" }, railDiscordBtn { "DISCORD" }, railOnlineBtn { "SOCIALS" };
     juce::TextButton pluginsTabBtn { "PLUGINS" }, effectsTabBtn { "EFFECTS" }, myPluginsBtn { "MY PLUGINS" }, pendingBtn { "PENDING" };
-    juce::TextEditor tagSearchBox;
+    juce::ComboBox sortBox;
     juce::TextButton textMinusBtn { "A-" }, textPlusBtn { "A+" }, attachChip { "" };
     juce::File pendingAttach;
     int pendingAttachTarget = 0; // 0 none, 1 live chat, 2 open thread

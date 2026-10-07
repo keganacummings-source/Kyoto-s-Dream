@@ -726,7 +726,7 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     // No walkthrough any more: the Plugin Builder opens straight into the workshop on a
     // randomly generated template, and you learn the plugin by using it.
     chainBtn.onClick = [this] { showTab(1); };
-    fxBtn.onClick = [this] { if (loggedIn) showTab(2); };
+    fxBtn.onClick = [this] { /* FX Builder page removed */ if (loggedIn) showTab(1); };
     pluginViewBtn.onClick = [this] { setPluginView(true); };
     pluginBackBtn.onClick = [this] { setPluginView(false); };
     newMachineBtn.onClick = [this] {
@@ -832,7 +832,7 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     addAndMakeVisible(chatRefreshBtn); addAndMakeVisible(threadsBtn); addAndMakeVisible(socialBtn); addAndMakeVisible(dmBtn); addAndMakeVisible(adminDeleteBtn);
     addAndMakeVisible(catalogModeBtn); addAndMakeVisible(threadsModeBtn); addAndMakeVisible(railChatBtn); addAndMakeVisible(railDiscordBtn); addAndMakeVisible(railOnlineBtn);
     addAndMakeVisible(threadBackBtn); addAndMakeVisible(threadReactBtn); addAndMakeVisible(threadShareFxBtn); addAndMakeVisible(threadSharePluginBtn);
-    addAndMakeVisible(pluginsTabBtn); addAndMakeVisible(effectsTabBtn); addAndMakeVisible(myPluginsBtn); addAndMakeVisible(pendingBtn); addAndMakeVisible(tagSearchBox);
+    addAndMakeVisible(pluginsTabBtn); addAndMakeVisible(effectsTabBtn); addAndMakeVisible(myPluginsBtn); addAndMakeVisible(pendingBtn); addAndMakeVisible(sortBox);
     addAndMakeVisible(themeBox);
     addAndMakeVisible(textMinusBtn); addAndMakeVisible(textPlusBtn); addAndMakeVisible(attachChip);
     kt::loadDsScale();
@@ -999,15 +999,18 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
         showPersonMenu(person, pos);
     };
     pluginsTabBtn.onClick = [this] { setCenterMode(0); refreshCatalog(); };
-    effectsTabBtn.onClick = [this] { setCenterMode(1); refreshCatalog(); };
+    effectsTabBtn.onClick = [this] { /* Effects catalog removed */ setCenterMode(0); refreshCatalog(); };
     myPluginsBtn.onClick = [this] { setCenterMode(2); refreshMyModules(); };
     pendingBtn.onClick = [this] { setCenterMode(4); refreshPending(); };
-    tagSearchBox.onTextChange = [this] {
-        const int tick = ++searchTick;
-        juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
-        juce::Timer::callAfterDelay(260, [safe, tick] { if (safe != nullptr && safe->searchTick == tick) safe->refreshCatalog(); });
-    };
-    tagSearchBox.setTextToShowWhenEmpty("Search tags...", juce::Colour(0x80808080));
+    sortBox.clear(juce::dontSendNotification);
+    sortBox.addItem("Sort: Newest", 1);
+    sortBox.addItem("Sort: Oldest", 2);
+    sortBox.addItem("Sort: Name A-Z", 3);
+    sortBox.addItem("Sort: Name Z-A", 4);
+    sortBox.addItem("Sort: Author", 5);
+    sortBox.setSelectedId(1, juce::dontSendNotification);
+    sortBox.setTooltip("Sort the plugin catalog");
+    sortBox.onChange = [this] { if (loggedIn && centerMode == 0) refreshCatalog(); };
     catalogModeBtn.setClickingTogglesState(true);
     threadsModeBtn.setClickingTogglesState(true);
     railChatBtn.setClickingTogglesState(true);
@@ -1125,7 +1128,7 @@ void KyotoAudioProcessorEditor::setPluginView(bool on)
     pluginView = on;
     pluginViewBtn.setVisible(!on && loggedIn);
     pluginBackBtn.setVisible(on);
-    shareBtn.setVisible(!on); chainBtn.setVisible(!on); fxBtn.setVisible(false); logoutBtn.setVisible(!on); whoLabel.setVisible(!on);
+    shareBtn.setVisible(!on); chainBtn.setVisible(!on); fxBtn.setVisible(false); // FX Builder page removed from the VST chrome logoutBtn.setVisible(!on); whoLabel.setVisible(!on);
     if (on)
     {
         showTab(1);
@@ -1842,7 +1845,7 @@ void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
         g.drawText("DREAMSHARE HOME", hero.getX()+18, hero.getY()+12, 300, 26, juce::Justification::left);
         g.setColour(kt::c(theme.text));
         g.setFont(kt::dsFont(theme, 13.f, false));
-        g.drawFittedText("Chat on the left. Community plugins and effects on the right. React with emoji, post files, share plugins.", juce::Rectangle<float>(hero.getX()+18, hero.getY()+42, juce::jmax(120.f, hero.getWidth()-250.f), 36.f).toNearestInt(), juce::Justification::topLeft, 2);
+        g.drawFittedText("Chat on the left. Community plugins and threads on the right. React with emoji, post files, share plugins.", juce::Rectangle<float>(hero.getX()+18, hero.getY()+42, juce::jmax(120.f, hero.getWidth()-250.f), 36.f).toNearestInt(), juce::Justification::topLeft, 2);
         g.setColour(kt::c(theme.accent));
         g.setFont(kt::dsFont(theme, 12.f, true));
         g.drawText("LIVE  -  " + (account.isEmpty() ? juce::String("SIGNED IN") : account.toUpperCase()), hero.getRight()-220, hero.getY()+18, 200, 18, juce::Justification::right);
@@ -1861,7 +1864,7 @@ void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
         g.setColour(kt::c(theme.accent));
         g.setFont(kt::font(theme, 12.f, true));
         g.drawText(railMode == 0 ? "DREAM CHAT" : (railMode == 2 ? "DISCORD #GENERAL" : "FRIENDS / ONLINE"), chatCard.getX()+12, chatCard.getY()+6, 220, 18, juce::Justification::left);
-        juce::String centerLabel = centerMode == 0 ? "COMMUNITY PLUGINS" : centerMode == 1 ? "COMMUNITY EFFECTS" : centerMode == 2 ? "MY PLUGINS" : centerMode == 4 ? "PENDING APPROVAL" : centerMode == 5 ? "SOCIALS  -  DREAMSHARE DIRECTORY" : "THREADS";
+        juce::String centerLabel = centerMode == 0 ? "COMMUNITY PLUGINS" : centerMode == 2 ? "MY PLUGINS" : centerMode == 4 ? "PENDING APPROVAL" : centerMode == 5 ? "SOCIALS  -  DREAMSHARE DIRECTORY" : "THREADS";
         g.drawText(centerLabel, catalogCard.getX()+12, catalogCard.getY()+6, 200, 18, juce::Justification::left);
     }
 
@@ -1969,9 +1972,9 @@ void KyotoAudioProcessorEditor::showTab(int next)
     threadSharePluginBtn.setVisible(share && loggedIn && threadOpen);
     chatRefreshBtn.setVisible(false); threadsBtn.setVisible(false); socialBtn.setVisible(false); dmBtn.setVisible(false);
     catalogModeBtn.setVisible(false); threadsModeBtn.setVisible(share && loggedIn);
-    pluginsTabBtn.setVisible(share && loggedIn); effectsTabBtn.setVisible(share && loggedIn); myPluginsBtn.setVisible(share && loggedIn);
+    pluginsTabBtn.setVisible(share && loggedIn); effectsTabBtn.setVisible(false); myPluginsBtn.setVisible(share && loggedIn);
     pendingBtn.setVisible(share && loggedIn && isAdmin);
-    tagSearchBox.setVisible(share && loggedIn && (centerMode == 0 || centerMode == 1));
+    sortBox.setVisible(share && loggedIn && centerMode == 0);
     textMinusBtn.setVisible(share && loggedIn); textPlusBtn.setVisible(share && loggedIn);
     attachChip.setVisible(share && loggedIn && pendingAttach != juce::File() && ((pendingAttachTarget == 1 && (railMode == 0 || railMode == 2)) || (pendingAttachTarget == 2 && threadOpen)));
     railChatBtn.setVisible(share && loggedIn); railDiscordBtn.setVisible(share && loggedIn); railOnlineBtn.setVisible(share && loggedIn);
@@ -2025,7 +2028,7 @@ void KyotoAudioProcessorEditor::resized()
         chainLevels.setVisible(false);
         pluginBackBtn.setBounds(24, 20, 104, 34);
         pluginViewBtn.setVisible(false); newMachineBtn.setVisible(false); randomMachineBtn.setVisible(false);
-        shareBtn.setVisible(false); chainBtn.setVisible(false); fxBtn.setVisible(false); logoutBtn.setVisible(false); whoLabel.setVisible(false); status.setVisible(false);
+        shareBtn.setVisible(false); chainBtn.setVisible(false); fxBtn.setVisible(false); // FX Builder page removed from the VST chrome logoutBtn.setVisible(false); whoLabel.setVisible(false); status.setVisible(false);
         return;
     }
     const int navY = 8;
@@ -2072,11 +2075,11 @@ void KyotoAudioProcessorEditor::resized()
         if (top.getWidth() > 116) { top.removeFromLeft(10); newMachineBtn.setBounds(top.removeFromLeft(106)); }
         if (top.getWidth() > 152) { top.removeFromLeft(8); randomMachineBtn.setBounds(top.removeFromLeft(136)); }
         // Tag search row
-        if (centerMode == 0 || centerMode == 1)
+        if (centerMode == 0)
         {
             auto tagRow = area.removeFromTop(30);
             tagRow.removeFromTop(2);
-            tagSearchBox.setBounds(tagRow.removeFromLeft(juce::jmax(160, tagRow.getWidth() - 120)));
+            sortBox.setBounds(tagRow.removeFromLeft(juce::jmax(160, tagRow.getWidth() - 120)));
             tagRow.removeFromLeft(8);
         }
         // Chat on the LEFT, catalog on the RIGHT
@@ -2109,24 +2112,30 @@ void KyotoAudioProcessorEditor::resized()
             railOnlineBtn.setBounds(railHead);
         }
         rail.removeFromTop(6);
-        if (railMode == 0)
+        if (railMode == 0 || railMode == 2)
         {
             auto composer = rail.removeFromBottom(34);
             if (attachChip.isVisible() && pendingAttachTarget == 1) attachChip.setBounds(rail.removeFromBottom(30).reduced(0, 2));
             msgBox.setBounds(composer.removeFromLeft(juce::jmax(120, composer.getWidth() - 72)));
             composer.removeFromLeft(6);
             sendBtn.setBounds(composer);
+            msgBox.setEnabled(true);
+            sendBtn.setEnabled(true);
+            msgBox.toFront(false);
+            sendBtn.toFront(false);
         }
         else
         {
-            // Social actions live on the name: click = WAV request, right-click = DM / friend / admin.
+            // Socials: actions live on the name (click / right-click).
+            msgBox.setBounds(0, 0, 0, 0);
+            sendBtn.setBounds(0, 0, 0, 0);
         }
         chatView.setBounds(rail.reduced(0, 4));
         const int savedChatY = chatView.getViewPositionY();
         const int railInnerW = juce::jmax(200, chatView.getWidth() - 8);
         socialRail.setBounds(0, 0, railInnerW, socialRail.contentHeightFor(railInnerW));
         chatView.setViewedComponent(&socialRail, false);
-        if (scrollChatOnRefresh && railMode == 0)
+        if (scrollChatOnRefresh && (railMode == 0 || railMode == 2))
             chatView.setViewPosition(0, socialRail.getHeight());
         else
             chatView.setViewPosition(0, savedChatY);
@@ -3776,6 +3785,7 @@ void KyotoAudioProcessorEditor::setCenterMode(int mode)
         if (pendingAttachTarget == 2) clearAttachment();
     }
     centerMode = juce::jlimit(0, 5, mode);
+    if (centerMode == 1) centerMode = 0; // Effects catalog removed
     if (centerMode == 5) rebuildDirectory();
     catalogModeBtn.setToggleState(centerMode == 0, juce::dontSendNotification);
     threadsModeBtn.setToggleState(centerMode == 3, juce::dontSendNotification);
@@ -3801,7 +3811,12 @@ void KyotoAudioProcessorEditor::setRailMode(int mode)
     // SocialRail modes: 0 = chat bubbles, 1 = online/friends. Discord reuses chat bubbles (mode 0).
     socialRail.setMode(railMode == 1 ? 1 : 0);
     socialRail.setShowDirectory(isAdmin);
+    if (railMode == 2)
+        msgBox.setTextToShowWhenEmpty("Message Discord #general  -  right-click a name to @mention", juce::Colours::grey);
+    else
+        msgBox.setTextToShowWhenEmpty("Message #dreamshare  -  drop files to attach", juce::Colours::grey);
     showTab(tab);
+    resized();
 }
 
 void KyotoAudioProcessorEditor::rebuildCenter()
@@ -3856,7 +3871,7 @@ void KyotoAudioProcessorEditor::applyDsScale()
     const auto f = juce::Font(14.f * s);
     msgBox.setFont(f);
     utilityBox.setFont(f);
-    tagSearchBox.setFont(f);
+    // sortBox is a ComboBox (sort bar); theme applies via LookAndFeel
     socialRail.setSize(socialRail.getWidth(), socialRail.contentHeight());
     if (threadOpen) rebuildThreadDetail(); else if (centerMode == 3) rebuildThreadBoard();
     resized();
@@ -4095,25 +4110,46 @@ void KyotoAudioProcessorEditor::showPersonMenu(const SocialRail::Person& person,
 void KyotoAudioProcessorEditor::showBubbleMenu(const SocialRail::Bubble& bubble, juce::Point<int> screenPos)
 {
     juce::PopupMenu menu;
+    // Discord bubbles: mention uses the real Discord user id when the worker provides it.
+    if (railMode == 2 || bubble.dis)
+    {
+        menu.addItem(30, "Mention @" + bubble.user);
+        menu.addSeparator();
+    }
     menu.addItem(1, "Add friend");
     juce::PopupMenu react;
-    react.addItem(10, "\xf0\x9f\x92\x9c  Heart");
-    react.addItem(11, "\xf0\x9f\x94\xa5  Fire");
-    react.addItem(12, "\xf0\x9f\x98\x82  Laugh");
-    react.addItem(13, "\xf0\x9f\x8c\x9f  Moon");
-    react.addItem(14, "\xf0\x9f\x92\xaf  100");
-    react.addItem(15, "\xf0\x9f\x91\x8d  Up");
-    react.addItem(16, "\xf0\x9f\x92\x80  Skull");
-    react.addItem(17, "\xf0\x9f\x91\x80  Eyes");
-    react.addItem(18, "\xe2\x9c\xa8  Sparkles");
-    react.addItem(19, "\xf0\x9f\x91\x8b  Wave");
+    // ASCII labels only — Windows VST hosts often fail to render emoji glyphs in PopupMenu.
+    react.addItem(10, "Heart");
+    react.addItem(11, "Fire");
+    react.addItem(12, "Laugh");
+    react.addItem(13, "Moon");
+    react.addItem(14, "100");
+    react.addItem(15, "Up");
+    react.addItem(16, "Skull");
+    react.addItem(17, "Eyes");
+    react.addItem(18, "Sparkles");
+    react.addItem(19, "Wave");
     menu.addSubMenu("React with emoji", react);
     menu.addSeparator();
     menu.addItem(2, "Reply");
     if (isAdmin) { menu.addSeparator(); menu.addItem(20, "Delete message"); }
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1)),
         [this, bubble](int choice) {
-            if (choice == 1)
+            if (choice == 30)
+            {
+                // Prefer Discord snowflake mention when available; else plain @name.
+                juce::String insert;
+                if (bubble.discordId.isNotEmpty())
+                    insert = "<@" + bubble.discordId + "> ";
+                else
+                    insert = "@" + bubble.user + " ";
+                msgBox.moveCaretToEnd();
+                msgBox.insertTextAtCaret(insert);
+                msgBox.grabKeyboardFocus();
+                if (railMode != 2)
+                    setRailMode(2);
+            }
+            else if (choice == 1)
             {
                 const auto tokenCopy = token; const auto name = bubble.user;
                 juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
@@ -4134,10 +4170,11 @@ void KyotoAudioProcessorEditor::showBubbleMenu(const SocialRail::Bubble& bubble,
                 auto* o = new juce::DynamicObject(); o->setProperty("id", bubble.id);
                 const auto tokenCopy = token; auto body = juce::var(o);
                 juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
-                std::thread([safe, tokenCopy, body]{ auto r = kt::postAction("chat_delete", body, tokenCopy); juce::MessageManager::callAsync([safe, r]{ if (safe==nullptr) return; safe->status.setText(r.ok?"Message removed":r.error, juce::dontSendNotification); safe->refreshFeed(); }); }).detach();
+                std::thread([safe, tokenCopy, body]{ auto r = kt::postAction("chat_delete", body, tokenCopy); juce::MessageManager::callAsync([safe, r]{ if (safe==nullptr) return; safe->status.setText(r.ok?"Message removed":r.error, juce::dontSendNotification); if (r.ok) safe->refreshFeed(); }); }).detach();
             }
         });
 }
+
 
 void KyotoAudioProcessorEditor::openThread(const juce::String& id)
 {
@@ -4265,6 +4302,8 @@ void KyotoAudioProcessorEditor::refreshDiscord()
                         b.text = m->getProperty("text").toString();
                         b.themeId = "trippah";
                         b.dis = true;
+                        b.discordId = m->getProperty("discordId").toString();
+                        if (b.discordId.isEmpty()) b.discordId = m->getProperty("authorId").toString();
                         bubbles.add(b);
                         log << "[DIS] " << b.user << ": " << b.text << "\n";
                     }
@@ -4380,43 +4419,33 @@ juce::String tagsToText(const juce::var& tags)
 void KyotoAudioProcessorEditor::refreshCatalog()
 {
     if (token.isEmpty()) return;
-    const auto tagText = tagSearchBox.getText().trim().toLowerCase();
-    const auto faceFilter = centerMode == 1 ? juce::String("fx") : juce::String("kyoto");
+    const int sortMode = sortBox.getSelectedId(); // 1 Newest 2 Oldest 3 Name A-Z 4 Name Z-A 5 Author
     const auto tokenCopy = token; juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
     const int seq = ++catalogSeq;
     status.setText("Loading catalog...", juce::dontSendNotification);
-    std::thread([safe, tokenCopy, tagText, faceFilter, seq] {
-        auto r = tagText.isNotEmpty() ? kt::getCatalogTagged(tokenCopy, tagText) : kt::getCatalog(tokenCopy);
-        juce::MessageManager::callAsync([safe, r, faceFilter, tagText, seq] {
+    std::thread([safe, tokenCopy, sortMode, seq] {
+        auto r = kt::getCatalog(tokenCopy);
+        juce::MessageManager::callAsync([safe, r, sortMode, seq] {
             if (safe == nullptr) return;
             if (seq != safe->catalogSeq) return; // a newer request is already on its way
             // Called from the builders too (after publishing): then only refresh the data, never the cards on screen.
-            const bool showCards = (safe->centerMode == 0 || safe->centerMode == 1);
+            const bool showCards = (safe->centerMode == 0);
             safe->catalog.clear();
             if (showCards) safe->catalogHolder.removeAllChildren();
             auto* mods = r.parsed.getDynamicObject() ? r.parsed.getDynamicObject()->getProperty("modules").getArray() : nullptr;
             if (mods == nullptr) { safe->status.setText(r.ok?"Catalog empty":(r.error.isEmpty() ? juce::String("Could not load the catalog") : "Catalog: " + r.error), juce::dontSendNotification); safe->refreshEffectBox(); return; }
-            int i=0;
+
+            struct Row { CatalogItem c; juce::int64 at = 0; bool hidden = false; };
+            juce::Array<Row> rows;
             for (auto& item:*mods)
             {
                 auto* m=item.getDynamicObject(); if(!m) continue;
                 const auto face = m->getProperty("face").toString().toLowerCase();
-                // PLUGINS shows every plugin face the builders publish ("kyoto", "chain", ...);
-                // EFFECTS shows "fx"/"effect". (The old filter only accepted "kyoto", so approved
-                // plugins published from the Plugin Builder as "chain" never appeared.)
+                // Effects catalog removed — only plugin faces in the public catalog.
                 const bool isEffect = face == "fx" || face == "effect";
-                if (faceFilter == "kyoto" && isEffect) continue;
-                if (faceFilter == "fx" && ! isEffect) continue;
-                // The public catalog is approved items only. Your own pending/denied work lives in MY PLUGINS,
-                // moderation lives in PENDING (admins used to get everything mixed into the catalog).
+                if (isEffect) continue;
                 const auto itemStatus = m->getProperty("status").toString().toLowerCase();
                 const bool hiddenFromPublic = (itemStatus == "pending" || itemStatus == "denied");
-                // Client-side tag filter as fallback
-                if (tagText.isNotEmpty())
-                {
-                    const auto modTags = m->getProperty("tags").toString().toLowerCase();
-                    if (!modTags.contains(tagText) && !m->getProperty("name").toString().toLowerCase().contains(tagText)) continue;
-                }
                 CatalogItem c;
                 c.id = m->getProperty("id").toString();
                 c.name = m->getProperty("name").toString();
@@ -4424,8 +4453,26 @@ void KyotoAudioProcessorEditor::refreshCatalog()
                 c.author = m->getProperty("author").toString();
                 c.status = m->getProperty("status").toString();
                 c.tags = tagsToText(m->getProperty("tags"));
-                safe->catalog.add(c); // builders still see the full list
-                if (hiddenFromPublic) continue;
+                Row row; row.c = c; row.hidden = hiddenFromPublic;
+                row.at = (juce::int64) m->getProperty("at");
+                if (row.at == 0) row.at = (juce::int64) m->getProperty("updated");
+                rows.add(row);
+            }
+
+            std::stable_sort(rows.begin(), rows.end(), [sortMode](const Row& a, const Row& b) {
+                if (sortMode == 2) return a.at < b.at; // Oldest
+                if (sortMode == 3) return a.c.name.compareIgnoreCase(b.c.name) < 0;
+                if (sortMode == 4) return a.c.name.compareIgnoreCase(b.c.name) > 0;
+                if (sortMode == 5) return a.c.author.compareIgnoreCase(b.c.author) < 0;
+                return a.at > b.at; // Newest (default)
+            });
+
+            int i = 0;
+            for (auto& row : rows)
+            {
+                safe->catalog.add(row.c);
+                if (row.hidden) continue;
+                const auto& c = row.c;
                 auto* card=new BoardCard();
                 card->title=c.name;
                 card->meta=c.face+"  -  "+c.author;
@@ -4443,14 +4490,13 @@ void KyotoAudioProcessorEditor::refreshCatalog()
             if (i == 0)
             {
                 auto* empty = new BoardCard();
-                empty->title = tagText.isNotEmpty() ? "No matches" : (faceFilter == "fx" ? "No effects yet" : "No plugins yet");
-                empty->body = tagText.isNotEmpty() ? "Nothing is tagged or named \"" + tagText + "\". Clear the search to see everything."
-                                                   : "Approved items show up here. Check MY PLUGINS for your own uploads and their approval status.";
+                empty->title = "No plugins yet";
+                empty->body = "Approved items show up here. Check MY PLUGINS for your own uploads and their approval status.";
                 empty->themeId = safe->theme.id;
                 safe->catalogHolder.addAndMakeVisible(empty);
             }
             safe->catalogView.setViewedComponent(&safe->catalogHolder,false); safe->resized(); safe->refreshEffectBox();
-            safe->status.setText(juce::String(i) + (i == 1 ? " item" : " items") + (tagText.isNotEmpty() ? "  -  tag: " + tagText : ""), juce::dontSendNotification);
+            safe->status.setText(juce::String(i) + (i == 1 ? " plugin" : " plugins"), juce::dontSendNotification);
         });
     }).detach();
 }

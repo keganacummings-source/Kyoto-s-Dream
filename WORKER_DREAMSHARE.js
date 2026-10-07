@@ -813,7 +813,8 @@ const KYOTO_DISCORD_CHANNEL = '1518252340707197000';
 
 function formatDreamShareDiscordContent(username, text) {
   const user = String(username || 'KyotoSpxrit').replace(/[\r\n]/g, ' ').trim().slice(0, 32) || 'KyotoSpxrit';
-  const body = String(text || '').trim().slice(0, 1800);
+  // Keep Discord mention tokens (<@id>, <@!id>, <#id>, <@&id>) intact so @mentions work.
+  let body = String(text || '').trim().slice(0, 1800);
   return user + ': ' + body + '\nSent from KyotoSpxrit';
 }
 
@@ -832,13 +833,16 @@ function parseDreamShareDiscordMessage(m) {
       text = withoutFooter.trim();
     }
   }
+  const authorId = (m.author && m.author.id) ? String(m.author.id) : '';
   return {
     id: m.id,
     user: user,
     text: text,
     at: m.timestamp || '',
     fromDreamShare: fromDs,
-    dis: true
+    dis: true,
+    discordId: authorId,
+    authorId: authorId
   };
 }
 
@@ -968,7 +972,7 @@ async function readPresence(env) {
     }
   } catch (_) {}
   const people = Object.keys(map || {}).filter(function (k) { return now - presenceAt(map[k]) < ONLINE_TTL; }).map(function (k) {
-    return { name: k, theme: presenceTheme(map[k]), online: true };
+    return { name: k, theme: presenceTheme(map[k]), online: true, dis: false };
   });
   const discord = await readDiscordPresence(env);
   for (let i = 0; i < discord.length; i++) {
