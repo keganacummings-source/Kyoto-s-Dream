@@ -274,16 +274,41 @@ void KyotoAudioProcessor::rebuildActiveSlots() noexcept
     activeSlotCount = 0;
     anyActiveSlot = false;
     const int nSlots = slotCount();
-    for (int s = 0; s < nSlots; ++s)
+
+    // Prefer explicit wire order from the builder (parent/chain + spatial DSP slots).
+    // Format: "1,3,4,7" stored on uiState.wireOrder. Falls back to sequential scan.
+    const auto orderStr = uiState.getProperty("wireOrder").toString();
+    if (orderStr.isNotEmpty())
     {
-        if (! blockConfig[s].on)
-            continue;
-        // Hard cap: never process more than kMaxSlots live stages even if
-        // a pathological custom expansion tried to fill everything.
-        if (activeSlotCount >= kMaxSlots)
-            break;
-        activeSlots[activeSlotCount++] = s;
-        anyActiveSlot = true;
+        juce::StringArray parts;
+        parts.addTokens(orderStr, ",", "");
+        for (const auto& p : parts)
+        {
+            const int s = p.trim().getIntValue();
+            if (s < 0 || s >= nSlots) continue;
+            if (! blockConfig[s].on) continue;
+            if (activeSlotCount >= kMaxSlots) break;
+            // Deduplicate
+            bool dup = false;
+            for (int i = 0; i < activeSlotCount; ++i)
+                if (activeSlots[i] == s) { dup = true; break; }
+            if (dup) continue;
+            activeSlots[activeSlotCount++] = s;
+            anyActiveSlot = true;
+        }
+    }
+
+    if (! anyActiveSlot)
+    {
+        for (int s = 0; s < nSlots; ++s)
+        {
+            if (! blockConfig[s].on)
+                continue;
+            if (activeSlotCount >= kMaxSlots)
+                break;
+            activeSlots[activeSlotCount++] = s;
+            anyActiveSlot = true;
+        }
     }
 }
 

@@ -110,14 +110,19 @@ float DspEngine::softClip(float value, float drive) {
 
 float DspEngine::processEffect(Kind kind, EffectState& st, int index, float amount, float tone, float motion, float shape,
                                float left, float right, int, float& rightOutput) {
-    const float profile = (0.72f + static_cast<float>(index) * 0.0014f) * (0.5f + shape);
+    amount = juce::jlimit(0.0f, 1.0f, amount * (0.88f + 0.24f * std::fmod(static_cast<float>(index) * 0.271f, 1.0f)));
+    // Per-index fingerprint so all 200 catalog slots stay audibly distinct even within a Kind.
+    const float idxF = static_cast<float>(index);
+    const float fingerprint = 0.55f + 0.45f * std::fmod(idxF * 0.6180339887f, 1.0f);
+    const float profile = (0.62f + idxF * 0.00185f) * (0.42f + shape * 0.7f) * fingerprint;
     const float sr = static_cast<float>(sampleRate);
+    const float toneBias = 0.35f + 0.65f * tone * (0.7f + 0.3f * std::fmod(idxF * 0.1414f, 1.0f));
     float rate = kind == Kind::Gate16 || kind == Kind::Stutter
-        ? 8.0f + static_cast<float>(index % 7) * 1.15f
-        : index == 145 ? 7.5f + amount * 2.0f
-        : 0.12f + static_cast<float>((index * 11) % 17) * 0.105f;
-    rate *= (0.5f + motion);
+        ? 6.5f + static_cast<float>(index % 11) * 0.95f + fingerprint * 2.0f
+        : 0.08f + static_cast<float>((index * 13 + 7) % 23) * 0.092f + fingerprint * 0.15f;
+    rate *= (0.45f + motion * 0.9f) * (0.85f + 0.3f * std::fmod(idxF * 0.37f, 1.0f));
     const float phaseL = st.phase;
+    juce::ignoreUnused(toneBias);
     const float phaseR = std::fmod(phaseL + 0.5f, 1.0f);
     const float sinL = std::sin(2.0f * pi * phaseL);
     const float sinR = std::sin(2.0f * pi * phaseR);

@@ -6,10 +6,12 @@
 #include "DreamBoard.h"
 #include "MachineDesign.h"
 #include "ModularParts.h"
+#include "PlasticParts.h"
 #include "WaveDisplay.h"
 #include "PluginShells.h"
 #include "FlexLayout.h"
 #include "BuilderFit.h"
+#include "WireGraph.h"
 #include "HtmlReader.h"
 #include <vector>
 
@@ -203,6 +205,11 @@ private:
     void addSeriesStep();
     void armPlacement();
     void placeInSlot(int slot);
+    void bindDialToEffect(int shellSlot, int fxDspSlot, int fxType);
+    void rebuildWireGraph();
+    void putWireInto(int fromWidgetIndex, int intoWidgetIndex);
+    void clearWireFrom(int widgetIndex);
+    int findWidgetAtShellSlot(int shellSlot) const;
     void ensureMotherboard();
     void syncPanelMouse();
     void applyShell(int index);
@@ -385,6 +392,7 @@ private:
     juce::OwnedArray<CanvasWidget> widgets;
     juce::ValueTree fxStack { "fxstack" };
     PluginViewScreen* viewScreen = nullptr;
+    bool editorClosing = false;
     std::unique_ptr<HtmlOverlay> htmlOverlay;
 
     friend class PluginViewScreen;

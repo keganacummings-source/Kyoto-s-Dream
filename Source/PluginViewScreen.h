@@ -28,7 +28,18 @@ public:
             geekMode = geekBtn.getToggleState();
             if (! geekMode) geekHot = -1;
         };
-        startTimerHz(60);
+        startTimerHz(20); // keep low; FL hates heavy UI timers on close
+    }
+
+    // Called from the editor destructor — must be public (Timer is a private base).
+    void shutdownViewer()
+    {
+        stopTimer();
+        setVisible(false);
+        dragNode = {};
+        heldKey = {};
+        geekMode = false;
+        geekHot = -1;
     }
 
     void paint(juce::Graphics& g) override
@@ -99,8 +110,13 @@ public:
         drawPlacedParts(g, face, shell, shellClip);
         if (geekOn) g.endTransparencyLayer();
 
-        // 3) Geek x-ray overlay: slow scan band, steady part labels, hovered part tooltip.
-        if (geekOn) drawXrayOverlay(g, interior, accent);
+        // 3) Geek x-ray overlay: signal path wires, layout detail, scan band, labels.
+        if (geekOn)
+        {
+            drawSignalPath(g, face, shell, accent);
+            drawLayoutDetail(g, face, shell, accent);
+            drawXrayOverlay(g, interior, accent);
+        }
     }
 
     void resized() override
@@ -173,14 +189,27 @@ public:
 private:
     void timerCallback() override
     {
+        // Editor may be tearing down; never touch it after close starts.
+        if (editor.editorClosing)
+        {
+            stopTimer();
+            return;
+        }
         const bool active = editor.inPluginView();
         if (active != isVisible()) { setVisible(active); if (active) toFront(false); }
         if (active && getBounds() != editor.getLocalBounds()) setBounds(editor.getLocalBounds());
-        if (! active) { geekMode = false; geekBtn.setToggleState(false, juce::dontSendNotification); geekHot = -1; }
-        animPhase += 0.035f;
+        if (! active)
+        {
+            geekMode = false;
+            geekBtn.setToggleState(false, juce::dontSendNotification);
+            geekHot = -1;
+            geekReveal = juce::jmax(0.f, geekReveal - 0.1f);
+            return; // no repaint when hidden — saves CPU and avoids host teardown races
+        }
+        animPhase += 0.04f;
         if (animPhase > juce::MathConstants<float>::twoPi) animPhase -= juce::MathConstants<float>::twoPi;
         geekReveal = juce::jlimit(0.f, 1.f, geekReveal + (geekMode ? 0.055f : -0.055f));
-        if (isVisible()) repaint();
+        repaint();
     }
 
     juce::Rectangle<float> pluginCase() const
@@ -218,6 +247,124 @@ private:
         return hb::gridRect(interior, rects[index]);
     }
 
+
+    // Visual enhancer: draw the live signal path (wire order) between bays.
+    void drawSignalPath(juce::Graphics& g, juce::Rectangle<float> face, const pb::Shell& shell, juce::Colour accent) const
+    {
+        const auto orderStr = editor.proc.uiState.getProperty("wireOrder").toString();
+        if (orderStr.isEmpty()) return;
+
+        juce::Array<juce::Point<float>> pts;
+        // Motherboard centre first.
+        if (shell.slotCount > 0 && shell.slots[0].kind == pb::SlotKind::Board)
+            pts.add(pb::slotRect(face, shell.slots[0]).getCentre());
+        else
+            pts.add(face.getCentre());
+
+        juce::StringArray parts;
+        parts.addTokens(orderStr, ",", "");
+        for (const auto& token : parts)
+        {
+            const int dsp = token.trim().getIntValue();
+            // Find shell bay that owns this DSP slot.
+            for (int i = 0; i < editor.proc.uiState.getNumChildren(); ++i)
+            {
+                auto node = editor.proc.uiState.getChild(i);
+                if (! node.hasType("w")) continue;
+                if ((int) node.getProperty("slot", -1) != dsp) continue;
+                if ((int) node.getProperty("satellite", 0) != 0) continue;
+                const int bay = (int) node.getProperty("shellSlot", -1);
+                if (bay < 0 || bay >= shell.slotCount) continue;
+                pts.add(pb::slotRect(face, shell.slots[bay]).getCentre());
+                break;
+            }
+        }
+
+        if (pts.size() < 2) return;
+
+        juce::Path path;
+        path.startNewSubPath(pts[0]);
+        for (int i = 1; i < pts.size(); ++i)
+        {
+            const auto a = pts[i - 1], b = pts[i];
+            const float mx = 0.5f * (a.x + b.x);
+            path.cubicTo(mx, a.y, mx, b.y, b.x, b.y);
+        }
+
+        // Glow trace
+        g.setColour(accent.withAlpha(0.12f * geekReveal));
+        g.strokePath(path, juce::PathStrokeType(6.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setColour(accent.withAlpha(0.55f * geekReveal));
+        g.strokePath(path, juce::PathStrokeType(1.8f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+        // Animated packet — O(points) only, no path flattening
+        if (pts.size() >= 2)
+        {
+            const float u = 0.5f + 0.5f * std::sin(animPhase * 1.7f);
+            const float fidx = u * (float) (pts.size() - 1);
+            const int i0 = juce::jlimit(0, pts.size() - 2, (int) fidx);
+            const float frac = fidx - (float) i0;
+            const auto p = pts[i0] + (pts[i0 + 1] - pts[i0]) * frac;
+            g.setColour(accent.withAlpha(0.9f * geekReveal));
+            g.fillEllipse(p.x - 3.5f, p.y - 3.5f, 7.f, 7.f);
+            g.setColour(juce::Colours::white.withAlpha(0.35f * geekReveal));
+            g.fillEllipse(p.x - 1.5f, p.y - 1.5f, 3.f, 3.f);
+        }
+
+        // Stage index badges
+        g.setFont(kt::font(editor.machineDesign.palette(), 8.f, true));
+        for (int i = 1; i < pts.size(); ++i)
+        {
+            g.setColour(accent.withAlpha(0.75f * geekReveal));
+            g.fillRoundedRectangle(pts[i].x - 8.f, pts[i].y - 18.f, 16.f, 12.f, 3.f);
+            g.setColour(kt::c(editor.machineDesign.palette().bg).withAlpha(0.9f));
+            g.drawText(juce::String(i), (int) pts[i].x - 8, (int) pts[i].y - 18, 16, 12, juce::Justification::centred);
+        }
+    }
+
+    // Extra layout detail: bay outlines, satellite dial markers, screen tap labels.
+    void drawLayoutDetail(juce::Graphics& g, juce::Rectangle<float> face, const pb::Shell& shell, juce::Colour accent) const
+    {
+        const auto& theme = editor.machineDesign.palette();
+        g.setFont(kt::font(theme, 8.f, true));
+        for (int i = 0; i < editor.proc.uiState.getNumChildren(); ++i)
+        {
+            auto node = editor.proc.uiState.getChild(i);
+            if (! node.hasType("w")) continue;
+            const int bay = (int) node.getProperty("shellSlot", -1);
+            if (bay < 0 || bay >= shell.slotCount) continue;
+            auto r = pb::slotRect(face, shell.slots[bay]);
+            const bool sat = (int) node.getProperty("satellite", 0) != 0;
+            const auto kind = node.getProperty("kind").toString();
+
+            if (sat)
+            {
+                // Satellite control dial — ring highlight
+                g.setColour(accent.withAlpha(0.5f * geekReveal));
+                g.drawEllipse(r.reduced(2.f), 1.4f);
+                g.setColour(kt::c(theme.text).withAlpha(0.8f * geekReveal));
+                g.drawFittedText(node.getProperty("label").toString(), r.reduced(4.f).toNearestInt(), juce::Justification::centred, 2);
+            }
+            else if (kind == "wave" || kind == "board")
+            {
+                const int tap = (int) node.getProperty("tapAfter", 0);
+                g.setColour(accent.withAlpha(0.65f * geekReveal));
+                g.drawRoundedRectangle(r.reduced(1.f), 4.f, 1.2f);
+                g.setColour(kt::c(theme.text).withAlpha(0.85f * geekReveal));
+                g.drawText("TAP@" + juce::String(tap), r.getX() + 4.f, r.getY() + 2.f, r.getWidth() - 8.f, 12.f, juce::Justification::centredLeft);
+            }
+            else
+            {
+                const int dsp = (int) node.getProperty("slot", -1);
+                if (dsp > 0)
+                {
+                    g.setColour(accent.withAlpha(0.25f * geekReveal));
+                    g.drawRoundedRectangle(r.reduced(0.5f), 5.f, 1.f);
+                }
+            }
+        }
+    }
+
     void drawInternals(juce::Graphics& g, juce::Rectangle<float> interior) const
     {
         const int shellIdx = juce::jlimit(0, pb::kShellCount - 1, editor.shellIndex);
@@ -226,15 +373,18 @@ private:
             hb::drawHardwarePart(g, editor.machineDesign.palette(), parts.parts[i], internalRect(interior, i), animPhase, i == geekHot);
     }
 
-    // Per-part hardware: draws a small PCB + chip beneath each placed part, wired to the motherboard.
+    // Per-part hardware: small PCB under each part. Cheap fills only; skip when barely visible.
     void drawPartHardware(juce::Graphics& g, juce::Rectangle<float> face, const pb::Shell& shell, juce::Rectangle<float> interior) const
     {
+        if (geekReveal < 0.08f) return;
+        juce::ignoreUnused(interior);
         const auto& theme = editor.machineDesign.palette();
         const auto accent = kt::c(theme.accent);
         const auto peg = kt::c(theme.peg);
         const auto muted = kt::c(theme.muted);
         const auto ink = kt::c(theme.text);
         const auto boardCentre = shell.slots[0].kind == pb::SlotKind::Board ? pb::slotRect(face, shell.slots[0]).getCentre() : face.getCentre();
+        const float a = geekReveal;
 
         for (int i = 0; i < editor.proc.uiState.getNumChildren(); ++i)
         {
@@ -506,6 +656,7 @@ private:
         const auto ink = kt::c(theme.text);
         const auto muted = kt::c(theme.muted);
         bool placedAny = false;
+        juce::ignoreUnused(shellClip);
 
         for (int i = 0; i < editor.proc.uiState.getNumChildren(); ++i)
         {
@@ -518,103 +669,38 @@ private:
             placedAny = true;
             const auto kind = node.getProperty("kind").toString();
             const auto label = node.getProperty("label").toString();
-
-            g.setColour(kt::c(theme.panel).withAlpha(0.92f));
-            g.fillRoundedRectangle(r.reduced(3.f), 8.f);
-            g.setColour(accent.withAlpha(0.55f));
-            g.drawRoundedRectangle(r.reduced(3.f), 8.f, 1.2f);
+            const auto skinId = node.getProperty("skin").toString();
+            const int variant = kt::plastic::styleVariantFor(node);
+            const float v = liveParamValue(node);
 
             if (kind == "board")
             {
-                float live[128] {};
-                editor.proc.copyScope(live, 128);
+                kt::plastic::fillPlasticBody(g, r.reduced(2.f), 10.f,
+                    kt::plastic::colsFor(theme, skinId, kt::plastic::tierOf(r.getWidth(), r.getHeight())), false);
+                float live[64] {};
+                editor.proc.copyScope(live, 64);
+                // Upsample-ish: paintScreenFace expects 128 — pad
+                float live128[128] {};
+                for (int s = 0; s < 128; ++s) live128[s] = live[s >> 1];
                 const int st = pb::boardScreenTypeOf(editor.proc.uiState, shell.screenStyle);
-                pb::paintScreenFace(g, r.reduced(5.f), st, theme, live, 128, juce::String("SCREEN  -  ") + pb::kScreenTypes[st], animPhase, &shellClip);
+                pb::paintScreenFace(g, r.reduced(6.f), st, theme, live128, 128, juce::String("SCREEN  -  ") + pb::kScreenTypes[st], animPhase);
             }
             else if (kind == "dial")
-            {
-                const float v = liveParamValue(node);
-                auto knobArea = r.reduced(6.f);
-                const float rad = juce::jmin(knobArea.getWidth(), knobArea.getHeight()) * 0.5f - 4.f;
-                const auto centre = knobArea.getCentre();
-                g.setColour(accent.withAlpha(0.16f));
-                g.fillEllipse(centre.x - rad, centre.y - rad, rad * 2.f, rad * 2.f);
-                g.setColour(kt::c(theme.knob));
-                g.fillEllipse(centre.x - rad * 0.72f, centre.y - rad * 0.72f, rad * 1.44f, rad * 1.44f);
-                const float a0 = juce::MathConstants<float>::pi * 1.25f;
-                const float sweep = a0 + (juce::MathConstants<float>::twoPi * 0.75f) * v;
-                juce::Path arc;
-                arc.addCentredArc(centre.x, centre.y, rad, rad, 0.f, a0, a0 + (juce::MathConstants<float>::twoPi * 0.75f) * v, true);
-                g.setColour(accent);
-                g.strokePath(arc, juce::PathStrokeType(2.2f));
-                g.drawLine(centre.x, centre.y, centre.x + std::cos(sweep) * rad * 0.62f, centre.y + std::sin(sweep) * rad * 0.62f, 2.f);
-                g.setColour(ink);
-                g.setFont(kt::font(theme, 9.f, true));
-                g.drawText(pct(v), r.reduced(3.f).removeFromBottom(13.f), juce::Justification::centred);
-                g.setColour(muted);
-                g.setFont(kt::font(theme, 8.f));
-                g.drawText(label, r.reduced(3.f).removeFromTop(12.f), juce::Justification::centred);
-            }
+                kt::plastic::drawDial(g, r.reduced(2.f), theme, skinId, v, false, variant);
             else if (kind == "slider")
-            {
-                const float v = liveParamValue(node);
-                auto track = r.reduced(10.f, 8.f).withSizeKeepingCentre(juce::jmax(6.f, r.getWidth() * 0.16f), r.getHeight() - 30.f);
-                g.setColour(kt::c(theme.bg));
-                g.fillRoundedRectangle(track, 3.f);
-                const float thumbY = track.getBottom() - v * track.getHeight();
-                g.setColour(accent);
-                g.fillRoundedRectangle(track.getX(), thumbY - 5.f, track.getWidth(), 10.f, 3.f);
-                g.setColour(ink);
-                g.setFont(kt::font(theme, 9.f, true));
-                g.drawText(pct(v), r.reduced(3.f).removeFromBottom(13.f), juce::Justification::centred);
-                g.setColour(muted);
-                g.setFont(kt::font(theme, 8.f));
-                g.drawText(label, r.reduced(3.f).removeFromTop(12.f), juce::Justification::centred);
-            }
+                kt::plastic::drawFader(g, r.reduced(2.f), theme, skinId, v, false, r.getWidth() > r.getHeight() * 1.2f);
             else if (kind == "key")
-            {
-                g.setColour(accent.withAlpha(0.25f));
-                g.fillRoundedRectangle(r.reduced(6.f), 6.f);
-                g.setColour(accent);
-                g.drawRoundedRectangle(r.reduced(6.f), 6.f, 1.4f);
-                g.setColour(ink);
-                g.setFont(kt::font(theme, 9.f, true));
-                g.drawText(label, r, juce::Justification::centred);
-            }
-            else if (kind == "wave")
-            {
-                float samples[256] {};
-                editor.proc.copyScope(samples, 256);
-                auto waveR = r.reduced(8.f, 6.f);
-                waveR.removeFromBottom(14.f);
-                g.setColour(kt::c(theme.bg).brighter(0.03f));
-                g.fillRoundedRectangle(waveR, 4.f);
-                juce::Path wave;
-                const float mid = waveR.getCentreY();
-                wave.startNewSubPath(waveR.getX() + 4.f, mid);
-                for (int s = 0; s < 128; ++s)
-                    wave.lineTo(waveR.getX() + 4.f + (waveR.getWidth() - 8.f) * (float) s / 127.f,
-                                mid - samples[s * 2] * waveR.getHeight() * 0.46f);
-                g.setColour(accent);
-                g.strokePath(wave, juce::PathStrokeType(1.5f));
-                g.setColour(muted);
-                g.setFont(kt::font(theme, 8.f, true));
-                g.drawText("LIVE", r.reduced(6.f).removeFromBottom(12.f), juce::Justification::centred);
-            }
+                kt::plastic::drawKey(g, r.reduced(2.f), theme, skinId, false, false, label);
+            else if (kind == "button")
+                kt::plastic::drawButton(g, r.reduced(2.f), theme, skinId, false, false, label);
+            else if (kind == "wave" || kind == "stack")
+                kt::plastic::drawWaveFrame(g, r.reduced(2.f), theme, skinId, false, kind == "stack");
+            else if (kind == "cosmetic")
+                kt::plastic::drawCosmetic(g, r.reduced(2.f), theme, skinId, node.getProperty("style").toString(), false, label);
             else
-            {
-                const auto style = node.getProperty("style").toString();
-                g.setColour(accent.withAlpha(0.35f));
-                if (style == "vent")
-                    for (int l = 0; l < 4; ++l) g.drawLine(r.getX() + 8.f, r.getY() + 10.f + (float) l * 7.f, r.getRight() - 8.f, r.getY() + 10.f + (float) l * 7.f, 1.3f);
-                else if (style == "rail")
-                    g.fillRoundedRectangle(r.reduced(r.getWidth() * 0.35f, 6.f), 3.f);
-                else
-                    g.fillEllipse(r.reduced(8.f));
-            }
+                kt::plastic::drawDial(g, r.reduced(2.f), theme, skinId, v, false, variant);
         }
 
-        // Nothing built on the shell yet: still show the playground machine so the view is never empty.
         if (! placedAny)
         {
             const auto& md = editor.machineDesign;
@@ -633,10 +719,8 @@ private:
                 const float loY = face.getY() + 4.f, hiY = juce::jmax(loY, face.getBottom() - q.getHeight() - 4.f);
                 q.setX(juce::jlimit(loX, hiX, q.getX()));
                 q.setY(juce::jlimit(loY, hiY, q.getY()));
-                g.setColour(kt::c(theme.panel).brighter(0.08f));
-                g.fillRoundedRectangle(q, 10.f);
-                g.setColour(accent.withAlpha(0.72f));
-                g.drawRoundedRectangle(q, 10.f, 1.5f);
+                kt::plastic::fillPlasticBody(g, q, 10.f,
+                    kt::plastic::colsFor(theme, {}, kt::plastic::tierOf(q.getWidth(), q.getHeight())), false);
                 g.setColour(ink);
                 g.setFont(kt::font(theme, 9.f, true));
                 g.drawFittedText(part.type, q.reduced(7.f).toNearestInt(), juce::Justification::centred, 1);
@@ -667,6 +751,11 @@ private:
 inline void KyotoAudioProcessorEditor::parentHierarchyChanged()
 {
     juce::AudioProcessorEditor::parentHierarchyChanged();
+    if (editorClosing)
+        return;
+    // Host may detach the editor (close/minimize). Do not build overlays while unparented.
+    if (getPeer() == nullptr && getParentComponent() == nullptr)
+        return;
     if (viewScreen == nullptr)
     {
         viewScreen = new PluginViewScreen(*this);
