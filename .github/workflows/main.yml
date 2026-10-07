@@ -40,3 +40,6 @@ jobs:
         with:
           name: KYOTRIPPAH-macOS-VST3
           path: KYOTRIPPAH-macOS-VST3.zip
+
+          name: KYOTRIPPAH-macOS-VST3
+          path: KYOTRIPPAH-macOS-VST3.zip
