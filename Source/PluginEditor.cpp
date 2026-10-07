@@ -1035,6 +1035,23 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
             if (savedShell == pb::kShells[i].id) { shellIndex = i; shellBox.setSelectedId(i + 1, juce::dontSendNotification); }
     }
     refreshEffectBox();
+
+    // ── Hidden HTML reader ──────────────────────────────────────────────
+    // Scans the VST3 bundle for .html files.  If one is found the content is
+    // shown in a full-screen overlay.  No button or menu ever exposes this.
+    {
+        auto htmlFile = ktFindHtmlInBundle();
+        if (htmlFile.existsAsFile())
+        {
+            htmlOverlay = std::make_unique<HtmlOverlay>(theme);
+            htmlOverlay->fileName = htmlFile.getFileName();
+            htmlOverlay->setContent(htmlFile.loadFileAsString());
+            addAndMakeVisible(*htmlOverlay);
+            htmlOverlay->setBounds(getLocalBounds());
+            htmlOverlay->toFront(true);
+        }
+    }
+
     // 30 Hz for smoother live screens and more reactive meters.
     startTimerHz(30);
     restoreEditorSession();
@@ -1902,6 +1919,11 @@ void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
 
 bool KyotoAudioProcessorEditor::keyPressed(const juce::KeyPress& key)
 {
+    if (htmlOverlay && htmlOverlay->isVisible() && key == juce::KeyPress::escapeKey)
+    {
+        htmlOverlay->setVisible(false);
+        return true;
+    }
     if (pluginView && key == juce::KeyPress::escapeKey)
     {
         setPluginView(false);
@@ -2212,6 +2234,12 @@ void KyotoAudioProcessorEditor::resized()
             flx::Item { &fxShape, 1.f, 44 },
         });
         panel.setBounds(area);
+    }
+
+    if (htmlOverlay && htmlOverlay->isVisible())
+    {
+        htmlOverlay->setBounds(getLocalBounds());
+        htmlOverlay->toFront(true);
     }
 }
 
@@ -4640,6 +4668,7 @@ void KyotoAudioProcessorEditor::applyTheme(const juce::String& id)
         b->setColour(juce::TextButton::textColourOffId, kt::c(theme.text));
         b->setColour(juce::TextButton::textColourOnId, kt::c(theme.text));
     }
+    if (htmlOverlay) htmlOverlay->setTheme(theme);
     syncMachineDesignToUi();
     repaint();
 }

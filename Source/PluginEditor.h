@@ -10,6 +10,7 @@
 #include "PluginShells.h"
 #include "FlexLayout.h"
 #include "BuilderFit.h"
+#include "HtmlReader.h"
 #include <vector>
 
 struct CanvasWidget : public juce::Component
@@ -383,6 +384,7 @@ private:
     juce::OwnedArray<CanvasWidget> widgets;
     juce::ValueTree fxStack { "fxstack" };
     PluginViewScreen* viewScreen = nullptr;
+    std::unique_ptr<HtmlOverlay> htmlOverlay;
 
     friend class PluginViewScreen;
 
