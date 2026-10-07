@@ -23,6 +23,22 @@ struct CanvasWidget : public juce::Component
     void setTheme(const kt::ThemePalette& t);
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
+    void mouseMove(const juce::MouseEvent& e) override;
+    void mouseDrag(const juce::MouseEvent& e) override;
+    void mouseExit(const juce::MouseEvent& e) override;
+
+    // --- Corner-drag resize onto the builder's fine grid ---------------------------------
+    // faceProvider returns the face plate (the grid space) in panel coordinates. The part keeps
+    // its own gx/gy/gw/gh grid cells on its node, so a resized part survives save and reload.
+    std::function<juce::Rectangle<float>()> faceProvider;
+    std::function<void(CanvasWidget*)> onGeometryChanged;
+    int gridCols = 32, gridRows = 22;
+    juce::Rectangle<int> gridRect() const;
+    void applyGrid(int gx, int gy, int gw, int gh);
+    int handleAt(juce::Point<int> pos) const;
+    static constexpr int kHandlePx = 7;
+    static constexpr int kGrabPx = 13;
+    static constexpr int kMinCells = 3;
 
     KyotoAudioProcessor& proc;
     juce::ValueTree node;
@@ -33,6 +49,11 @@ struct CanvasWidget : public juce::Component
     std::unique_ptr<WaveDisplay> waveDisplay;
     std::function<void()> onSelect;
     bool selected = false;
+    bool hovered = false;
+    bool resizing = false;
+    int resizeHandle = -1;
+    int startGx = 0, startGy = 0, startGw = 1, startGh = 1;
+    juce::Point<int> dragStart;
     kt::ThemePalette theme = kt::kThemes[0];
 };
 
@@ -79,7 +100,7 @@ private:
 class SocialRail : public juce::Component
 {
 public:
-    struct Bubble { juce::String id, user, text, themeId; };
+    struct Bubble { juce::String id, user, text, themeId; bool dis = false; };
     struct Person { juce::String name, detail, themeId, kind, requestId; bool online = false; };
 
     std::function<void(const Bubble&, juce::Point<int>)> onBubbleMenu;
@@ -109,6 +130,32 @@ private:
     float phase = 0.f;
     bool showDirectory = false;
     juce::String selfUser;
+};
+
+// The Socials directory surface. Clicking SOCIALS swaps the Threads board for this: every
+// DreamShare account in one list with the ones active on the API pinned to the top, running
+// total-vs-active counts, a friends / direct-messages section, and the future Discord slot.
+class SocialDirectory : public juce::Component
+{
+public:
+    struct Row { juce::String name, detail, themeId; bool online = false, isFriend = false, self = false, dis = false; };
+
+    std::function<void(const Row&, juce::Point<int>)> onRowMenu;
+    std::function<void(const Row&)> onRowClick;
+
+    void setData(const juce::Array<Row>& rows, int total, int active);
+    void setHostTheme(const kt::ThemePalette& t) { host = t; repaint(); }
+    int contentHeight() const { return totalHeight; }
+    void paint(juce::Graphics& g) override;
+    void mouseDown(const juce::MouseEvent& e) override;
+
+private:
+    enum class ItemType { Header, Label, Person, Discord };
+    struct Item { ItemType type = ItemType::Label; Row row; juce::String text; int y = 0, h = 0; };
+
+    juce::Array<Item> items;
+    kt::ThemePalette host = kt::kThemes[0];
+    int totalUsers = 0, activeUsers = 0, totalHeight = 1;
 };
 
 // Full-screen viewer surface for Pluggin mode. Defined in PluginViewScreen.h; it installs
@@ -243,9 +290,11 @@ private:
     void editEffectPopup(int widgetIndex);
     void placeKindInSlot(const juce::String& kind, int slot, int fxIndex, const juce::String& label);
     void syncMachineDesignToUi();
-    void enterBuilderWizard();
-    void advanceBuilderWizard();
+    void rollNewInstanceTemplate();
     void applyPlaygroundTheme(const juce::String& id);
+    void swapPartInBay(int bay, const juce::String& kind, int fxIndex, const juce::String& label);
+    void rebuildDirectory();
+    void setDirectoryData(const juce::var& socialParsed, const juce::var& presenceParsed);
     juce::String deriveCategoriesFromStack() const;
 
     KyotoAudioProcessor& proc;
@@ -257,8 +306,6 @@ private:
     bool geekMode = false;
     float geekReveal = 0.f;
     int geekHotPart = -1;
-    bool proMode = false;
-    int builderWizardStep = 0; // 0=builder, 1=shell, 2=theme, 3=pick/place FX, 4=controls
     kt::ThemePalette playgroundTheme = kt::kThemes[0];
     MachineDesign machineDesign;
     float animPhase = 0.f;
@@ -268,7 +315,6 @@ private:
 
     juce::TextButton shareBtn { "DREAMSHARE" }, chainBtn { "PLUGIN BUILDER" }, fxBtn { "FX BUILDER" }, logoutBtn { "LOG OUT" };
     juce::TextButton pluginViewBtn { "PLUGIN VIEW" }, pluginBackBtn { "< BACK" }, newMachineBtn { "ASPECT RATIO" }, randomMachineBtn { "RANDOMIZE MACHINE" };
-    juce::TextButton proToggleBtn { "PRO  -  OFF" }, wizardNextBtn { "NEXT >" }, wizardSkipBtn { "SKIP TO BUILDER" };
     juce::ComboBox shellBox, playgroundThemeBox;
     juce::Label shellLabel, playgroundThemeLabel;
     juce::TextButton chatRefreshBtn { "CHAT" }, threadsBtn { "THREADS" }, socialBtn { "FRIENDS" }, dmBtn { "DM" }, adminDeleteBtn { "REMOVE" }, utilityGoBtn { "GO" };
@@ -282,8 +328,10 @@ private:
     juce::Viewport catalogView;
     juce::Component catalogHolder;
     juce::Component threadHolder;
+    juce::Component directoryHolder;
     juce::Viewport chatView;
     SocialRail socialRail;
+    SocialDirectory socialDirectory;
     juce::TextButton catalogModeBtn { "CATALOG" }, threadsModeBtn { "THREADS" }, railChatBtn { "CHAT" }, railOnlineBtn { "SOCIALS" };
     juce::TextButton pluginsTabBtn { "PLUGINS" }, effectsTabBtn { "EFFECTS" }, myPluginsBtn { "MY PLUGINS" }, pendingBtn { "PENDING" };
     juce::TextEditor tagSearchBox;
@@ -292,7 +340,7 @@ private:
     int pendingAttachTarget = 0; // 0 none, 1 live chat, 2 open thread
     int dragTarget = 0;
     int searchTick = 0, catalogSeq = 0;
-    int centerMode = 3; // 0=community plugins, 1=effects, 2=my plugins, 3=threads, 4=pending
+    int centerMode = 3; // 0=community plugins, 1=effects, 2=my plugins, 3=threads, 4=pending, 5=socials directory
     int railMode = 0;
     bool scrollChatOnRefresh = true;
     bool threadOpen = false;

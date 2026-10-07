@@ -802,6 +802,22 @@ async function writeKv(env, feed) {
 const ONLINE_TTL = 55000;
 function presenceAt(v) { return (v && typeof v === 'object') ? Number(v.at || 0) : Number(v || 0); }
 function presenceTheme(v) { return (v && typeof v === 'object' && v.theme) ? String(v.theme) : 'trippah'; }
+// ---- Discord bridge (see discord/) -------------------------------------------------
+// The bot worker authenticates with a shared key instead of a DreamShare session,
+// so it can post chat lines and publish the guild's online list.
+function bridgeKey(request, env) {
+  const given = String(request.headers.get('x-dreamshare-bridge') || '');
+  const want = String((env && env.DREAMSHARE_BRIDGE_KEY) || '');
+  return !!(given && want && given === want);
+}
+async function readDiscordPresence(env) {
+  try {
+    if (!env || !env.DREAMSHARE_KV) return [];
+    const raw = await env.DREAMSHARE_KV.get('discord-presence-v1');
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list : [];
+  } catch (_) { return []; }
+}
 async function readPresence(env) {
   const now = Date.now();
   let map = {};
@@ -811,9 +827,17 @@ async function readPresence(env) {
       if (raw) map = JSON.parse(raw);
     }
   } catch (_) {}
-  return Object.keys(map || {}).filter(function (k) { return now - presenceAt(map[k]) < ONLINE_TTL; }).map(function (k) {
+  const people = Object.keys(map || {}).filter(function (k) { return now - presenceAt(map[k]) < ONLINE_TTL; }).map(function (k) {
     return { name: k, theme: presenceTheme(map[k]), online: true };
   });
+  const discord = await readDiscordPresence(env);
+  for (let i = 0; i < discord.length; i++) {
+    const d = discord[i];
+    if (!d || !d.name) continue;
+    if (people.some(function (p) { return p.name.toLowerCase() === String(d.name).toLowerCase(); })) continue;
+    people.push({ name: String(d.name).slice(0, 48), theme: 'trippah', online: true, dis: true });
+  }
+  return people;
 }
 async function readOnline(env) {
   const people = await readPresence(env);
@@ -1082,6 +1106,18 @@ export default {
       return handleAudioPart(request, env);
     }
 
+    // ---- Discord bridge: publish the guild's online list (see discord/) ----
+    if (method === 'POST' && url.searchParams.get('op') === 'discord_presence') {
+      if (!bridgeKey(request, env)) return json({ ok: false, error: 'bridge key required' }, 401);
+      const body = await request.json().catch(function () { return {}; });
+      const list = (Array.isArray(body.users) ? body.users : []).slice(0, 100)
+        .map(function (u) { return { name: String((u && u.name) || '').trim().slice(0, 48), id: String((u && u.id) || '') }; })
+        .filter(function (u) { return u.name; });
+      try { if (env && env.DREAMSHARE_KV) await env.DREAMSHARE_KV.put('discord-presence-v1', JSON.stringify(list)); }
+      catch (err) { return json({ ok: false, error: 'presence store failed' }, 502); }
+      return json({ ok: true, count: list.length });
+    }
+
     // ---- VST release download (web UI "Download VST" button) ----
     if ((method === 'GET' || method === 'HEAD') && (url.searchParams.get('download') === 'vst' || url.pathname.endsWith('/vst') || url.searchParams.get('op') === 'vst_download')) {
       const meta = {
@@ -1323,8 +1359,11 @@ export default {
       let sess = null;
       try { sess = await sessionFromBody(env, body, request); }
       catch (err) { return json({ ok: false, error: 'account check failed' }, 502); }
-      // Shared auth for web iframe + DreamShare Lite VST
-      if (!sess) return json({ ok: false, error: 'Login required', code: 'auth' }, 401);
+      // Shared auth for web iframe + DreamShare Lite VST.
+      // The Discord bridge authenticates with a shared key instead of a session.
+      const bridge = bridgeKey(request, env);
+      if (!sess && !bridge) return json({ ok: false, error: 'Login required', code: 'auth' }, 401);
+      if (!sess) sess = { user: String(body.user || 'DreamUser').slice(0, 48), role: 'user', theme: String(body.theme || 'trippah').toLowerCase(), bridge: true };
       const user = sess.user;
 
       // ---- Kyoto / Community module router ----
@@ -1812,6 +1851,8 @@ export default {
             theme: String((sess && sess.theme) || body.theme || 'trippah').toLowerCase(),
             reactions: {}
           };
+          // Discord bridge lines carry a DIS tag in the VST.
+          if (bridge && (body.dis === true || body.dis === 1 || body.dis === 'true')) msg.dis = true;
           feed.chat.push(msg);
           // Keep only the last 100 messages — older ones are dropped
           if (feed.chat.length > 100) feed.chat = feed.chat.slice(-100);
