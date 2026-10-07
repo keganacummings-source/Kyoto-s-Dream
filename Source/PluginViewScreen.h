@@ -83,19 +83,20 @@ public:
         if (geekOn) drawInternals(g, interior);
 
         // 2) The top cover: faceplate, bay wiring and the placed parts running live.
-        //    In Geek mode the cover fades to a faint ghost, so the whole machine can be read at a glance
-        //    (no more jumping spot-lights - it is meant to be watched, not hunted).
-        const float cover = 1.f - 0.84f * geekReveal;
+        //    Geek mode keeps the finished, textured shell dominant and lets the hidden hardware read
+        //    through it, so the machine still looks like the real thing while it is being explained.
+        const float cover = 1.f - 0.45f * geekReveal;
         g.setColour(kt::c(theme.bg).withAlpha(0.95f * cover));
         g.fillRoundedRectangle(face, bodyRadius);
         g.setColour(accent.withAlpha(0.45f));
         g.drawRoundedRectangle(face, bodyRadius, 1.3f);
-        if (geekOn) g.beginTransparencyLayer(juce::jmax(0.14f, cover));
+        if (geekOn) g.beginTransparencyLayer(juce::jmax(0.35f, cover));
+        const auto shellClip = pb::casePath(caseR, shell);
         for (int i = 0; i < shell.slotCount; ++i)
             if (shell.slots[i].kind == pb::SlotKind::Board)
                 pb::paintScreenBezel(g, pb::slotRect(face, shell.slots[i]).reduced(3.f), pb::boardScreenTypeOf(editor.proc.uiState, shell.screenStyle), theme);
         drawBayWiring(g, face, shell);
-        drawPlacedParts(g, face, shell);
+        drawPlacedParts(g, face, shell, shellClip);
         if (geekOn) g.endTransparencyLayer();
 
         // 3) Geek x-ray overlay: slow scan band, steady part labels, hovered part tooltip.
@@ -194,12 +195,35 @@ private:
         return face.reduced(face.getWidth() * 0.02f, face.getHeight() * 0.035f);
     }
 
+    // The shell's hidden hardware, laid out randomly on the builder grid and cached per
+    // (shell, seed) so it never jitters between frames.
+    const juce::Array<juce::Rectangle<float>>& internalsNormalized() const
+    {
+        const int shellIdx = juce::jlimit(0, pb::kShellCount - 1, editor.shellIndex);
+        const auto seed = (juce::uint32) (int) editor.proc.uiState.getProperty("internalsSeed", 1);
+        if (! internalsReady || cacheShell != shellIdx || cacheSeed != seed)
+        {
+            hb::placeInternals(shellIdx, seed, internalsCache);
+            cacheShell = shellIdx;
+            cacheSeed = seed;
+            internalsReady = true;
+        }
+        return internalsCache;
+    }
+
+    juce::Rectangle<float> internalRect(juce::Rectangle<float> interior, int index) const
+    {
+        const auto& rects = internalsNormalized();
+        if (index < 0 || index >= rects.size()) return {};
+        return hb::gridRect(interior, rects[index]);
+    }
+
     void drawInternals(juce::Graphics& g, juce::Rectangle<float> interior) const
     {
         const int shellIdx = juce::jlimit(0, pb::kShellCount - 1, editor.shellIndex);
         const auto& parts = hb::kInternals[shellIdx];
         for (int i = 0; i < parts.count; ++i)
-            hb::drawHardwarePart(g, editor.machineDesign.palette(), parts.parts[i], hb::partRect(interior, parts.parts[i]), animPhase, i == geekHot);
+            hb::drawHardwarePart(g, editor.machineDesign.palette(), parts.parts[i], internalRect(interior, i), animPhase, i == geekHot);
     }
 
     void drawXrayOverlay(juce::Graphics& g, juce::Rectangle<float> interior, juce::Colour accent) const
@@ -231,7 +255,7 @@ private:
         g.setFont(kt::font(theme, 10.f, true));
         for (int i = 0; i < parts.count; ++i)
         {
-            const auto pr = hb::partRect(interior, parts.parts[i]);
+            const auto pr = internalRect(interior, i);
             const juce::String name = parts.parts[i].name;
             const float w = juce::jmin(interior.getWidth() - 8.f, (float) name.length() * 7.0f + 16.f);
             const float x = juce::jlimit(interior.getX() + 4.f, juce::jmax(interior.getX() + 4.f, interior.getRight() - w - 4.f), pr.getX() + 3.f);
@@ -257,7 +281,7 @@ private:
         g.drawText("X-RAY  -  hover a part for its live readout", interior.withTrimmedTop(interior.getHeight() - 22.f).toNearestInt(), juce::Justification::centred, true);
 
         if (geekHot >= 0 && geekHot < parts.count)
-            drawTooltip(g, interior, geekHot, hb::partRect(interior, parts.parts[geekHot]));
+            drawTooltip(g, interior, geekHot, internalRect(interior, geekHot));
     }
 
     void punchHole(juce::Graphics& g, juce::Rectangle<float> interior, float cx, float cy, float r, juce::Colour accent) const
@@ -281,7 +305,7 @@ private:
         const auto& parts = hb::kInternals[shellIdx];
         const auto interior = pluginInterior();
         for (int i = 0; i < parts.count; ++i)
-            if (hb::partRect(interior, parts.parts[i]).contains(pos)) return i;
+            if (internalRect(interior, i).contains(pos)) return i;
         return -1;
     }
 
@@ -415,7 +439,7 @@ private:
         }
     }
 
-    void drawPlacedParts(juce::Graphics& g, juce::Rectangle<float> face, const pb::Shell& shell) const
+    void drawPlacedParts(juce::Graphics& g, juce::Rectangle<float> face, const pb::Shell& shell, const juce::Path& shellClip) const
     {
         const auto& theme = editor.machineDesign.palette();
         const auto accent = kt::c(theme.accent);
@@ -445,7 +469,7 @@ private:
                 float live[128] {};
                 editor.proc.copyScope(live, 128);
                 const int st = pb::boardScreenTypeOf(editor.proc.uiState, shell.screenStyle);
-                pb::paintScreenFace(g, r.reduced(5.f), st, theme, live, 128, juce::String("SCREEN  -  ") + pb::kScreenTypes[st]);
+                pb::paintScreenFace(g, r.reduced(5.f), st, theme, live, 128, juce::String("SCREEN  -  ") + pb::kScreenTypes[st], animPhase, &shellClip);
             }
             else if (kind == "dial")
             {
@@ -570,6 +594,10 @@ private:
     int geekHot = -1;
     juce::ValueTree dragNode, heldKey;
     float dragStartValue = 0.f, dragStartY = 0.f;
+    mutable juce::Array<juce::Rectangle<float>> internalsCache;
+    mutable int cacheShell = -1;
+    mutable juce::uint32 cacheSeed = 0;
+    mutable bool internalsReady = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginViewScreen)
 };

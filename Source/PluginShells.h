@@ -2,6 +2,8 @@
 #include <JuceHeader.h>
 #include "Themes.h"
 #include "ThemeDecals.h"
+#include <cmath>
+#include <algorithm>
 
 // Hardware shells for the Plugin Builder. Slots are normalised inside the face plate.
 // The motherboard bay is always occupied first and is the start of the signal chain.
@@ -665,6 +667,40 @@ inline void paintShellBody(juce::Graphics& g, juce::Rectangle<float> c, const Sh
 inline constexpr const char* kScreenTypes[] = { "Plain Glass", "Corner Brackets", "CRT Tube", "Notched Panel", "Scanline Monitor", "Round Porthole" };
 inline constexpr int kScreenTypeCount = 6;
 
+// The fine grid every part is snapped to while it is dragged by its corners, and that the
+// hidden hardware inside the shell is laid out on too. Coarse enough to feel steppy, fine
+// enough to place anything anywhere on the face plate.
+inline constexpr int kGridCols = 32;
+inline constexpr int kGridRows = 22;
+
+// Glass shape of each screen type. A display is auto-cut to the bay it sits in: a notched
+// panel crops its corners, a porthole is round, the CRT glass is heavily rounded.
+inline juce::Path screenClipPath(juce::Rectangle<float> r, int type)
+{
+    juce::Path p;
+    const float m = juce::jmin(r.getWidth(), r.getHeight());
+    switch (juce::jlimit(0, kScreenTypeCount - 1, type))
+    {
+        case 2: p.addRoundedRectangle(r, m * 0.20f); break;
+        case 3:
+        {
+            const float k = juce::jmin(24.f, m * 0.30f);
+            p.startNewSubPath(r.getX() + k, r.getY());
+            p.lineTo(r.getRight() - k, r.getY());
+            p.lineTo(r.getRight(), r.getY() + k);
+            p.lineTo(r.getRight(), r.getBottom());
+            p.lineTo(r.getX() + k, r.getBottom());
+            p.lineTo(r.getX(), r.getBottom() - k);
+            p.closeSubPath();
+            break;
+        }
+        case 4: p.addRoundedRectangle(r, 5.f); break;
+        case 5: p.addRoundedRectangle(r, m * 0.5f); break;
+        default: p.addRoundedRectangle(r, 6.f); break;
+    }
+    return p;
+}
+
 inline int boardScreenTypeOf(const juce::ValueTree& uiState, int fallback)
 {
     for (int i = 0; i < uiState.getNumChildren(); ++i)
@@ -676,49 +712,165 @@ inline int boardScreenTypeOf(const juce::ValueTree& uiState, int fallback)
     return juce::jlimit(0, kScreenTypeCount - 1, fallback);
 }
 
-// Paints the live screen face (scope + type specific glass). Used by the builder widget and by Plugin View.
+// Paints the live screen face. Every screen type reads out something different, the way real
+// monitors would: 0 oscilloscope, 1 panning field, 2 rolling CRT scope, 3 VU meters,
+// 4 spectrogram light, 5 a calm flatline. `phase` animates, `outerClip` auto-cuts the glass
+// to whatever silhouette the bay sits inside (a template with cut corners crops the display).
 inline void paintScreenFace(juce::Graphics& g, juce::Rectangle<float> r, int type, const kt::ThemePalette& theme,
-                            const float* scope, int n, const juce::String& caption)
+                            const float* scope, int n, const juce::String& caption, float phase = 0.f,
+                            const juce::Path* outerClip = nullptr)
 {
     type = juce::jlimit(0, kScreenTypeCount - 1, type);
     const auto accent = kt::c(theme.accent);
     const float m = juce::jmin(r.getWidth(), r.getHeight());
-    juce::Path clip;
-    if (type == 5) clip.addRoundedRectangle(r, m * 0.5f); else clip.addRoundedRectangle(r, type == 2 ? m * 0.20f : 5.f);
+    const float mid = r.getCentreY();
+
+    const auto clip = screenClipPath(r, type);
     g.saveState();
     g.reduceClipRegion(clip);
+    if (outerClip != nullptr) g.reduceClipRegion(*outerClip);
+
     g.setColour(kt::c(theme.bg).darker(0.55f));
     g.fillRect(r);
     g.setColour(accent.withAlpha(0.07f));
     for (float x = r.getX() + r.getWidth() / 8.f; x < r.getRight(); x += r.getWidth() / 8.f) g.drawVerticalLine((int) x, r.getY(), r.getBottom());
     for (float y = r.getY() + r.getHeight() / 4.f; y < r.getBottom(); y += r.getHeight() / 4.f) g.drawHorizontalLine((int) y, r.getX(), r.getRight());
-    if (scope != nullptr && n > 1)
+
+    // Build a wave path straight from the live scope (never from a fake sine).
+    auto buildWave = [&](float ampScale, float yOffset, float jitter)
     {
-        juce::Path wave;
-        const float mid = r.getCentreY();
-        for (int i = 0; i < n; ++i)
+        juce::Path w;
+        const int steps = juce::jmax(2, juce::jmin(scope != nullptr && n > 1 ? n : 64, 128));
+        for (int i = 0; i < steps; ++i)
         {
-            const float x = r.getX() + 4.f + (r.getWidth() - 8.f) * (float) i / (float) (n - 1);
-            const float y = mid - juce::jlimit(-1.f, 1.f, scope[i]) * r.getHeight() * 0.40f;
-            if (i == 0) wave.startNewSubPath(x, y); else wave.lineTo(x, y);
+            const float t = (float) i / (float) (steps - 1);
+            const float x = r.getX() + 4.f + (r.getWidth() - 8.f) * t;
+            float v = 0.f;
+            if (scope != nullptr && n > 1) v = scope[juce::jlimit(0, n - 1, (int) (t * (float) (n - 1)))];
+            v = juce::jlimit(-1.f, 1.f, v) * ampScale;
+            if (jitter > 0.f) v += std::sin(phase * 3.f + (float) i * 0.4f) * jitter;
+            const float y = mid + yOffset - v * r.getHeight() * 0.40f;
+            if (i == 0) w.startNewSubPath(x, y); else w.lineTo(x, y);
         }
-        g.setColour(accent.withAlpha(0.22f));
-        g.strokePath(wave, juce::PathStrokeType(4.f));
-        g.setColour(accent);
-        g.strokePath(wave, juce::PathStrokeType(1.6f));
-    }
-    if (type == 2)
+        return w;
+    };
+
+    switch (type)
     {
-        juce::ColourGradient vg(juce::Colours::transparentBlack, r.getCentre(), juce::Colours::black.withAlpha(0.55f), r.getTopLeft(), true);
-        g.setGradientFill(vg);
-        g.fillRect(r);
-    }
-    if (type == 4)
-    {
-        g.setColour(juce::Colours::black.withAlpha(0.25f));
-        for (float y = r.getY(); y < r.getBottom(); y += 3.f) g.drawHorizontalLine((int) y, r.getX(), r.getRight());
+        case 0: // Plain Glass - live oscilloscope
+        {
+            const auto w = buildWave(1.f, 0.f, 0.f);
+            g.setColour(accent.withAlpha(0.22f));
+            g.strokePath(w, juce::PathStrokeType(4.f));
+            g.setColour(accent);
+            g.strokePath(w, juce::PathStrokeType(1.6f));
+            break;
+        }
+        case 1: // Corner Brackets - panning field (L/R position of the live signal)
+        {
+            float sum = 0.f;
+            int cnt = 0;
+            if (scope != nullptr) for (int i = 0; i < n; ++i) { sum += scope[i]; ++cnt; }
+            const float pan = cnt > 0 ? juce::jlimit(-1.f, 1.f, sum / (float) cnt * 3.5f) : 0.f;
+            const float trackW = r.getWidth() * 0.56f;
+            const float trackX = r.getCentreX() - trackW * 0.5f;
+            const float trackY = mid + r.getHeight() * 0.04f;
+            const auto behind = buildWave(0.55f, -r.getHeight() * 0.10f, 0.f);
+            g.setColour(accent.withAlpha(0.28f));
+            g.strokePath(behind, juce::PathStrokeType(1.2f));
+            g.setColour(accent.withAlpha(0.5f));
+            g.drawLine(trackX, trackY, trackX + trackW, trackY, 1.4f);
+            g.drawLine(r.getCentreX(), trackY - 6.f, r.getCentreX(), trackY + 6.f, 1.2f);
+            g.setColour(accent.withAlpha(0.30f));
+            g.drawLine(r.getCentreX(), trackY, r.getCentreX() + pan * trackW * 0.5f, trackY, 3.f);
+            g.setColour(accent);
+            g.fillEllipse(r.getCentreX() + pan * trackW * 0.5f - 4.f, trackY - 4.f, 8.f, 8.f);
+            if (m > 46.f)
+            {
+                g.setFont(kt::font(theme, 8.5f, true));
+                g.setColour(kt::c(theme.muted));
+                g.drawText("L", (int) trackX - 13, (int) trackY - 7, 12, 14, juce::Justification::centredRight);
+                g.drawText("R", (int) (trackX + trackW) + 1, (int) trackY - 7, 12, 14, juce::Justification::centredLeft);
+            }
+            break;
+        }
+        case 2: // CRT Tube - rolling scope with glass vignette
+        {
+            const auto w = buildWave(0.9f, std::sin(phase * 0.6f) * r.getHeight() * 0.04f, 0.f);
+            g.setColour(accent.withAlpha(0.20f));
+            g.strokePath(w, juce::PathStrokeType(4.f));
+            g.setColour(accent);
+            g.strokePath(w, juce::PathStrokeType(1.7f));
+            juce::ColourGradient vg(juce::Colours::transparentBlack, r.getCentre(), juce::Colours::black.withAlpha(0.55f), r.getTopLeft(), true);
+            g.setGradientFill(vg);
+            g.fillRect(r);
+            break;
+        }
+        case 3: // Notched Panel - stereo VU meters
+        {
+            float lv = 0.f, rv = 0.f;
+            if (scope != nullptr && n > 1)
+            {
+                for (int i = 0; i < n / 2; ++i) lv = juce::jmax(lv, std::abs(scope[i]));
+                for (int i = n / 2; i < n; ++i) rv = juce::jmax(rv, std::abs(scope[i]));
+            }
+            lv = juce::jlimit(0.f, 1.f, lv * 1.6f);
+            rv = juce::jlimit(0.f, 1.f, rv * 1.6f);
+            auto bars = r.reduced(r.getWidth() * 0.16f, r.getHeight() * 0.12f);
+            auto drawBar = [&](juce::Rectangle<float> b, float v)
+            {
+                if (b.getWidth() < 3.f || b.getHeight() < 6.f) return;
+                g.setColour(kt::c(theme.bg).brighter(0.06f));
+                g.fillRoundedRectangle(b, 3.f);
+                const float h = juce::jmax(3.f, b.getHeight() * juce::jmax(0.03f, v));
+                g.setColour(v > 0.85f ? juce::Colour(0xffff5a5a) : accent);
+                g.fillRoundedRectangle(b.withY(b.getBottom() - h).withHeight(h), 3.f);
+            };
+            drawBar(bars.removeFromLeft(bars.getWidth() * 0.42f), lv);
+            bars.removeFromLeft(bars.getWidth() * 0.17f);
+            drawBar(bars, rv);
+            break;
+        }
+        case 4: // Scanline Monitor - spectrogram light
+        {
+            const int bands = juce::jmax(8, juce::jmin(40, (int) (r.getWidth() / 7.f)));
+            const float bw = r.getWidth() / (float) bands;
+            for (int i = 0; i < bands; ++i)
+            {
+                float v = 0.f;
+                if (scope != nullptr && n > 1)
+                    for (int k = 0; k < 4; ++k)
+                        v = juce::jmax(v, std::abs(scope[(int) ((float) i / (float) bands * (float) n + k) % n]));
+                v = juce::jlimit(0.f, 1.f, v * 2.2f);
+                const float h = juce::jmax(2.f, v * r.getHeight() * 0.88f);
+                const float x = r.getX() + (float) i * bw;
+                g.setColour(accent.withAlpha(0.20f + 0.65f * v));
+                g.fillRect(x + 0.5f, r.getBottom() - h, juce::jmax(1.f, bw - 1.5f), h);
+            }
+            g.setColour(juce::Colours::black.withAlpha(0.25f));
+            for (float y = r.getY(); y < r.getBottom(); y += 3.f) g.drawHorizontalLine((int) y, r.getX(), r.getRight());
+            break;
+        }
+        default: // Round Porthole - calm flatline with slow blips
+        {
+            juce::Path w;
+            w.startNewSubPath(r.getX() + 4.f, mid);
+            const int steps = 48;
+            for (int i = 1; i < steps; ++i)
+            {
+                const float x = r.getX() + 4.f + (r.getWidth() - 8.f) * (float) i / (float) (steps - 1);
+                const float bump = std::pow(juce::jmax(0.f, std::sin((float) i * 0.5f + phase)), 24.f);
+                float base = 0.f;
+                if (scope != nullptr && n > 1) base = juce::jlimit(-1.f, 1.f, scope[(i * n) / steps]) * 0.20f;
+                w.lineTo(x, mid - (base + bump * 0.35f) * r.getHeight() * 0.40f);
+            }
+            g.setColour(accent.withAlpha(0.85f));
+            g.strokePath(w, juce::PathStrokeType(1.6f));
+            break;
+        }
     }
     g.restoreState();
+
     if (caption.isNotEmpty() && m > 44.f)
     {
         g.setColour(kt::c(theme.muted));

@@ -1,6 +1,8 @@
 #pragma once
 #include <JuceHeader.h>
 #include "Themes.h"
+#include <algorithm>
+#include <cmath>
 
 // Internal hardware that lives inside each hardware shell. Indexes line up with pb::kShells,
 // so every selected template carries its own special parts: the board that hosts the chain,
@@ -298,10 +300,80 @@ inline constexpr ShellInternals kInternals[30] = {
     }, 7 }
 };
 
+// Where each shell's hidden hardware actually sits. The kInternals table above is the pool of
+// pieces every template carries; this lays them out randomly on the SAME fine grid the visible
+// parts use, so the insides line up behind the parts instead of floating at fixed spots.
+// Placement is deterministic for a given seed, so a machine's guts stay put between sessions.
+inline constexpr int kHardwareCols = 24;
+inline constexpr int kHardwareRows = 16;
+
+inline void placeInternals(int shellIdx, juce::uint32 seed, juce::Array<juce::Rectangle<float>>& out)
+{
+    out.clear();
+    const auto& shell = kInternals[juce::jlimit(0, 29, shellIdx)];
+    juce::Random rng((juce::int64) (seed ^ ((juce::uint32) shellIdx * 2654435761u) ^ 0x9e3779b9u));
+
+    // Biggest pieces claim space first so nothing important gets squeezed out.
+    juce::Array<int> order;
+    for (int i = 0; i < shell.count; ++i) order.add(i);
+    std::sort(order.begin(), order.end(), [&shell](int a, int b)
+    {
+        const auto& A = shell.parts[a];
+        const auto& B = shell.parts[b];
+        return A.w * A.h > B.w * B.h;
+    });
+
+    juce::Array<juce::Rectangle<float>> placed;
+    out.resize(shell.count);
+    for (int k = 0; k < order.size(); ++k)
+    {
+        const int i = order[k];
+        const auto& p = shell.parts[i];
+        const int gw = juce::jlimit(3, kHardwareCols, (int) std::lround(p.w * kHardwareCols));
+        const int gh = juce::jlimit(2, kHardwareRows, (int) std::lround(p.h * kHardwareRows));
+        auto candidate = [&](int attempt)
+        {
+            const int gx = rng.nextInt(juce::jmax(1, kHardwareCols - gw + 1));
+            const int gy = rng.nextInt(juce::jmax(1, kHardwareRows - gh + 1));
+            juce::ignoreUnused(attempt);
+            return juce::Rectangle<float>((float) gx / (float) kHardwareCols, (float) gy / (float) kHardwareRows,
+                                          (float) gw / (float) kHardwareCols, (float) gh / (float) kHardwareRows);
+        };
+        juce::Rectangle<float> best;
+        bool found = false;
+        const float pad = 0.010f;
+        for (int attempt = 0; attempt < 260 && !found; ++attempt)
+        {
+            auto c = candidate(attempt);
+            bool hit = false;
+            for (auto& q : placed) if (c.reduced(pad).intersects(q.reduced(pad))) { hit = true; break; }
+            if (!hit) { best = c; found = true; }
+        }
+        for (int attempt = 0; attempt < 160 && !found; ++attempt) // relaxed: never overlap, just touch
+        {
+            auto c = candidate(attempt);
+            bool hit = false;
+            for (auto& q : placed) if (c.intersects(q)) { hit = true; break; }
+            if (!hit) { best = c; found = true; }
+        }
+        if (!found) best = { 0.03f + 0.07f * (float) (i % 5), 0.03f + 0.09f * (float) (i % 4),
+                             (float) gw / (float) kHardwareCols, (float) gh / (float) kHardwareRows };
+        out.set(i, best);
+        placed.add(best);
+    }
+}
+
 inline juce::Rectangle<float> partRect(juce::Rectangle<float> interior, const HardwarePart& p)
 {
     return { interior.getX() + p.x * interior.getWidth(), interior.getY() + p.y * interior.getHeight(),
              p.w * interior.getWidth(), p.h * interior.getHeight() };
+}
+
+// Maps one of the grid-normalised rectangles from placeInternals() into the case interior.
+inline juce::Rectangle<float> gridRect(juce::Rectangle<float> interior, juce::Rectangle<float> n)
+{
+    return { interior.getX() + n.getX() * interior.getWidth(), interior.getY() + n.getY() * interior.getHeight(),
+             n.getWidth() * interior.getWidth(), n.getHeight() * interior.getHeight() };
 }
 
 // One special-looking piece per kind. hot = the hovered part gets the accent treatment.
