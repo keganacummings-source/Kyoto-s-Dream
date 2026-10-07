@@ -208,6 +208,7 @@ private:
     void addSeriesStep();
     void armPlacement();
     void placeInSlot(int slot);
+    void placeAtGrid(int gx, int gy); // free-grid placement (templates retired)
     void bindDialToEffect(int shellSlot, int fxDspSlot, int fxType);
     void rebuildWireGraph();
     void showBuilderGuide();

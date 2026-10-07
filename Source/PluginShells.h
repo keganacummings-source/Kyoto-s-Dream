@@ -1067,15 +1067,39 @@ public:
     bool placing = false;
     juce::String armedStyle;
     kt::ThemePalette theme = kt::kThemes[0];
+    // Legacy slot callback kept for wire/bind menus; free placement uses onPlaceAt.
     std::function<void(int)> onSlot;
+    // Free-grid placement: click empty face → (gx, gy) on the 32x22 peg grid.
+    std::function<void(int, int)> onPlaceAt;
     std::function<void(int, juce::Point<int>)> onRightClick;
     std::function<bool(int)> occupied;
     std::function<juce::Point<float>(int)> anchor;
-    std::function<int(int)> parentOf;       // bay wired into (-1 = unwired, 0 = motherboard when explicit)
-    std::function<void()> onBackgroundClick; // plain click on empty case = deselect
+    std::function<int(int)> parentOf;
+    std::function<void()> onBackgroundClick;
+    // Live part footprints for hardware-under-parts (panel coords). Filled by the editor.
+    struct PartFootprint { juce::Rectangle<float> r; juce::String kind; int hwSeed = 0; };
+    juce::Array<PartFootprint> partFootprints;
     int selectedSlot = -1;
     int hoverSlot = -1;
-    int screenType = -1; // chosen screen for the motherboard (-1 = template default)
+    int hoverGx = -1, hoverGy = -1;
+    int screenType = -1;
+    // Default footprint size (grid cells) for the armed part type.
+    static int defaultGwFor (const juce::String& style)
+    {
+        if (style == "board" || style == "wave" || style == "screen") return 10;
+        if (style == "slider" || style == "fader") return 4;
+        if (style == "sound" || style == "stack") return 6;
+        if (style == "key" || style == "button") return 4;
+        return 5; // dial / knob / default
+    }
+    static int defaultGhFor (const juce::String& style)
+    {
+        if (style == "board" || style == "wave" || style == "screen") return 7;
+        if (style == "slider" || style == "fader") return 8;
+        if (style == "sound" || style == "stack") return 5;
+        if (style == "key" || style == "button") return 4;
+        return 5;
+    }
 
     void paint(juce::Graphics& g) override
     {
@@ -1089,32 +1113,75 @@ public:
         g.drawRoundedRectangle(bounds.reduced(0.5f), 14.f, 1.f);
         paintShellBody(g, bounds, shell, theme, false);
 
-        // Clean header: template name on one line, chain hint below it.
         g.setColour(accent);
         g.setFont(kt::font(theme, 15.f, true));
         g.drawText("PLUGIN BUILDER", 18, 12, 220, 18, juce::Justification::left);
         g.setColour(kt::c(theme.muted));
         g.setFont(kt::font(theme, 11.5f));
-        g.drawText("Free playground  -  drag parts on the grid. Select then right-click Put wire Into / Cut wire.", 18, 31, getWidth() - 36, 15, juce::Justification::left);
+        g.drawText("Free playground — click to place, drag to move. Hardware fills in under each part. Right-click: wire / clear.", 18, 31, getWidth() - 36, 15, juce::Justification::left);
 
         auto face = faceRect(bounds);
         const float radius = shellRadius(shell);
 
-        // Faceplate with a per-template tint so each hardware reads special.
-        g.setColour(kt::c(theme.bg).withAlpha(0.88f));
+        g.setColour(kt::c(theme.bg).withAlpha(0.90f));
         g.fillRoundedRectangle(face, radius);
-        g.setColour(accent.withAlpha(0.45f));
+        g.setColour(accent.withAlpha(0.40f));
         g.drawRoundedRectangle(face, radius, 1.4f);
 
-        // Shell trim: corner screws, LED strip and a name badge - like real hardware.
+        // Soft free-grid dots (no pre-allocated template bays).
+        {
+            const float cw = face.getWidth() / (float) kGridCols;
+            const float ch = face.getHeight() / (float) kGridRows;
+            g.setColour(kt::c(theme.peg).withAlpha(0.22f));
+            for (int gy = 0; gy < kGridRows; gy += 2)
+                for (int gx = 0; gx < kGridCols; gx += 2)
+                {
+                    const float x = face.getX() + (gx + 0.5f) * cw;
+                    const float y = face.getY() + (gy + 0.5f) * ch;
+                    g.fillEllipse(x - 1.2f, y - 1.2f, 2.4f, 2.4f);
+                }
+        }
+
+        // Hardware behind each placed part — size reacts to the part footprint.
+        for (const auto& fp : partFootprints)
+        {
+            if (fp.r.getWidth() < 4.f || fp.r.getHeight() < 4.f) continue;
+            auto plate = fp.r.expanded(3.f);
+            g.setColour(kt::c(theme.panel).withAlpha(0.55f));
+            g.fillRoundedRectangle(plate, 7.f);
+            g.setColour(accent.withAlpha(0.18f));
+            g.drawRoundedRectangle(plate, 7.f, 1.f);
+            // Mini PCB traces / pads scaled to the part.
+            juce::Random rng(fp.hwSeed == 0 ? (juce::int64) (fp.r.getX() * 17 + fp.r.getY() * 31) : (juce::int64) fp.hwSeed);
+            g.setColour(accent.withAlpha(0.28f));
+            const int traces = 2 + rng.nextInt(3);
+            for (int t = 0; t < traces; ++t)
+            {
+                const float x0 = plate.getX() + 4.f + rng.nextFloat() * juce::jmax(1.f, plate.getWidth() - 8.f);
+                const float y0 = plate.getY() + 4.f + rng.nextFloat() * juce::jmax(1.f, plate.getHeight() - 8.f);
+                const float x1 = plate.getX() + 4.f + rng.nextFloat() * juce::jmax(1.f, plate.getWidth() - 8.f);
+                const float y1 = plate.getY() + 4.f + rng.nextFloat() * juce::jmax(1.f, plate.getHeight() - 8.f);
+                g.drawLine(x0, y0, x1, y1, 1.1f);
+                g.fillEllipse(x0 - 1.5f, y0 - 1.5f, 3.f, 3.f);
+                g.fillEllipse(x1 - 1.5f, y1 - 1.5f, 3.f, 3.f);
+            }
+            // Corner mounting pads
+            const float pad = juce::jmin(3.2f, plate.getWidth() * 0.08f);
+            g.setColour(kt::c(theme.peg).withAlpha(0.55f));
+            for (auto c : { juce::Point<float>(plate.getX() + 5.f, plate.getY() + 5.f),
+                            juce::Point<float>(plate.getRight() - 5.f, plate.getY() + 5.f),
+                            juce::Point<float>(plate.getX() + 5.f, plate.getBottom() - 5.f),
+                            juce::Point<float>(plate.getRight() - 5.f, plate.getBottom() - 5.f) })
+                g.fillEllipse(c.x - pad, c.y - pad, pad * 2.f, pad * 2.f);
+        }
+
+        // Shell trim: corner screws + LED strip + name badge.
         g.setColour(kt::c(theme.muted).withAlpha(0.65f));
         for (auto p : { juce::Point<float>(face.getX() + 10.f, face.getY() + 10.f),
                         juce::Point<float>(face.getRight() - 10.f, face.getY() + 10.f),
                         juce::Point<float>(face.getX() + 10.f, face.getBottom() - 10.f),
                         juce::Point<float>(face.getRight() - 10.f, face.getBottom() - 10.f) })
-        {
             g.fillEllipse(p.x - 2.5f, p.y - 2.5f, 5.f, 5.f);
-        }
         for (int i = 0; i < 3; ++i)
         {
             g.setColour(accent.withAlpha(i == 0 ? 0.9f : 0.3f));
@@ -1122,18 +1189,15 @@ public:
         }
         g.setColour(accent);
         g.setFont(kt::font(theme, 9.f, true));
-        g.drawText(juce::String(shell.name).toUpperCase(), (int) face.getRight() - 130, (int) face.getBottom() - 22, 120, 13, juce::Justification::centredRight);
-        g.setColour(accent.withAlpha(0.5f));
-        g.drawLine(face.getRight() - 130, face.getBottom() - 9.f, face.getRight() - 20.f, face.getBottom() - 9.f, 1.2f);
+        g.drawText("FREE GRID", (int) face.getRight() - 130, (int) face.getBottom() - 22, 120, 13, juce::Justification::centredRight);
 
-        // Bay wiring: ONLY explicit Put wire Into links (parent >= 0). Unwired parts have parent -1.
-        for (int i = 1; i < shell.slotCount; ++i)
+        // Explicit Put-wire-Into links only (by shellSlot index if still present).
+        for (int i = 1; i < 512; ++i)
         {
             if (occupied && occupied(i) && anchor)
             {
                 int par = parentOf ? parentOf(i) : -1;
-                if (par < 0 || par == i || par >= shell.slotCount)
-                    continue; // no default wire to the screen/motherboard
+                if (par < 0 || par == i) continue;
                 auto a = anchor(par);
                 auto b = anchor(i);
                 if (a.x > 1.f && b.x > 1.f)
@@ -1150,114 +1214,73 @@ public:
             }
         }
 
-        for (int i = 0; i < shell.slotCount; ++i)
+        // Placement ghost: snap outline of the armed part under the cursor.
+        if (placing && hoverGx >= 0 && hoverGy >= 0)
         {
-            const auto& slot = shell.slots[i];
-            if (slot.w < 0.02f || slot.h < 0.02f) continue;
-            auto r = slotRect(face, slot).reduced(3.f);
-            const bool taken = occupied && occupied(i);
-            const bool fits = placing && ! taken && styleFits(armedStyle, slot.kind);
-            const bool hovered = placing && i == hoverSlot && fits;
-
-            // Bay plate.
-            g.setColour(fits ? accent.withAlpha(hovered ? 0.38f : 0.26f) : kt::c(theme.panel).withAlpha(taken ? 0.05f : 0.42f));
-            g.fillRoundedRectangle(r, 8.f);
-            g.setColour(fits ? accent : kt::c(theme.border).withAlpha(taken ? 0.25f : 0.7f));
-            g.drawRoundedRectangle(r, 8.f, fits ? (hovered ? 2.4f : 1.8f) : 1.f);
-            if (slot.kind == SlotKind::Board) paintScreenBezel(g, r, screenType >= 0 ? screenType : shell.screenStyle, theme);
-
-            // Lego studs: pegs at the four corners click parts into the bay.
-            const float pegR = juce::jmin(3.4f, r.getWidth() * 0.12f);
-            const float inset = juce::jmax(7.f, juce::jmin(r.getWidth(), r.getHeight()) * 0.14f);
-            for (auto c : { juce::Point<float>(r.getX() + inset, r.getY() + inset),
-                            juce::Point<float>(r.getRight() - inset, r.getY() + inset),
-                            juce::Point<float>(r.getX() + inset, r.getBottom() - inset),
-                            juce::Point<float>(r.getRight() - inset, r.getBottom() - inset) })
-            {
-                if (taken)
-                {
-                    g.setColour(accent.withAlpha(0.35f));
-                    g.fillEllipse(c.x - pegR * 0.7f, c.y - pegR * 0.7f, pegR * 1.4f, pegR * 1.4f);
-                }
-                else
-                {
-                    g.setColour(fits ? kt::c(theme.pegHot) : kt::c(theme.peg).withAlpha(0.85f));
-                    g.fillEllipse(c.x - pegR, c.y - pegR, pegR * 2.f, pegR * 2.f);
-                    if (fits)
-                    {
-                        g.setColour(kt::c(theme.pegHot).withAlpha(0.35f));
-                        g.drawEllipse(c.x - pegR - 2.f, c.y - pegR - 2.f, pegR * 2.f + 4.f, pegR * 2.f + 4.f, 1.f);
-                    }
-                }
-            }
-
-            if (! taken)
-            {
-                g.setColour(fits ? kt::c(theme.text) : kt::c(theme.muted));
-                g.setFont(kt::font(theme, 10.5f, true));
-                g.drawFittedText(slot.name, r.reduced(6.f).toNearestInt(), juce::Justification::centred, 2);
-            }
+            const float cw = face.getWidth() / (float) kGridCols;
+            const float ch = face.getHeight() / (float) kGridRows;
+            const int gw = defaultGwFor(armedStyle);
+            const int gh = defaultGhFor(armedStyle);
+            const int gx = juce::jlimit(0, kGridCols - gw, hoverGx);
+            const int gy = juce::jlimit(0, kGridRows - gh, hoverGy);
+            auto ghost = juce::Rectangle<float>(face.getX() + gx * cw, face.getY() + gy * ch, gw * cw, gh * ch).reduced(2.f);
+            g.setColour(accent.withAlpha(0.22f));
+            g.fillRoundedRectangle(ghost, 8.f);
+            g.setColour(kt::c(theme.pegHot).withAlpha(0.95f));
+            g.drawRoundedRectangle(ghost, 8.f, 2.2f);
+            g.setFont(kt::font(theme, 11.f, true));
+            g.setColour(kt::c(theme.text));
+            g.drawFittedText(armedStyle.isEmpty() ? "PART" : armedStyle.toUpperCase(), ghost.toNearestInt(), juce::Justification::centred, 1);
         }
     }
 
-    int slotAt(juce::Point<float> pos) const
+    void gridFromPos(juce::Point<float> pos, int& gx, int& gy) const
     {
-        if (! placing) return -1;
-        const auto& shell = kShells[juce::jlimit(0, kShellCount - 1, shellIndex)];
         auto face = faceRect(getLocalBounds().toFloat());
-        for (int i = 0; i < shell.slotCount; ++i)
-        {
-            const auto& slot = shell.slots[i];
-            if (slot.w < 0.02f) continue;
-            if (occupied && occupied(i)) continue;
-            if (! styleFits(armedStyle, slot.kind)) continue;
-            if (slotRect(face, slot).contains(pos)) return i;
-        }
-        return -1;
+        if (face.getWidth() < 4.f || face.getHeight() < 4.f) { gx = gy = -1; return; }
+        if (! face.contains(pos)) { gx = gy = -1; return; }
+        const float cw = face.getWidth() / (float) kGridCols;
+        const float ch = face.getHeight() / (float) kGridRows;
+        gx = juce::jlimit(0, kGridCols - 1, (int) std::floor((pos.x - face.getX()) / cw));
+        gy = juce::jlimit(0, kGridRows - 1, (int) std::floor((pos.y - face.getY()) / ch));
     }
 
     void mouseMove(const juce::MouseEvent& e) override
     {
-        const int hit = slotAt(e.position);
-        if (hit != hoverSlot) { hoverSlot = hit; repaint(); }
+        if (! placing) { if (hoverGx != -1) { hoverGx = hoverGy = -1; repaint(); } return; }
+        int gx, gy;
+        gridFromPos(e.position, gx, gy);
+        if (gx != hoverGx || gy != hoverGy) { hoverGx = gx; hoverGy = gy; repaint(); }
     }
 
     void mouseExit(const juce::MouseEvent&) override
     {
-        if (hoverSlot != -1) { hoverSlot = -1; repaint(); }
+        if (hoverGx != -1 || hoverGy != -1 || hoverSlot != -1)
+        {
+            hoverGx = hoverGy = -1;
+            hoverSlot = -1;
+            repaint();
+        }
     }
 
     void mouseDown(const juce::MouseEvent& e) override
     {
         if (e.mods.isPopupMenu())
         {
-            const auto& shell = kShells[juce::jlimit(0, kShellCount - 1, shellIndex)];
-            auto face = faceRect(getLocalBounds().toFloat());
-            int hit = -1;
-            for (int i = 0; i < shell.slotCount; ++i)
-                if (slotRect(face, shell.slots[i]).contains(e.position)) { hit = i; break; }
-            if (onRightClick) onRightClick(hit, e.getScreenPosition());
+            if (onRightClick) onRightClick(-1, e.getScreenPosition());
             return;
         }
-        if (! placing || ! onSlot)
+        if (placing && onPlaceAt)
         {
-            if (onBackgroundClick) onBackgroundClick();
-            return;
-        }
-        const auto& shell = kShells[juce::jlimit(0, kShellCount - 1, shellIndex)];
-        auto face = faceRect(getLocalBounds().toFloat());
-        for (int i = 0; i < shell.slotCount; ++i)
-        {
-            const auto& slot = shell.slots[i];
-            if (slot.w < 0.02f) continue;
-            if (occupied && occupied(i)) continue;
-            if (! styleFits(armedStyle, slot.kind)) continue;
-            if (slotRect(face, slot).contains(e.position))
+            int gx, gy;
+            gridFromPos(e.position, gx, gy);
+            if (gx >= 0 && gy >= 0)
             {
-                onSlot(i);
+                onPlaceAt(gx, gy);
                 return;
             }
         }
+        if (onBackgroundClick) onBackgroundClick();
     }
 };
 }

@@ -106,7 +106,7 @@ inline void rebuildOrder(juce::ValueTree& ui, juce::Array<int>& orderedSlots)
         if (! c.hasType("w")) continue;
         Node n;
         n.slot = (int) c.getProperty("slot", -1);
-        n.parentShell = (int) c.getProperty("parent", 0);
+        n.parentShell = (int) c.getProperty("parent", -1);
         n.wiredInto = (int) c.getProperty("wiredInto", -1);
         n.shell = (int) c.getProperty("shellSlot", -1);
         n.kind = c.getProperty("kind").toString();
@@ -121,6 +121,8 @@ inline void rebuildOrder(juce::ValueTree& ui, juce::Array<int>& orderedSlots)
     auto tryEmit = [&](const Node& n) {
         if (n.isScreen || n.satellite || n.slot <= 0) return false;
         if (emitted.contains(n.slot)) return false;
+        // Unwired parts are not a cable back to the motherboard.
+        if (n.wiredInto < 0 && n.parentShell < 0) return false;
         if (n.wiredInto >= 0 && n.wiredInto > 0 && ! emitted.contains(n.wiredInto) && n.wiredInto != n.slot)
         {
             // parent dsp not yet in list — wait unless parent not present
@@ -152,6 +154,7 @@ inline void rebuildOrder(juce::ValueTree& ui, juce::Array<int>& orderedSlots)
     for (const auto& n : rest)
     {
         if (n.isScreen || n.satellite || n.slot <= 0) continue;
+        if (n.wiredInto < 0 && n.parentShell < 0) continue;
         if (! emitted.contains(n.slot)) emitted.add(n.slot);
     }
     orderedSlots = emitted;

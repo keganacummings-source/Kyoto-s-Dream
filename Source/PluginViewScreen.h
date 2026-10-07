@@ -255,42 +255,52 @@ private:
         if (orderStr.isEmpty()) return;
 
         juce::Array<juce::Point<float>> pts;
-        // Motherboard centre first.
-        if (shell.slotCount > 0 && shell.slots[0].kind == pb::SlotKind::Board)
-            pts.add(pb::slotRect(face, shell.slots[0]).getCentre());
-        else
-            pts.add(face.getCentre());
+        auto centreOf = [&](const juce::ValueTree& node) -> juce::Point<float>
+        {
+            if (node.hasProperty("gx"))
+            {
+                const float cw = face.getWidth() / (float) pb::kGridCols;
+                const float ch = face.getHeight() / (float) pb::kGridRows;
+                const float gx = (float) (int) node.getProperty("gx", 0);
+                const float gy = (float) (int) node.getProperty("gy", 0);
+                const float gw = (float) juce::jmax(1, (int) node.getProperty("gw", 4));
+                const float gh = (float) juce::jmax(1, (int) node.getProperty("gh", 4));
+                return { face.getX() + (gx + gw * 0.5f) * cw, face.getY() + (gy + gh * 0.5f) * ch };
+            }
+            const int bay = (int) node.getProperty("shellSlot", -1);
+            if (bay >= 0 && bay < shell.slotCount)
+                return pb::slotRect(face, shell.slots[bay]).getCentre();
+            return face.getCentre();
+        };
+
+        juce::ValueTree board;
+        for (int i = 0; i < editor.proc.uiState.getNumChildren(); ++i)
+        {
+            auto node = editor.proc.uiState.getChild(i);
+            if (node.hasType("w") && node.getProperty("kind").toString() == "board") { board = node; break; }
+        }
+        if (board.isValid()) pts.add(centreOf(board));
+        else pts.add(face.getCentre());
 
         juce::StringArray parts;
         parts.addTokens(orderStr, ",", "");
         for (const auto& token : parts)
         {
             const int dsp = token.trim().getIntValue();
-            // Find shell bay that owns this DSP slot.
             for (int i = 0; i < editor.proc.uiState.getNumChildren(); ++i)
             {
                 auto node = editor.proc.uiState.getChild(i);
                 if (! node.hasType("w")) continue;
                 if ((int) node.getProperty("slot", -1) != dsp) continue;
                 if ((int) node.getProperty("satellite", 0) != 0) continue;
-                const int bay = (int) node.getProperty("shellSlot", -1);
-                if (node.hasProperty("gx"))
+                if ((int) node.getProperty("cut", 0) != 0 || (int) node.getProperty("wiredInto", -1) < 0)
                 {
-                    const float cw = face.getWidth() / (float) pb::kGridCols;
-                    const float ch = face.getHeight() / (float) pb::kGridRows;
-                    const float gx = (float) (int) node.getProperty("gx", 0);
-                    const float gy = (float) (int) node.getProperty("gy", 0);
-                    const float gw = (float) (int) node.getProperty("gw", 4);
-                    const float gh = (float) (int) node.getProperty("gh", 4);
-                    pts.add({ face.getX() + (gx + gw * 0.5f) * cw, face.getY() + (gy + gh * 0.5f) * ch });
+                    auto stub = centreOf(node);
+                    pts.add(stub);
+                    pts.add(stub + juce::Point<float>(16.f, 12.f));
                 }
                 else
-                {
-                    if (bay < 0 || bay >= shell.slotCount) continue;
-                    pts.add(pb::slotRect(face, shell.slots[bay]).getCentre());
-                }
-                if ((int) node.getProperty("cut", 0) != 0)
-                    pts.add(pts.getLast() + juce::Point<float>(18.f, 10.f)); // broken stub, not a wire home
+                    pts.add(centreOf(node));
                 break;
             }
         }
@@ -346,9 +356,22 @@ private:
         {
             auto node = editor.proc.uiState.getChild(i);
             if (! node.hasType("w")) continue;
-            const int bay = (int) node.getProperty("shellSlot", -1);
-            if (bay < 0 || bay >= shell.slotCount) continue;
-            auto r = pb::slotRect(face, shell.slots[bay]);
+            juce::Rectangle<float> r;
+            if (node.hasProperty("gx"))
+            {
+                const float cw = face.getWidth() / (float) pb::kGridCols;
+                const float ch = face.getHeight() / (float) pb::kGridRows;
+                r = { face.getX() + (float) (int) node.getProperty("gx", 0) * cw,
+                      face.getY() + (float) (int) node.getProperty("gy", 0) * ch,
+                      (float) juce::jmax(1, (int) node.getProperty("gw", 4)) * cw,
+                      (float) juce::jmax(1, (int) node.getProperty("gh", 4)) * ch };
+            }
+            else
+            {
+                const int bay = (int) node.getProperty("shellSlot", -1);
+                if (bay < 0 || bay >= shell.slotCount) continue;
+                r = pb::slotRect(face, shell.slots[bay]);
+            }
             const bool sat = (int) node.getProperty("satellite", 0) != 0;
             const auto kind = node.getProperty("kind").toString();
 

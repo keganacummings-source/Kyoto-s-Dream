@@ -579,10 +579,10 @@ void CanvasWidget::mouseDrag(const juce::MouseEvent& e)
                 if (auto* other = dynamic_cast<CanvasWidget*>(parent->getChildComponent(i)))
                     if (other != this && (int) other->node.getProperty("lockToBoard", 0) != 0)
                     {
-                        const int ogw = juce::jmax(kMinCells, (int) other->node.getProperty("gw", 4) + dgw);
-                        const int ogh = juce::jmax(kMinCells, (int) other->node.getProperty("gh", 4) + dgh);
-                        int ogx = juce::jlimit(0, juce::jmax(0, gridCols - ogw), (int) other->node.getProperty("gx", 0) + dgx);
-                        int ogy = juce::jlimit(0, juce::jmax(0, gridRows - ogh), (int) other->node.getProperty("gy", 0) + dgy);
+                        const int ogw = juce::jmax(kMinCells, (int) other->node.getProperty("gw", 4) + (resizing ? dgw : 0));
+                        const int ogh = juce::jmax(kMinCells, (int) other->node.getProperty("gh", 4) + (resizing ? dgh : 0));
+                        const int ogx = juce::jlimit(0, juce::jmax(0, gridCols - ogw), (int) other->node.getProperty("gx", 0) + dgx);
+                        const int ogy = juce::jlimit(0, juce::jmax(0, gridRows - ogh), (int) other->node.getProperty("gy", 0) + dgy);
                         other->applyGrid(ogx, ogy, ogw, ogh);
                         other->setBounds(other->gridRect());
                     }
@@ -847,7 +847,7 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
                         on->setValueNotifyingHost(0.f);
                 rebuildCanvas();
                 selectedChainWidget = -1;
-                status.setText("Cleared — motherboard only. Place parts on the grid.", juce::dontSendNotification);
+                status.setText("Cleared — motherboard only. Place parts on the peg grid.", juce::dontSendNotification);
             }));
     };
     clearCanvasBtn.setTooltip("Clear all parts (keeps motherboard). Asks for confirmation.");
@@ -871,8 +871,8 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     addBtn.onClick = [this] { armPlacement(); };
     chainRemoveBtn.onClick = [this] { removeSelectedChainStep(); };
     chainUndoBtn.onClick = [this] { undoLast(); };
-    chainBreakBtn.onClick = [this] { pendingSpecial = true; pendingSpecialType = KyotoAudioProcessor::kBreakType; pendingLabel = "CHAIN BREAK"; armedStyle = "dial"; placing = true; status.setText("Break is a knob part - click a glowing knob bay.", juce::dontSendNotification); panel.placing = true; panel.armedStyle = armedStyle; syncPanelMouse(); panel.repaint(); };
-    chainMixBtn.onClick = [this] { pendingSpecial = true; pendingSpecialType = KyotoAudioProcessor::kMixType; pendingLabel = "MASTER MIX"; armedStyle = "fader"; placing = true; status.setText("Mix is a fader part - click a glowing fader bay.", juce::dontSendNotification); panel.placing = true; panel.armedStyle = armedStyle; syncPanelMouse(); panel.repaint(); };
+    chainBreakBtn.onClick = [this] { pendingSpecial = true; pendingSpecialType = KyotoAudioProcessor::kBreakType; pendingLabel = "CHAIN BREAK"; armedStyle = "dial"; placing = true; status.setText("Break armed — click the free grid to place it.", juce::dontSendNotification); panel.placing = true; panel.armedStyle = armedStyle; syncPanelMouse(); panel.repaint(); };
+    chainMixBtn.onClick = [this] { pendingSpecial = true; pendingSpecialType = KyotoAudioProcessor::kMixType; pendingLabel = "MASTER MIX"; armedStyle = "fader"; placing = true; status.setText("Mix armed — click the free grid to place it.", juce::dontSendNotification); panel.placing = true; panel.armedStyle = armedStyle; syncPanelMouse(); panel.repaint(); };
     saveBtn.onClick = [this] { saveLocal(); if (token.isNotEmpty()) publish(); else status.setText("Saved locally - sign in to DreamShare to share it.", juce::dontSendNotification); };
     upBtn.onClick = [this] { if (token.isEmpty()) { status.setText("Sign in to DreamShare first to publish.", juce::dontSendNotification); return; } publish(); };
     wavBtn.onClick = [this] { loadWav(); };
@@ -995,7 +995,7 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     wavBtn.setTooltip("Load a WAV file onto the chain");
     saveBtn.setTooltip("Save this build locally");
     upBtn.setTooltip("Publish this build to the DreamShare catalog so others can load it");
-    addBtn.setTooltip("Arm a part, then click a glowing bay. Select an effect first, PLACE a dial on it to bind Mix / Decay / Hz / Time.");
+    addBtn.setTooltip("Arm a part, then click the free grid to place it. Hardware fills under the part from its size. Drag corners to resize.");
     chainUndoBtn.setTooltip("Undo the last builder step");
     fxAddBtn.setTooltip("Add the selected effect");
     fxRandomBtn.setTooltip("Randomize the effect controls");
@@ -1058,9 +1058,6 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
         addAndMakeVisible(*l);
     }
     addAndMakeVisible(shellBox);
-    shellBox.setVisible(false);
-    shellLabel.setVisible(false);
-    randomTemplateBtn.setVisible(false);
     for (int i = 0; i < pb::kShellCount; ++i) shellBox.addItem(pb::kShells[i].name, i + 1);
     shellBox.setSelectedId(1);
     shellBox.onChange = [this] { applyShell(shellBox.getSelectedId() - 1); };
@@ -1074,6 +1071,7 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
             applyPlaygroundTheme(kt::kThemes[i].id);
     };
     panel.onSlot = [this](int slot) { placeInSlot(slot); };
+    panel.onPlaceAt = [this](int gx, int gy) { placeAtGrid(gx, gy); };
     panel.occupied = [this](int slot) { return slotOccupied(slot); };
     panel.anchor = [this](int slot) { return slotAnchor(slot); };
     panel.theme = playgroundTheme;
@@ -1100,15 +1098,23 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     chatView.setScrollBarsShown(true, false);
     catalogModeBtn.onClick = [this] { setCenterMode(0); };
     threadsModeBtn.onClick = [this] { setCenterMode(3); refreshFeed(); };
-    railChatBtn.onClick = [this] { setRailMode(0); refreshFeed(); };
+    railChatBtn.onClick = [this] {
+        setRailMode(0);
+        selectedDiscordChannel = "mainstreet";
+        // Keep channel picker in sync when jumping to Mainstreet
+        for (int i = 0; i < discordChannels.size(); ++i)
+            if (discordChannels.getReference(i).id == "mainstreet")
+            { discordChannelBox.setSelectedId(i + 1, juce::dontSendNotification); break; }
+        refreshFeed();
+    };
     railDiscordBtn.onClick = [this] {
         setRailMode(2);
         if (discordChannels.isEmpty()) refreshDiscordChannels();
-        // Prefer General when opening Discord tab if still on Mainstreet
+        // Prefer Kyoto #general when opening Discord tab if still on Mainstreet
         if (selectedDiscordChannel == "mainstreet")
         {
             for (const auto& c : discordChannels)
-                if (c.name.equalsIgnoreCase("general") && c.tag == "KYTO")
+                if (c.name.equalsIgnoreCase("general") && (c.tag == "KYTO" || c.server == "Kyoto"))
                 { selectDiscordChannel(c.id); return; }
             selectDiscordChannel({}); // falls through to Kyoto #general
             return;
@@ -1120,7 +1126,8 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
         if (id <= 0 || id > discordChannels.size()) return;
         selectDiscordChannel(discordChannels.getReference(id - 1).id);
     };
-    discordChannelBox.setTooltip("All channels the bot can see, tagged by server. Mainstreet + #general stay live.");
+    discordChannelBox.setTooltip("Pick any channel the bot can see. Tagged by server. Mainstreet + #general refresh live.");
+    discordChannelBox.setTextWhenNothingSelected("Channels…");
     // SOCIALS takes over the centre: the Threads board is replaced by the full DreamShare directory.
     railOnlineBtn.onClick = [this] { setRailMode(1); setCenterMode(5); };
     threadBackBtn.onClick = [this] { closeThread(); };
@@ -1334,6 +1341,24 @@ void KyotoAudioProcessorEditor::timerCallback()
     // Only repaint the editor itself for the theme-field hero animation on the builder tab.
     if (tab != 0)
         repaint();
+
+    // Keep Mainstreet (DreamShare chat) and Kyoto #general live without hammering the API.
+    if (loggedIn && tab == 0 && token.isNotEmpty())
+    {
+        const auto now = juce::Time::currentTimeMillis();
+        // Mainstreet every ~4s when on chat rail
+        if (railMode == 0 && now - lastMainstreetRefresh > 4000)
+        {
+            lastMainstreetRefresh = now;
+            refreshFeed();
+        }
+        // Selected Discord channel (or always-live general) every ~6s
+        if (railMode == 2 && selectedDiscordChannel != "mainstreet" && now - lastGeneralRefresh > 6000)
+        {
+            lastGeneralRefresh = now;
+            refreshDiscord();
+        }
+    }
 }
 
 
@@ -2336,10 +2361,11 @@ void KyotoAudioProcessorEditor::resized()
             railOnlineBtn.setBounds(railHead);
         }
         // Discord-style channel picker: every channel + server tag (Mainstreet + #general always live).
+        // Taller control + clearer hit target so the Discord section is actually usable.
         if (discordChannelBox.isVisible())
         {
-            rail.removeFromTop(4);
-            discordChannelBox.setBounds(rail.removeFromTop(26));
+            rail.removeFromTop(6);
+            discordChannelBox.setBounds(rail.removeFromTop(32));
         }
         rail.removeFromTop(6);
         if (railMode == 0 || railMode == 2)
@@ -2537,38 +2563,59 @@ bool KyotoAudioProcessorEditor::findAutoCell(int index, const juce::String& kind
 
 void KyotoAudioProcessorEditor::reflowSeries()
 {
-    const auto& shell = pb::kShells[juce::jlimit(0, pb::kShellCount - 1, shellIndex)];
+    // Free grid only — template bay layout is retired. Every part lives on gx/gy/gw/gh.
     auto face = pb::faceRect(panel.getLocalBounds().toFloat());
     for (auto* w : widgets) w->setBounds({});
+    int autoGx = 2, autoGy = 2;
     for (auto* w : widgets)
     {
-        const int slot = (int) w->node.getProperty("shellSlot", -1);
-        if (slot < 0 || slot >= shell.slotCount) continue;
-        auto fitted = bf::fittedSlot(face, shell.slots[slot], slot, shell.slotCount);
-        auto r = fitted.toNearestInt();
-        if (r.getWidth() < 12 || r.getHeight() < 12) continue;
         w->faceProvider = [this] { return pb::faceRect(panel.getLocalBounds().toFloat()); };
         w->gridCols = pb::kGridCols;
         w->gridRows = pb::kGridRows;
-        w->onGeometryChanged = [this](CanvasWidget*) { panel.repaint(); };
-        // The first layout snaps a part onto the grid; after that the stored grid cells win, so a
-        // part the user resized by its corners keeps that size.
+        w->onGeometryChanged = [this](CanvasWidget* changed)
+        {
+            // Keep hardware plate under the part in sync with size/move.
+            if (changed != nullptr)
+            {
+                for (auto& fp : panel.partFootprints)
+                    if (fp.r.intersects(changed->getBounds().toFloat().expanded(2.f)))
+                    {
+                        fp.r = changed->getBounds().toFloat();
+                        break;
+                    }
+            }
+            panel.repaint();
+        };
+
         if (! w->node.hasProperty("gx"))
         {
-            const float cw = juce::jmax(1.f, face.getWidth() / (float) pb::kGridCols);
-            const float ch = juce::jmax(1.f, face.getHeight() / (float) pb::kGridRows);
-            const int gx = juce::jlimit(0, pb::kGridCols - 1, (int) std::lround((fitted.getX() - face.getX()) / cw));
-            const int gy = juce::jlimit(0, pb::kGridRows - 1, (int) std::lround((fitted.getY() - face.getY()) / ch));
-            const int gw = juce::jlimit(CanvasWidget::kMinCells, juce::jmax(CanvasWidget::kMinCells, pb::kGridCols - gx), (int) std::lround(fitted.getWidth() / cw));
-            const int gh = juce::jlimit(CanvasWidget::kMinCells, juce::jmax(CanvasWidget::kMinCells, pb::kGridRows - gy), (int) std::lround(fitted.getHeight() / ch));
-            w->node.setProperty("gx", gx, nullptr);
-            w->node.setProperty("gy", gy, nullptr);
+            // Legacy parts without grid cells: assign a free cell by kind defaults.
+            const auto style = w->node.getProperty("style").toString();
+            const int gw = pb::BuilderCanvas::defaultGwFor(style.isEmpty() ? w->node.getProperty("kind").toString() : style);
+            const int gh = pb::BuilderCanvas::defaultGhFor(style.isEmpty() ? w->node.getProperty("kind").toString() : style);
+            // Try to seed from old shell bay if present, else pack from top-left.
+            const int slot = (int) w->node.getProperty("shellSlot", -1);
+            const auto& shell = pb::kShells[juce::jlimit(0, pb::kShellCount - 1, shellIndex)];
+            if (slot >= 0 && slot < shell.slotCount && shell.slots[slot].w >= 0.02f)
+            {
+                auto fitted = bf::fittedSlot(face, shell.slots[slot], slot, shell.slotCount);
+                const float cw = juce::jmax(1.f, face.getWidth() / (float) pb::kGridCols);
+                const float ch = juce::jmax(1.f, face.getHeight() / (float) pb::kGridRows);
+                w->node.setProperty("gx", juce::jlimit(0, pb::kGridCols - gw, (int) std::lround((fitted.getX() - face.getX()) / cw)), nullptr);
+                w->node.setProperty("gy", juce::jlimit(0, pb::kGridRows - gh, (int) std::lround((fitted.getY() - face.getY()) / ch)), nullptr);
+            }
+            else
+            {
+                w->node.setProperty("gx", autoGx, nullptr);
+                w->node.setProperty("gy", autoGy, nullptr);
+                autoGx += gw + 1;
+                if (autoGx + gw >= pb::kGridCols) { autoGx = 2; autoGy += gh + 1; }
+            }
             w->node.setProperty("gw", gw, nullptr);
             w->node.setProperty("gh", gh, nullptr);
         }
         w->setBounds(w->gridRect());
-        const int cap = bf::partCapacity(fitted);
-        w->node.setProperty("partSlots", cap, nullptr);
+        w->node.setProperty("partSlots", bf::partCapacity(w->getBounds().toFloat()), nullptr);
         w->node.setProperty("x", w->getX(), nullptr);
         w->node.setProperty("y", w->getY(), nullptr);
         w->node.setProperty("w", w->getWidth(), nullptr);
@@ -2577,6 +2624,23 @@ void KyotoAudioProcessorEditor::reflowSeries()
             w->node.setProperty("style", bf::sliderStyleFor(w->getBounds()), nullptr);
         w->setTheme(playgroundTheme);
     }
+
+    // Hardware under parts: one plate per footprint, sized to the part.
+    panel.partFootprints.clear();
+    for (auto* w : widgets)
+    {
+        if (w == nullptr) continue;
+        pb::BuilderCanvas::PartFootprint fp;
+        fp.r = w->getBounds().toFloat();
+        fp.kind = w->node.getProperty("kind").toString();
+        fp.hwSeed = (int) w->node.getProperty("shellSlot", 0) * 997
+                    + (int) w->node.getProperty("gx", 0) * 31
+                    + (int) w->node.getProperty("gy", 0) * 17
+                    + (int) w->node.getProperty("gw", 0) * 7
+                    + (int) w->node.getProperty("gh", 0);
+        panel.partFootprints.add(fp);
+    }
+
     panel.theme = playgroundTheme;
     panel.screenType = pb::boardScreenTypeOf(proc.uiState, pb::kShells[shellIndex].screenStyle);
     panel.shellIndex = shellIndex;
@@ -2691,7 +2755,9 @@ void KyotoAudioProcessorEditor::repairParents()
         const int bay = (int) w->node.getProperty("shellSlot", -1);
         if (bay <= 0) continue;
         if ((int) w->node.getProperty("satellite", 0) != 0) continue;
+        if ((int) w->node.getProperty("lockToBoard", 0) != 0) continue;
         const int par = (int) w->node.getProperty("parent", -1);
+        // A missing or dead feeder is unwired. Do not shove the cable back onto the motherboard.
         if (par == bay || (par > 0 && ! slotOccupied(par)))
         {
             w->node.setProperty("parent", -1, nullptr);
@@ -2741,26 +2807,28 @@ void KyotoAudioProcessorEditor::ensureMotherboard()
         node.setProperty("slot", 0, nullptr);
         node.setProperty("shellSlot", 0, nullptr);
         node.setProperty("param", "mix", nullptr);
-        node.setProperty("label", juce::String(shell.name) + " screen", nullptr);
+        node.setProperty("label", "SCREEN", nullptr);
         node.setProperty("kind", "board", nullptr);
         node.setProperty("style", "board", nullptr);
         node.setProperty("screenType", shell.screenStyle, nullptr);
         node.setProperty("series", 0, nullptr);
-        node.setProperty("gx", 1, nullptr);
-        node.setProperty("gy", 1, nullptr);
-        node.setProperty("gw", 10, nullptr);
-        node.setProperty("gh", 6, nullptr);
+        // Free-grid footprint for the motherboard/screen (no template bay).
+        node.setProperty("label", "MOTHERBOARD", nullptr);
+        node.setProperty("gx", 2, nullptr);
+        node.setProperty("gy", 2, nullptr);
+        node.setProperty("gw", 12, nullptr);
+        node.setProperty("gh", 8, nullptr);
         proc.uiState.addChild(node, 0, nullptr);
         auto screen = juce::ValueTree("w");
         screen.setProperty("slot", -1, nullptr);
-        screen.setProperty("shellSlot", 1, nullptr);
+        screen.setProperty("shellSlot", 9000, nullptr);
         screen.setProperty("kind", "wave", nullptr);
         screen.setProperty("style", "wave", nullptr);
         screen.setProperty("label", "DISPLAY", nullptr);
         screen.setProperty("lockToBoard", 1, nullptr);
-        screen.setProperty("gx", 2, nullptr);
-        screen.setProperty("gy", 2, nullptr);
-        screen.setProperty("gw", 8, nullptr);
+        screen.setProperty("gx", 3, nullptr);
+        screen.setProperty("gy", 3, nullptr);
+        screen.setProperty("gw", 10, nullptr);
         screen.setProperty("gh", 4, nullptr);
         screen.setProperty("parent", 0, nullptr);
         proc.uiState.addChild(screen, 1, nullptr);
@@ -2798,8 +2866,8 @@ void KyotoAudioProcessorEditor::armPlacement()
     panel.armedStyle = armedStyle;
     syncPanelMouse();
     status.setText(pendingPiece != nullptr
-        ? juce::String(pendingPiece->name) + " armed (" + pendingPiece->quirk + "). Click a glowing bay."
-        : "Theme is " + juce::String(theme.name) + ". Click a glowing " + kindBox.getText() + " bay.", juce::dontSendNotification);
+        ? juce::String(pendingPiece->name) + " armed (" + pendingPiece->quirk + "). Click the free grid to place it."
+        : "Click the free grid to place " + kindBox.getText() + ". Hardware fills in under the part.", juce::dontSendNotification);
     panel.repaint();
 }
 
@@ -2826,6 +2894,7 @@ void KyotoAudioProcessorEditor::rebuildWireGraph()
 
 void KyotoAudioProcessorEditor::clearWireFrom(int widgetIndex)
 {
+    // Opens that cable and drops anything relaying through it. Does not place a part.
     if (widgetIndex < 0 || widgetIndex >= widgets.size()) return;
     captureSnapshot();
     auto n = widgets[widgetIndex]->node;
@@ -2844,8 +2913,9 @@ void KyotoAudioProcessorEditor::clearWireFrom(int widgetIndex)
         {
             auto c = proc.uiState.getChild(i);
             if (! c.hasType("w") || (int) c.getProperty("satellite", 0) != 0) continue;
+            if ((int) c.getProperty("lockToBoard", 0) != 0) continue;
             const int cb = (int) c.getProperty("shellSlot", -1);
-            if (drop.contains(cb)) continue;
+            if (cb == bay || drop.contains(cb)) continue;
             const int par = (int) c.getProperty("parent", -1);
             const int into = (int) c.getProperty("wiredInto", -1);
             if (drop.contains(par) || (dsp >= 0 && into == dsp)) { drop.add(cb); grew = true; }
@@ -2866,7 +2936,7 @@ void KyotoAudioProcessorEditor::clearWireFrom(int widgetIndex)
     rebuildWireGraph();
     rebuildCanvas();
     panel.repaint();
-    status.setText("Cut wire from " + n.getProperty("label").toString() + ". Downstream relays dropped.", juce::dontSendNotification);
+    status.setText("Cut wire from " + n.getProperty("label").toString() + ". Downstream relays dropped. No new part.", juce::dontSendNotification);
 }
 
 void KyotoAudioProcessorEditor::putWireInto(int fromWidgetIndex, int intoWidgetIndex)
@@ -2884,13 +2954,16 @@ void KyotoAudioProcessorEditor::putWireInto(int fromWidgetIndex, int intoWidgetI
         {
             if (walk == fromWidgetIndex)
             {
-                status.setText("Loop rejected. A cable cannot feed back into itself.", juce::dontSendNotification);
+                status.setText("Loop rejected.", juce::dontSendNotification);
                 return;
             }
-            const int par = (int) widgets[walk]->node.getProperty("parent", -1);
+            const int parBay = (int) widgets[walk]->node.getProperty("parent", -1);
             walk = -1;
+            if (parBay <= 0) break;
             for (int i = 0; i < widgets.size(); ++i)
-                if ((int) widgets[i]->node.getProperty("shellSlot", -1) == par) { walk = i; break; }
+                if ((int) widgets[i]->node.getProperty("shellSlot", -1) == parBay
+                    && (int) widgets[i]->node.getProperty("satellite", 0) == 0)
+                    walk = i;
         }
     }
 
@@ -2987,9 +3060,20 @@ void KyotoAudioProcessorEditor::bindDialToEffect(int shellSlot, int fxDspSlot, i
             node.setProperty("bindCtrl", juce::String(kt::wire::ctrlLabel(ctrl)).replaceCharacter(' ', '_').toLowerCase(), nullptr);
             node.setProperty("bindSuffix", suffix, nullptr);
             node.setProperty("satellite", 1, nullptr);
-            // Offset slightly so it sits "on top" of the host bay visually.
-            node.setProperty("gx", 0, nullptr);
-            node.setProperty("gy", 0, nullptr);
+            node.setProperty("ribbon", 1, nullptr);
+            int hx = 1, hy = 1;
+            for (int i = 0; i < safe->proc.uiState.getNumChildren(); ++i)
+            {
+                auto h = safe->proc.uiState.getChild(i);
+                if ((int) h.getProperty("shellSlot", -1) == shellSlot && (int) h.getProperty("satellite", 0) == 0)
+                {
+                    hx = (int) h.getProperty("gx", 0) + (int) h.getProperty("gw", 4);
+                    hy = (int) h.getProperty("gy", 0);
+                    break;
+                }
+            }
+            node.setProperty("gx", juce::jlimit(0, pb::kGridCols - 4, hx), nullptr);
+            node.setProperty("gy", juce::jlimit(0, pb::kGridRows - 4, hy), nullptr);
             node.setProperty("gw", 4, nullptr);
             node.setProperty("gh", 4, nullptr);
 
@@ -3049,40 +3133,6 @@ void KyotoAudioProcessorEditor::placeInSlot(int slot)
     int parentBay = -1;
     int parentDsp = -1;
     juce::String parentLabel = "unwired";
-    const bool feedsBoard = armedStyle == "key" || armedStyle == "sound";
-    if (feedsBoard)
-    {
-        parentBay = 0; parentDsp = 0; parentLabel = "motherboard (source)";
-    }
-    else if (! cosmetic)
-    {
-        bool anyEffect = false;
-        for (int i = 0; i < proc.uiState.getNumChildren(); ++i)
-        {
-            auto c = proc.uiState.getChild(i);
-            if (! c.hasType("w") || (int) c.getProperty("satellite", 0) != 0) continue;
-            const auto k = c.getProperty("kind").toString();
-            if (k == "board" || k == "key" || k == "sound" || k == "wave") continue;
-            if ((int) c.getProperty("slot", -1) > 0) anyEffect = true;
-        }
-        if (! anyEffect) { parentBay = 0; parentDsp = 0; parentLabel = "motherboard"; }
-        else
-        {
-            const int host = chainParentWidget();
-            if (host >= 0 && host < widgets.size())
-            {
-                auto hn = widgets[host]->node;
-                const auto hk = hn.getProperty("kind").toString();
-                if (hk != "board" && hk != "key" && hk != "sound" && hk != "wave")
-                {
-                    parentBay = (int) hn.getProperty("shellSlot", -1);
-                    parentDsp = (int) hn.getProperty("slot", -1);
-                    parentLabel = hn.getProperty("label").toString();
-                }
-            }
-            if (parentBay < 0) { parentBay = 0; parentDsp = 0; parentLabel = "motherboard"; }
-        }
-    }
     if (!cosmetic)
     {
         auto isOn = [this](int i) {
@@ -3124,6 +3174,35 @@ void KyotoAudioProcessorEditor::placeInSlot(int slot)
         node.setProperty("skin", pendingPiece->skin, nullptr);
         node.setProperty("quirk", pendingPiece->id, nullptr);
     }
+    {
+        const bool feedsBoard = kindName == "key" || kindName == "sound";
+        const bool stage = ! cosmetic && ! feedsBoard && kindName != "wave" && kindName != "board";
+        if (feedsBoard) { parentBay = 0; parentDsp = 0; parentLabel = "motherboard"; }
+        else if (stage)
+        {
+            bool any = false;
+            int bestSeries = -1;
+            for (int i = 0; i < proc.uiState.getNumChildren(); ++i)
+            {
+                auto c = proc.uiState.getChild(i);
+                if (! c.hasType("w") || (int) c.getProperty("satellite", 0) != 0) continue;
+                const auto k = c.getProperty("kind").toString();
+                if (k == "board" || k == "key" || k == "sound" || k == "wave") continue;
+                if ((int) c.getProperty("slot", -1) <= 0) continue;
+                if ((int) c.getProperty("wiredInto", -1) < 0 && (int) c.getProperty("parent", -1) < 0) continue;
+                const int series = (int) c.getProperty("series", 0);
+                if (series >= bestSeries)
+                {
+                    bestSeries = series;
+                    parentBay = (int) c.getProperty("shellSlot", -1);
+                    parentDsp = (int) c.getProperty("slot", -1);
+                    parentLabel = c.getProperty("label").toString();
+                    any = true;
+                }
+            }
+            if (! any) { parentBay = 0; parentDsp = 0; parentLabel = "motherboard"; }
+        }
+    }
     node.setProperty("series", proc.uiState.getNumChildren(), nullptr);
     node.setProperty("parent", parentBay, nullptr);
     node.setProperty("wiredInto", parentDsp, nullptr);
@@ -3157,9 +3236,190 @@ void KyotoAudioProcessorEditor::placeInSlot(int slot)
         panel.repaint();
     }
     rebuildWireGraph();
-    status.setText("Placed " + pendingLabel + " relaying from " + parentLabel + ". Plug into reroutes. Cut wire drops the downstream cable.", juce::dontSendNotification);
+    status.setText("Snapped " + pendingLabel + " into " + juce::String(shell.slots[slot].name) + ". Unwired on " + parentLabel + (cosmetic ? "." : ". Select it, right-click another part → Put wire Into. Drop a dial on an effect to bind Mix/Decay/Hz..."), juce::dontSendNotification);
 }
 
+void KyotoAudioProcessorEditor::placeAtGrid(int gx, int gy)
+{
+    // Templates / pre-allocated bays are retired. Place the armed part on the free 32x22 grid.
+    // Hardware silhouette is drawn under the part from its footprint size (see BuilderCanvas).
+    if (! placing) return;
+    captureSnapshot();
+
+    // A dial or fader dropped on an effect is a control ribbon, not another stage.
+    if ((armedStyle == "dial" || armedStyle == "slider" || armedStyle == "knob") && pendingPiece == nullptr)
+    {
+        for (int i = 0; i < proc.uiState.getNumChildren(); ++i)
+        {
+            auto host = proc.uiState.getChild(i);
+            if (! host.hasType("w") || (int) host.getProperty("satellite", 0) != 0) continue;
+            const int hx = (int) host.getProperty("gx", -1);
+            if (hx < 0) continue;
+            const int hy = (int) host.getProperty("gy", 0);
+            const int hw = juce::jmax(1, (int) host.getProperty("gw", 1));
+            const int hh = juce::jmax(1, (int) host.getProperty("gh", 1));
+            if (gx < hx || gy < hy || gx >= hx + hw || gy >= hy + hh) continue;
+            const int fxDsp = (int) host.getProperty("slot", -1);
+            const auto hk = host.getProperty("kind").toString();
+            if (fxDsp > 0 && hk != "key" && hk != "sound" && hk != "board" && hk != "wave")
+            {
+                bindDialToEffect((int) host.getProperty("shellSlot", -1), fxDsp, (int) host.getProperty("fx", 0));
+                placing = false;
+                panel.placing = false;
+                panel.hoverGx = panel.hoverGy = -1;
+                return;
+            }
+        }
+    }
+
+    const bool cosmetic = (armedStyle == "cosmetic" || armedStyle == "vent" || armedStyle == "badge"
+                           || pb::styleSlot(armedStyle) == pb::SlotKind::Cosmetic);
+    int dsp = -1;
+    if (! cosmetic)
+    {
+        auto isOn = [this](int i) {
+            auto* on = proc.apvts.getParameter("s" + juce::String(i + 1).paddedLeft('0', 2) + "on");
+            return on != nullptr && on->getValue() >= 0.5f;
+        };
+        int freeIdx = -1;
+        for (int i = 1; i < proc.slotCount(); ++i)
+            if (! isOn(i)) { freeIdx = i; break; }
+        if (freeIdx < 0) { status.setText("DSP bays are full.", juce::dontSendNotification); return; }
+        dsp = freeIdx;
+        const auto prefix = "s" + juce::String(dsp + 1).paddedLeft('0', 2);
+        const int type = pendingSpecial ? pendingSpecialType : pendingFx;
+        if (auto* param = proc.apvts.getParameter(prefix + "type"))
+            param->setValueNotifyingHost(param->convertTo0to1((float) type));
+        if (auto* on = proc.apvts.getParameter(prefix + "on"))
+            on->setValueNotifyingHost(1.f);
+        auto setValue = [this, &prefix](const juce::String& suffix, float value)
+        {
+            if (auto* param = proc.apvts.getParameter(prefix + suffix))
+                param->setValueNotifyingHost(param->convertTo0to1(value));
+        };
+        setValue("amt", 0.45f); setValue("tone", 0.5f); setValue("mot", 0.3f);
+        setValue("mix", 0.35f); setValue("shp", 0.5f);
+    }
+
+    const int gw = pb::BuilderCanvas::defaultGwFor(armedStyle);
+    const int gh = pb::BuilderCanvas::defaultGhFor(armedStyle);
+    const int cx = juce::jlimit(0, pb::kGridCols - gw, gx);
+    const int cy = juce::jlimit(0, pb::kGridRows - gh, gy);
+
+    // Virtual shellSlot: first free index so wiring menus still work without template bays.
+    int virtualSlot = 1;
+    {
+        juce::Array<int> used;
+        for (int i = 0; i < proc.uiState.getNumChildren(); ++i)
+        {
+            auto c = proc.uiState.getChild(i);
+            if (c.hasType("w")) used.add((int) c.getProperty("shellSlot", -1));
+        }
+        while (used.contains(virtualSlot)) ++virtualSlot;
+    }
+
+    auto node = juce::ValueTree("w");
+    node.setProperty("slot", dsp, nullptr);
+    node.setProperty("shellSlot", virtualSlot, nullptr);
+    const int paramId = juce::jlimit(0, kt::kControlParamCount - 1, paramBox.getSelectedId() - 1);
+    const auto paramToken = juce::String(kt::kControlParams[paramId].token);
+    node.setProperty("param", paramToken, nullptr);
+    node.setProperty("label", paramId == 0 ? pendingLabel : pendingLabel + " " + kt::kControlParams[paramId].name, nullptr);
+
+    juce::String kindName = "dial";
+    if (armedStyle == "slider" || armedStyle == "fader") kindName = "slider";
+    else if (armedStyle == "key") kindName = "key";
+    else if (armedStyle == "wave" || armedStyle == "screen") kindName = "wave";
+    else if (armedStyle == "sound") kindName = "sound";
+    else if (armedStyle == "button") kindName = "button";
+    else if (armedStyle == "stack") kindName = "stack";
+    else if (cosmetic) kindName = "cosmetic";
+    else if (armedStyle == "board") kindName = "board";
+    node.setProperty("kind", kindName, nullptr);
+    node.setProperty("style", armedStyle, nullptr);
+    if (pendingSpecial || pendingFx >= 0)
+        node.setProperty("fx", pendingSpecial ? pendingSpecialType : pendingFx, nullptr);
+    if (pendingPiece != nullptr)
+    {
+        node.setProperty("skin", pendingPiece->skin, nullptr);
+        node.setProperty("quirk", pendingPiece->id, nullptr);
+    }
+    int parentBay = -1, parentDsp = -1;
+    juce::String relay = "unwired";
+    const bool feedsBoard = kindName == "key" || kindName == "sound";
+    const bool stage = ! cosmetic && ! feedsBoard && kindName != "wave" && kindName != "board";
+    if (feedsBoard) { parentBay = 0; parentDsp = 0; relay = "motherboard"; }
+    else if (stage)
+    {
+        bool any = false;
+        if (selectedChainWidget >= 0 && selectedChainWidget < widgets.size())
+        {
+            auto hn = widgets[selectedChainWidget]->node;
+            const auto hk = hn.getProperty("kind").toString();
+            if ((int) hn.getProperty("satellite", 0) == 0 && (int) hn.getProperty("slot", -1) > 0
+                && hk != "key" && hk != "sound" && hk != "wave"
+                && (int) hn.getProperty("wiredInto", -1) >= 0)
+            {
+                parentBay = (int) hn.getProperty("shellSlot", -1);
+                parentDsp = (int) hn.getProperty("slot", -1);
+                relay = hn.getProperty("label").toString();
+                any = true;
+            }
+        }
+        if (! any)
+        {
+            int bestSeries = -1;
+            for (int i = 0; i < proc.uiState.getNumChildren(); ++i)
+            {
+                auto c = proc.uiState.getChild(i);
+                if (! c.hasType("w") || (int) c.getProperty("satellite", 0) != 0) continue;
+                const auto k = c.getProperty("kind").toString();
+                if (k == "board" || k == "key" || k == "sound" || k == "wave") continue;
+                if ((int) c.getProperty("slot", -1) <= 0) continue;
+                if ((int) c.getProperty("wiredInto", -1) < 0 && (int) c.getProperty("parent", -1) < 0) continue;
+                const int series = (int) c.getProperty("series", 0);
+                if (series >= bestSeries)
+                {
+                    bestSeries = series;
+                    parentBay = (int) c.getProperty("shellSlot", -1);
+                    parentDsp = (int) c.getProperty("slot", -1);
+                    relay = c.getProperty("label").toString();
+                    any = true;
+                }
+            }
+        }
+        if (! any) { parentBay = 0; parentDsp = 0; relay = "motherboard"; }
+    }
+    node.setProperty("series", proc.uiState.getNumChildren(), nullptr);
+    node.setProperty("parent", parentBay, nullptr);
+    node.setProperty("wiredInto", parentDsp, nullptr);
+    node.setProperty("cut", 0, nullptr);
+    node.setProperty("gx", cx, nullptr);
+    node.setProperty("gy", cy, nullptr);
+    node.setProperty("gw", gw, nullptr);
+    node.setProperty("gh", gh, nullptr);
+
+    proc.uiState.appendChild(node, nullptr);
+    placing = false;
+    pendingSpecial = false;
+    panel.placing = false;
+    panel.hoverGx = panel.hoverGy = -1;
+    syncPanelMouse();
+    rebuildCanvas();
+    ensureMotherboard();
+    if (! cosmetic && widgets.size() > 0)
+    {
+        selectedChainWidget = widgets.size() - 1;
+        for (auto* item : widgets) item->selected = false;
+        widgets[selectedChainWidget]->selected = true;
+        panel.selectedSlot = virtualSlot;
+        panel.repaint();
+    }
+    rebuildWireGraph();
+    status.setText("Placed " + pendingLabel + " relaying from " + relay
+                   + ". First effect uses the motherboard; the next relays from the previous part.",
+                   juce::dontSendNotification);
+}
 
 void KyotoAudioProcessorEditor::rebuildCanvas()
 {
@@ -3508,7 +3768,7 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
         menu.addItem(5203, "Publish");
         menu.addItem(5204, "Plugin View");
         menu.addItem(5205, "Undo");
-                menu.addItem(5207, "Clear...");
+            menu.addItem(5207, "Clear...");
         menu.addSeparator();
         menu.addItem(5999, "Guide");
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({ screenPos.x, screenPos.y, 1, 1 }),
@@ -3529,7 +3789,6 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
                 if (result == 5203) { if (token.isEmpty()) status.setText("Sign in to DreamShare first to publish.", juce::dontSendNotification); else publish(); return; }
                 if (result == 5204) { setPluginView(true); return; }
                 if (result == 5205) { undoLast(); return; }
-                if (result == 5206) { randomizeTemplate(); return; }
                 if (result == 5207) { clearCanvasBtn.triggerClick(); return; }
             });
         return;
@@ -3648,7 +3907,6 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
 
     // Machine operations — templates retired; peg shuffle + clear only.
     menu.addItem(5200, "Randomize Machine");
-    menu.addItem(5206, "Randomize Peg");
     menu.addItem(5207, "Clear...");
     menu.addItem(5205, "Undo");
     menu.addSeparator();

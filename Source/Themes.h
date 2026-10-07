@@ -123,7 +123,8 @@ inline juce::Font font(const ThemePalette& t, float size, bool bold = false)
 // without touching the builders. The value is remembered between sessions.
 inline float& dsScale()
 {
-    static float s = 1.12f;
+    // Default a touch larger so Discord/chat/threads stay readable in the VST frame.
+    static float s = 1.22f;
     return s;
 }
 
