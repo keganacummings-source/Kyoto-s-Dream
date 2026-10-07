@@ -474,7 +474,6 @@ inline juce::String styleToken(int kindId)
         case 7: return "vent";
         case 8: return "badge";
         case 9: return "rail";
-        case 10: return "visualizer";
         default: return "dial";
     }
 }
@@ -485,7 +484,7 @@ inline SlotKind styleSlot(const juce::String& style)
     if (style == "key") return SlotKind::Key;
     if (style == "screen" || style == "wave") return SlotKind::Screen;
     if (style == "vent" || style == "badge" || style == "rail") return SlotKind::Cosmetic;
-    if (style == "board" || style == "visualizer") return SlotKind::Board;
+    if (style == "board") return SlotKind::Board;
     return SlotKind::Knob;
 }
 
@@ -665,11 +664,8 @@ inline void paintShellBody(juce::Graphics& g, juce::Rectangle<float> c, const Sh
 
 
 // ---- Screens: every motherboard IS the plugin's screen. Right-click it -> Change Screen. -----------------
-inline constexpr const char* kScreenTypes[] = {
-    "Scope Glass", "Pan Field", "CRT Tube", "VU Meters", "Spectrogram", "Flatline",
-    "Radial Orbit", "Lissajous", "Peak Bars", "Waterfall", "Ring Phase", "Stereo Ribbons"
-};
-inline constexpr int kScreenTypeCount = 12;
+inline constexpr const char* kScreenTypes[] = { "Plain Glass", "Corner Brackets", "CRT Tube", "Notched Panel", "Scanline Monitor", "Round Porthole" };
+inline constexpr int kScreenTypeCount = 6;
 
 // The fine grid every part is snapped to while it is dragged by its corners, and that the
 // hidden hardware inside the shell is laid out on too. Coarse enough to feel steppy, fine
@@ -855,91 +851,6 @@ inline void paintScreenFace(juce::Graphics& g, juce::Rectangle<float> r, int typ
             for (float y = r.getY(); y < r.getBottom(); y += 3.f) g.drawHorizontalLine((int) y, r.getX(), r.getRight());
             break;
         }
-        case 6: // Radial Orbit
-        {
-            const float rad = juce::jmin(r.getWidth(), r.getHeight()) * 0.32f;
-            g.setColour(accent.withAlpha(0.35f));
-            g.drawEllipse(r.getCentreX() - rad, r.getCentreY() - rad, rad * 2.f, rad * 2.f, 1.2f);
-            float energy = 0.f;
-            if (scope != nullptr && n > 0) for (int i = 0; i < n; ++i) energy += std::abs(scope[i]);
-            energy = n > 0 ? juce::jlimit(0.f, 1.f, energy / (float) n * 2.4f) : 0.f;
-            const float a = phase;
-            g.setColour(accent);
-            g.fillEllipse(r.getCentreX() + std::cos(a) * rad * (0.35f + energy) - 4.f,
-                          r.getCentreY() + std::sin(a * 1.3f) * rad * (0.35f + energy) - 4.f, 8.f, 8.f);
-            break;
-        }
-        case 7: // Lissajous
-        {
-            juce::Path w;
-            const int steps = 96;
-            for (int i = 0; i < steps; ++i)
-            {
-                const float t = (float) i / (float) (steps - 1);
-                float vx = scope != nullptr && n > 1 ? scope[juce::jlimit(0, n - 1, (int) (t * (n - 1)))] : 0.f;
-                float vy = scope != nullptr && n > 1 ? scope[juce::jlimit(0, n - 1, (int) (std::fmod(t + 0.25f, 1.f) * (n - 1)))] : 0.f;
-                const float x = r.getCentreX() + vx * r.getWidth() * 0.36f;
-                const float y = r.getCentreY() + vy * r.getHeight() * 0.36f;
-                if (i == 0) w.startNewSubPath(x, y); else w.lineTo(x, y);
-            }
-            g.setColour(accent.withAlpha(0.85f));
-            g.strokePath(w, juce::PathStrokeType(1.4f));
-            break;
-        }
-        case 8: // Peak Bars
-        {
-            const int bars = 16;
-            const float gap = 3.f;
-            const float bw = (r.getWidth() - 10.f - gap * (bars - 1)) / bars;
-            for (int i = 0; i < bars; ++i)
-            {
-                float v = 0.f;
-                if (scope != nullptr && n > 1)
-                {
-                    const int a0 = i * n / bars, a1 = juce::jmax(a0 + 1, (i + 1) * n / bars);
-                    for (int k = a0; k < a1 && k < n; ++k) v = juce::jmax(v, std::abs(scope[k]));
-                }
-                const float h = juce::jlimit(2.f, r.getHeight() - 8.f, v * (r.getHeight() - 8.f));
-                g.setColour(accent.withAlpha(0.35f + 0.6f * v));
-                g.fillRoundedRectangle(r.getX() + 5.f + i * (bw + gap), r.getBottom() - 4.f - h, bw, h, 2.f);
-            }
-            break;
-        }
-        case 9: // Waterfall
-        {
-            const int rows = 8;
-            for (int row = 0; row < rows; ++row)
-            {
-                const float y = r.getY() + 4.f + row * ((r.getHeight() - 8.f) / rows);
-                const auto w = buildWave(0.7f - row * 0.05f, y - mid, 0.f);
-                g.setColour(accent.withAlpha(0.55f - row * 0.05f));
-                g.strokePath(w, juce::PathStrokeType(1.1f));
-            }
-            break;
-        }
-        case 10: // Ring Phase
-        {
-            const float rad = juce::jmin(r.getWidth(), r.getHeight()) * 0.28f;
-            for (int i = 0; i < 3; ++i)
-            {
-                float e = 0.f;
-                if (scope != nullptr && n > 0) e = std::abs(scope[(i * 17 + (int) (phase * 8.f)) % n]);
-                const float rr = rad * (0.45f + i * 0.28f + e * 0.15f);
-                g.setColour(accent.withAlpha(0.75f - i * 0.18f));
-                g.drawEllipse(r.getCentreX() - rr, r.getCentreY() - rr, rr * 2.f, rr * 2.f, 1.5f);
-            }
-            break;
-        }
-        case 11: // Stereo Ribbons
-        {
-            const auto a = buildWave(0.8f, -r.getHeight() * 0.12f, 0.f);
-            const auto b = buildWave(0.8f, r.getHeight() * 0.12f, 0.f);
-            g.setColour(accent.withAlpha(0.9f));
-            g.strokePath(a, juce::PathStrokeType(1.6f));
-            g.setColour(accent.withAlpha(0.45f));
-            g.strokePath(b, juce::PathStrokeType(1.6f));
-            break;
-        }
         default: // Round Porthole - calm flatline with slow blips
         {
             juce::Path w;
@@ -1039,6 +950,7 @@ public:
     kt::ThemePalette theme = kt::kThemes[0];
     std::function<void(int)> onSlot;
     std::function<void(int, juce::Point<int>)> onRightClick;
+    std::function<void(int, juce::Point<int>)> onWireRightClick; // child bay of the wire that was right-clicked
     std::function<bool(int)> occupied;
     std::function<juce::Point<float>(int)> anchor;
     std::function<int(int)> parentOf;       // bay a part is connected into (0 = motherboard)
@@ -1046,9 +958,6 @@ public:
     int selectedSlot = -1;
     int hoverSlot = -1;
     int screenType = -1; // chosen screen for the motherboard (-1 = template default)
-    bool blankCanvas = true; // no old templates: the face is a free grid
-    bool wireArmed = false;
-    std::function<void(int, int, juce::Point<int>, bool)> onGridAction; // gx, gy, screen, popup
 
     void paint(juce::Graphics& g) override
     {
@@ -1068,11 +977,7 @@ public:
         g.drawText("PLUGIN BUILDER", 18, 12, 220, 18, juce::Justification::left);
         g.setColour(kt::c(theme.muted));
         g.setFont(kt::font(theme, 11.5f));
-        g.drawText(blankCanvas
-            ? (wireArmed ? "Wire armed - left-click the part to attach, right-click to cancel"
-                         : "Blank canvas - place a visualizer first (no effect). Right-click for parts, wires, FX")
-            : juce::String(shell.name) + "  -  click a part, then right-click a free bay: the new part plugs into it",
-            18, 31, getWidth() - 36, 15, juce::Justification::left);
+        g.drawText(juce::String(shell.name) + "  -  click a part, then right-click a free bay: the new part plugs into it", 18, 31, getWidth() - 36, 15, juce::Justification::left);
 
         auto face = faceRect(bounds);
         const float radius = shellRadius(shell);
@@ -1082,14 +987,6 @@ public:
         g.fillRoundedRectangle(face, radius);
         g.setColour(accent.withAlpha(0.45f));
         g.drawRoundedRectangle(face, radius, 1.4f);
-        if (blankCanvas)
-        {
-            g.setColour(accent.withAlpha(0.10f));
-            const float cw = face.getWidth() / (float) kGridCols;
-            const float ch = face.getHeight() / (float) kGridRows;
-            for (int c = 1; c < kGridCols; ++c) g.drawVerticalLine((int) (face.getX() + c * cw), face.getY(), face.getBottom());
-            for (int r = 1; r < kGridRows; ++r) g.drawHorizontalLine((int) (face.getY() + r * ch), face.getX(), face.getRight());
-        }
 
         // Shell trim: corner screws, LED strip and a name badge - like real hardware.
         g.setColour(kt::c(theme.muted).withAlpha(0.65f));
@@ -1111,7 +1008,6 @@ public:
         g.setColour(accent.withAlpha(0.5f));
         g.drawLine(face.getRight() - 130, face.getBottom() - 9.f, face.getRight() - 20.f, face.getBottom() - 9.f, 1.2f);
 
-        if (blankCanvas) return;
         // Bay wiring: every filled bay is joined back to the motherboard, lego-style.
         for (int i = 1; i < shell.slotCount; ++i)
         {
@@ -1185,6 +1081,37 @@ public:
         }
     }
 
+    // Wire from a parent bay to a child bay: same cubic the painter strokes.
+    static juce::Point<float> wirePoint(juce::Point<float> a, juce::Point<float> b, float t)
+    {
+        const float u = 1.f - t, my = (a.y + b.y) * 0.5f;
+        const float x = u*u*u*a.x + 3.f*u*u*t*a.x + 3.f*u*t*t*b.x + t*t*t*b.x;
+        const float y = u*u*u*a.y + 3.f*u*u*t*my  + 3.f*u*t*t*my  + t*t*t*b.y;
+        return { x, y };
+    }
+
+    // Returns the child bay of the wire under pos (within 7 px), or -1.
+    int wireAt(juce::Point<float> pos) const
+    {
+        if (! occupied || ! anchor) return -1;
+        const auto& shell = kShells[juce::jlimit(0, kShellCount - 1, shellIndex)];
+        int best = -1; float bestD = 7.f;
+        for (int i = 1; i < shell.slotCount; ++i)
+        {
+            if (! occupied(i)) continue;
+            int par = parentOf ? parentOf(i) : 0;
+            if (par < 0 || par == i || par >= shell.slotCount) par = 0;
+            const auto a = anchor(par), b = anchor(i);
+            if (a.x <= 1.f || b.x <= 1.f) continue;
+            for (int k = 0; k <= 32; ++k)
+            {
+                const float d = wirePoint(a, b, (float) k / 32.f).getDistanceFrom(pos);
+                if (d < bestD) { bestD = d; best = i; }
+            }
+        }
+        return best;
+    }
+
     int slotAt(juce::Point<float> pos) const
     {
         if (! placing) return -1;
@@ -1214,17 +1141,6 @@ public:
 
     void mouseDown(const juce::MouseEvent& e) override
     {
-        if (blankCanvas && onGridAction)
-        {
-            auto face = faceRect(getLocalBounds().toFloat());
-            if (face.contains(e.position))
-            {
-                const int gx = juce::jlimit(0, kGridCols - 1, (int) ((e.position.x - face.getX()) / (face.getWidth() / (float) kGridCols)));
-                const int gy = juce::jlimit(0, kGridRows - 1, (int) ((e.position.y - face.getY()) / (face.getHeight() / (float) kGridRows)));
-                onGridAction(gx, gy, e.getScreenPosition(), e.mods.isPopupMenu());
-                return;
-            }
-        }
         if (e.mods.isPopupMenu())
         {
             const auto& shell = kShells[juce::jlimit(0, kShellCount - 1, shellIndex)];
@@ -1232,6 +1148,9 @@ public:
             int hit = -1;
             for (int i = 0; i < shell.slotCount; ++i)
                 if (slotRect(face, shell.slots[i]).contains(e.position)) { hit = i; break; }
+            // A wire under the cursor wins over empty case, but a part's own bay wins over the wire.
+            const int wire = (hit < 0 || ! (occupied && occupied(hit))) ? wireAt(e.position) : -1;
+            if (wire > 0 && onWireRightClick) { onWireRightClick(wire, e.getScreenPosition()); return; }
             if (onRightClick) onRightClick(hit, e.getScreenPosition());
             return;
         }

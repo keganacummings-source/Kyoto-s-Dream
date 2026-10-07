@@ -222,40 +222,6 @@ private:
     {
         const int shellIdx = juce::jlimit(0, pb::kShellCount - 1, editor.shellIndex);
         const auto& parts = hb::kInternals[shellIdx];
-        // Geek hardware sits under the parts the user actually placed, not a fixed template.
-        if (editor.widgets.size() > 0)
-        {
-            int drawn = 0;
-            for (int i = 0; i < editor.widgets.size() && drawn < parts.count; ++i)
-            {
-                auto* w = editor.widgets[i];
-                const int gx = (int) w->node.getProperty("gx", -1);
-                const int gy = (int) w->node.getProperty("gy", -1);
-                const int gw = juce::jmax(2, (int) w->node.getProperty("gw", 4));
-                const int gh = juce::jmax(2, (int) w->node.getProperty("gh", 4));
-                juce::Rectangle<float> r;
-                if (gx >= 0)
-                    r = { interior.getX() + interior.getWidth() * (float) gx / (float) pb::kGridCols,
-                          interior.getY() + interior.getHeight() * (float) gy / (float) pb::kGridRows,
-                          interior.getWidth() * (float) gw / (float) pb::kGridCols,
-                          interior.getHeight() * (float) gh / (float) pb::kGridRows };
-                else
-                    r = internalRect(interior, drawn);
-                const auto kind = w->node.getProperty("kind").toString();
-                int partIndex = 0;
-                if (kind == "dial" || kind == "slider") partIndex = 2;
-                else if (kind == "key" || kind == "button") partIndex = 6;
-                else if (kind == "sound") partIndex = 5;
-                else if (kind != "board") partIndex = 3;
-                partIndex = juce::jmin(partIndex, parts.count - 1);
-                hb::drawHardwarePart(g, editor.machineDesign.palette(), parts.parts[partIndex], r.reduced(2.f), animPhase, drawn == geekHot);
-                g.setColour(kt::c(editor.machineDesign.palette().text).withAlpha(0.8f));
-                g.setFont(kt::font(editor.machineDesign.palette(), 8.f, true));
-                g.drawText(w->node.getProperty("label").toString(), r.reduced(4.f).toNearestInt(), juce::Justification::centredBottom, true);
-                ++drawn;
-            }
-            return;
-        }
         for (int i = 0; i < parts.count; ++i)
             hb::drawHardwarePart(g, editor.machineDesign.palette(), parts.parts[i], internalRect(interior, i), animPhase, i == geekHot);
     }
