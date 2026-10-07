@@ -30,7 +30,7 @@ public:
 
     void paint(juce::Graphics& g) override
     {
-        const auto& theme = editor.theme;
+        const auto& theme = editor.machineDesign.palette();
         const int shellIdx = juce::jlimit(0, pb::kShellCount - 1, editor.shellIndex);
         const auto& shell = pb::kShells[shellIdx];
         const auto accent = kt::c(theme.accent);
@@ -213,7 +213,7 @@ private:
         const int shellIdx = juce::jlimit(0, pb::kShellCount - 1, editor.shellIndex);
         const auto& parts = hb::kInternals[shellIdx];
         for (int i = 0; i < parts.count; ++i)
-            hb::drawHardwarePart(g, editor.theme, parts.parts[i], hb::partRect(interior, parts.parts[i]), animPhase, i == geekHot);
+            hb::drawHardwarePart(g, editor.machineDesign.palette(), parts.parts[i], hb::partRect(interior, parts.parts[i]), animPhase, i == geekHot);
     }
 
     void punchHole(juce::Graphics& g, juce::Rectangle<float> interior, float cx, float cy, float r, juce::Colour accent) const
@@ -305,7 +305,7 @@ private:
 
     void drawTooltip(juce::Graphics& g, juce::Rectangle<float> interior, int partIndex, juce::Rectangle<float> partRect) const
     {
-        const auto& theme = editor.theme;
+        const auto& theme = editor.machineDesign.palette();
         const auto accent = kt::c(theme.accent);
         const int shellIdx = juce::jlimit(0, pb::kShellCount - 1, editor.shellIndex);
         const auto& part = hb::kInternals[shellIdx].parts[partIndex];
@@ -353,7 +353,7 @@ private:
             else targets.add(centre);
         }
         if (! haveBoard) return;
-        const auto accent = kt::c(editor.theme.accent);
+        const auto accent = kt::c(editor.machineDesign.palette().accent);
         for (auto& to : targets)
         {
             juce::Path wire;
@@ -368,7 +368,7 @@ private:
 
     void drawPlacedParts(juce::Graphics& g, juce::Rectangle<float> face, const pb::Shell& shell) const
     {
-        const auto& theme = editor.theme;
+        const auto& theme = editor.machineDesign.palette();
         const auto accent = kt::c(theme.accent);
         const auto ink = kt::c(theme.text);
         const auto muted = kt::c(theme.muted);

@@ -78,24 +78,31 @@ class SocialRail : public juce::Component
 {
 public:
     struct Bubble { juce::String id, user, text, themeId; };
-    struct Person { juce::String name, detail, themeId; bool online = false; };
+    struct Person { juce::String name, detail, themeId, kind, requestId; bool online = false; };
+
+    std::function<void(const Bubble&, juce::Point<int>)> onBubbleMenu;
+    std::function<void(const Person&)> onPersonClick;
+    std::function<void(const Person&, juce::Point<int>)> onPersonMenu;
 
     void setBubbles(const juce::Array<Bubble>& next) { bubbles = next; syncSize(); }
     void setPeople(const juce::Array<Person>& next) { people = next; syncSize(); }
     void setMode(int next) { mode = next; syncSize(); }
     void setPhase(float next) { phase = next; repaint(); }
     void setHostTheme(const kt::ThemePalette& t) { host = t; repaint(); }
-    int contentHeight() const { return juce::jmax(140, mode == 0 ? bubbles.size() * 74 + 18 : people.size() * 48 + 18); }
-
+    void setShowDirectory(bool on) { showDirectory = on; syncSize(); }
+    int contentHeight() const;
     void paint(juce::Graphics& g) override;
+    void mouseDown(const juce::MouseEvent& e) override;
 
 private:
     void syncSize() { setSize(juce::jmax(220, getWidth()), contentHeight()); repaint(); }
+    int rowAt(juce::Point<int> pos, Bubble* bubble, Person* person) const;
     juce::Array<Bubble> bubbles;
     juce::Array<Person> people;
     kt::ThemePalette host = kt::kThemes[0];
     int mode = 0;
     float phase = 0.f;
+    bool showDirectory = false;
 };
 
 // Full-screen viewer surface for Pluggin mode. Defined in PluginViewScreen.h; it installs
@@ -159,6 +166,23 @@ private:
     void setRailMode(int mode);
     void rebuildCenter();
     void rebuildThreadBoard();
+    void showCatalogCardMenu(const juce::String& id, const juce::String& name, const juce::String& author, juce::Point<int> screenPos);
+    void approveCatalogId(const juce::String& id);
+    void denyCatalogId(const juce::String& id);
+    void tagCatalogId(const juce::String& id, const juce::String& tags);
+    void refreshMyModules();
+    void refreshPending();
+    void refreshSocial();
+    void openWavRequest(const juce::String& name);
+    void openDirectMessage(const juce::String& name);
+    void showPersonMenu(const SocialRail::Person& person, juce::Point<int> screenPos);
+    void showBubbleMenu(const SocialRail::Bubble& bubble, juce::Point<int> screenPos);
+    void openThread(const juce::String& id);
+    void closeThread();
+    void postThreadComment(const juce::String& text);
+    void reactTo(const juce::String& kind, const juce::String& id, const juce::String& emoji);
+    void rebuildThreadDetail();
+    float scaledFont(float baseSize) const;
     void addSpecialChainStep(int type, const juce::String& name);
     void refreshEffectBox();
     void updateFxControls();
@@ -230,12 +254,17 @@ private:
     juce::Component threadHolder;
     juce::Viewport chatView;
     SocialRail socialRail;
-    juce::TextButton catalogModeBtn { "CATALOG" }, threadsModeBtn { "THREADS" }, railChatBtn { "CHAT" }, railOnlineBtn { "ONLINE" };
-    int centerMode = 0;
+    juce::TextButton catalogModeBtn { "CATALOG" }, threadsModeBtn { "THREADS" }, railChatBtn { "CHAT" }, railOnlineBtn { "SOCIALS" };
+    juce::TextButton pluginsTabBtn { "PLUGINS" }, effectsTabBtn { "EFFECTS" }, myPluginsBtn { "MY PLUGINS" }, pendingBtn { "PENDING" };
+    juce::TextEditor tagSearchBox;
+    int centerMode = 0; // 0=community plugins, 1=effects, 2=my plugins, 3=threads, 4=pending
     int railMode = 0;
     bool scrollChatOnRefresh = true;
+    bool threadOpen = false;
     juce::String selectedThreadId;
-    struct ThreadItem { juce::String id, user, title, text, themeId; int comments = 0; };
+    struct ThreadComment { juce::String id, user, text, themeId; };
+    struct ThreadItem { juce::String id, user, title, text, themeId; int comments = 0; juce::Array<ThreadComment> commentList; };
+    juce::TextButton threadBackBtn { "< THREADS" }, threadReactBtn { "REACT" }, threadShareFxBtn { "SHARE FX" }, threadSharePluginBtn { "SHARE PLUGIN" };
     juce::Array<ThreadItem> threads;
     juce::OwnedArray<juce::TextButton> feedEffectButtons;
 
@@ -267,7 +296,7 @@ private:
 
     friend class PluginViewScreen;
 
-    struct CatalogItem { juce::String id, name, face, author; };
+    struct CatalogItem { juce::String id, name, face, author, status, tags; };
     juce::String selectedCatalogId;
     juce::Array<CatalogItem> catalog;
     std::vector<EditorSnapshot> undoStack;

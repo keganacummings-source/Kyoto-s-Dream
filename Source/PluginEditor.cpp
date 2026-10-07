@@ -599,20 +599,11 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     dmBtn.onClick = [this] { chatUtility("dm_list"); };
     adminDeleteBtn.onClick = [this] { if (selectedCatalogId.isNotEmpty()) deleteCatalogId(selectedCatalogId); };
     utilityGoBtn.onClick = [this] {
-        static const char* actions[] = {
-            "chat_list", "list_threads", "social_list", "dm_list", "dm_send",
-            "friend_request", "friend_accept", "friend_decline", "friend_remove",
-            "wav_request", "react_heart", "chat_delete", "chat_clear", "presence",
-            "create_thread", "comment"
-        };
-        if (centerMode == 1 && railMode == 0)
+        if (threadOpen)
         {
-            if (selectedThreadId.isNotEmpty()) utilityBox.setText(selectedThreadId, juce::dontSendNotification);
-            chatUtility("comment");
+            postThreadComment(utilityBox.getText());
             return;
         }
-        const int index = utilityActionBox.getSelectedId() - 1;
-        if (index >= 0 && index < 16) chatUtility(actions[index]);
     };
 
     addBtn.onClick = [this] { armPlacement(); };
@@ -620,7 +611,7 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     chainUndoBtn.onClick = [this] { undoLast(); };
     chainBreakBtn.onClick = [this] { pendingSpecial = true; pendingSpecialType = KyotoAudioProcessor::kBreakType; pendingLabel = "CHAIN BREAK"; armedStyle = "dial"; placing = true; status.setText("Break is a knob part - click a glowing knob bay.", juce::dontSendNotification); panel.placing = true; panel.armedStyle = armedStyle; syncPanelMouse(); panel.repaint(); };
     chainMixBtn.onClick = [this] { pendingSpecial = true; pendingSpecialType = KyotoAudioProcessor::kMixType; pendingLabel = "MASTER MIX"; armedStyle = "fader"; placing = true; status.setText("Mix is a fader part - click a glowing fader bay.", juce::dontSendNotification); panel.placing = true; panel.armedStyle = armedStyle; syncPanelMouse(); panel.repaint(); };
-    saveBtn.onClick = [this] { saveLocal(); };
+    saveBtn.onClick = [this] { saveLocal(); publish(); };
     upBtn.onClick = [this] { publish(); };
     wavBtn.onClick = [this] { loadWav(); };
 
@@ -640,7 +631,7 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
         selectFxStep(fxStack.getNumChildren() - 1);
         stackLabel.setText("Stack " + juce::String(fxStack.getNumChildren()) + " / 16  -  custom effect lab", juce::dontSendNotification);
     };
-    fxSaveBtn.onClick = [this] { saveEffect(); };
+    fxSaveBtn.onClick = [this] { saveEffect(); publishEffect(); };
     fxUpBtn.onClick = [this] { publishEffect(); };
     fxShareChatBtn.onClick = [this] { shareEffectToChat(); };
     fxShareThreadBtn.onClick = [this] { shareEffectToThread(); };
@@ -686,6 +677,8 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     addAndMakeVisible(utilityActionBox); addAndMakeVisible(utilityGoBtn);
     addAndMakeVisible(chatRefreshBtn); addAndMakeVisible(threadsBtn); addAndMakeVisible(socialBtn); addAndMakeVisible(dmBtn); addAndMakeVisible(adminDeleteBtn);
     addAndMakeVisible(catalogModeBtn); addAndMakeVisible(threadsModeBtn); addAndMakeVisible(railChatBtn); addAndMakeVisible(railOnlineBtn);
+    addAndMakeVisible(threadBackBtn); addAndMakeVisible(threadReactBtn); addAndMakeVisible(threadShareFxBtn); addAndMakeVisible(threadSharePluginBtn);
+    addAndMakeVisible(pluginsTabBtn); addAndMakeVisible(effectsTabBtn); addAndMakeVisible(myPluginsBtn); addAndMakeVisible(pendingBtn); addAndMakeVisible(tagSearchBox);
     addAndMakeVisible(themeBox);
     addAndMakeVisible(catalogView);
     addAndMakeVisible(chatView);
@@ -710,7 +703,7 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     sendBtn.setTooltip("Send chat message (Enter also sends)");
     feedBtn.setTooltip("Refresh the feed");
     wavBtn.setTooltip("Load a WAV file onto the chain");
-    saveBtn.setTooltip("Save this build locally");
+    saveBtn.setTooltip("Save and auto-upload to DreamShare (pending admin approval)");
     upBtn.setTooltip("Publish this build to the catalog");
     addBtn.setTooltip("Place the selected widget");
     chainUndoBtn.setTooltip("Undo the last builder step");
@@ -821,13 +814,31 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     chatView.setViewedComponent(&socialRail, false);
     chatView.setScrollBarsShown(true, false);
     catalogModeBtn.onClick = [this] { setCenterMode(0); };
-    threadsModeBtn.onClick = [this] { setCenterMode(1); refreshFeed(); };
+    threadsModeBtn.onClick = [this] { setCenterMode(3); refreshFeed(); };
     railChatBtn.onClick = [this] { setRailMode(0); refreshFeed(); };
-    railOnlineBtn.onClick = [this] { setRailMode(1); refreshFeed(); chatUtility("social_list"); };
+    railOnlineBtn.onClick = [this] { setRailMode(1); refreshSocial(); };
+    threadBackBtn.onClick = [this] { closeThread(); };
+    threadReactBtn.onClick = [this] { if (selectedThreadId.isNotEmpty()) reactTo("thread", selectedThreadId, "heart"); };
+    threadShareFxBtn.onClick = [this] { const auto text = effectShareText(); if (text.isEmpty()) status.setText("Publish an effect before sharing it.", juce::dontSendNotification); else postThreadComment(text); };
+    threadSharePluginBtn.onClick = [this] { const auto id = selectedCatalogId; if (id.isEmpty()) status.setText("Open a plugin from the catalog first.", juce::dontSendNotification); else postThreadComment("[KYOTRIPPAH_PLUGIN:" + id + "] " + nameBox.getText()); };
+    socialRail.onBubbleMenu = [this](const SocialRail::Bubble& b, juce::Point<int> pos) { showBubbleMenu(b, pos); };
+    socialRail.onPersonClick = [this](const SocialRail::Person& person) { openWavRequest(person.name); };
+    socialRail.onPersonMenu = [this](const SocialRail::Person& person, juce::Point<int> pos) { showPersonMenu(person, pos); };
+    socialRail.setShowDirectory(isAdmin);
+    pluginsTabBtn.onClick = [this] { setCenterMode(0); refreshCatalog(); };
+    effectsTabBtn.onClick = [this] { setCenterMode(1); refreshCatalog(); };
+    myPluginsBtn.onClick = [this] { setCenterMode(2); refreshMyModules(); };
+    pendingBtn.onClick = [this] { setCenterMode(4); refreshPending(); };
+    tagSearchBox.onTextChange = [this] { refreshCatalog(); };
+    tagSearchBox.setTextToShowWhenEmpty("Search tags...", juce::Colour(0x80808080));
     catalogModeBtn.setClickingTogglesState(true);
     threadsModeBtn.setClickingTogglesState(true);
     railChatBtn.setClickingTogglesState(true);
     railOnlineBtn.setClickingTogglesState(true);
+    pluginsTabBtn.setClickingTogglesState(true);
+    effectsTabBtn.setClickingTogglesState(true);
+    myPluginsBtn.setClickingTogglesState(true);
+    pendingBtn.setClickingTogglesState(true);
 
     auto session = juce::JSON::parse(sessionFile().loadFileAsString());
     if (auto* o = session.getDynamicObject())
@@ -1052,6 +1063,22 @@ void drawThemeField(juce::Graphics& g, const kt::ThemePalette& t, juce::Rectangl
 }
 }
 
+int SocialRail::contentHeight() const
+{
+    if (mode == 0) return juce::jmax(140, bubbles.size() * 74 + 18);
+    int h = 12;
+    auto count = [this](const juce::String& kind) {
+        int n = 0; for (const auto& person : people) if (person.kind == kind) ++n; return n;
+    };
+    const int invites = count("invite");
+    const int friends = count("friend");
+    const int active = count("active");
+    if (invites > 0) h += 22 + invites * 48;
+    h += 22 + juce::jmax(1, friends) * 52;
+    if (showDirectory) h += 22 + juce::jmax(1, active) * 44;
+    return juce::jmax(180, h);
+}
+
 void SocialRail::paint(juce::Graphics& g)
 {
     g.fillAll(kt::c(host.bg).withAlpha(0.2f));
@@ -1061,7 +1088,7 @@ void SocialRail::paint(juce::Graphics& g)
         {
             g.setColour(kt::c(host.muted));
             g.setFont(kt::font(host, 11.f));
-            g.drawText("Live chat stays on this rail.", 12, 16, getWidth() - 24, 20, juce::Justification::left);
+            g.drawText("Live chat stays on this rail. Right-click a message.", 12, 16, getWidth() - 24, 20, juce::Justification::left);
             return;
         }
         int y = 8;
@@ -1082,63 +1109,145 @@ void SocialRail::paint(juce::Graphics& g)
             g.drawFittedText(m.text, juce::Rectangle<int>((int) card.getX() + 12, (int) card.getY() + 24, (int) card.getWidth() - 20, 36), juce::Justification::topLeft, 2);
             y += 74;
         }
+        return;
     }
-    else
+    auto drawHeader = [&](int& y, const juce::String& title) {
+        g.setColour(kt::c(host.accent));
+        g.setFont(kt::font(host, 10.f, true));
+        g.drawText(title, 12, y, getWidth() - 24, 16, juce::Justification::left);
+        y += 20;
+    };
+    auto drawPerson = [&](int& y, const Person& person, int h) {
+        const auto pal = kt::themeById(person.themeId.isEmpty() ? host.id : person.themeId);
+        auto card = juce::Rectangle<float>(8.f, (float) y, (float) getWidth() - 16.f, (float) h - 6.f);
+        g.setColour(kt::c(pal.panel));
+        g.fillRoundedRectangle(card, 8.f);
+        g.setColour(person.online ? kt::c(pal.accent) : kt::c(pal.muted));
+        g.fillEllipse(card.getX() + 10, card.getY() + 12, 10, 10);
+        g.setColour(kt::c(pal.accent));
+        g.setFont(kt::font(pal, 11.f, true));
+        g.drawText(person.name, card.getX() + 28, card.getY() + 4, card.getWidth() - 36, 16, juce::Justification::left);
+        g.setColour(kt::c(pal.muted));
+        g.setFont(kt::font(pal, 9.f));
+        g.drawText(person.detail, card.getX() + 28, card.getY() + 20, card.getWidth() - 36, 14, juce::Justification::left);
+        y += h;
+    };
+    int y = 8;
+    bool any = false;
+    drawHeader(y, "INVITES");
+    for (const auto& person : people) if (person.kind == "invite") { drawPerson(y, person, 48); any = true; }
+    if (! any) { g.setColour(kt::c(host.muted)); g.setFont(kt::font(host, 10.f)); g.drawText("No friend invites.", 12, y, getWidth() - 24, 16, juce::Justification::left); y += 22; }
+    any = false;
+    drawHeader(y, "FRIENDS");
+    for (const auto& person : people) if (person.kind == "friend") { drawPerson(y, person, 52); any = true; }
+    if (! any) { g.setColour(kt::c(host.muted)); g.setFont(kt::font(host, 10.f)); g.drawText("No friends yet. Right-click a name to add one.", 12, y, getWidth() - 24, 16, juce::Justification::left); y += 22; }
+    if (showDirectory)
     {
-        if (people.isEmpty())
-        {
-            g.setColour(kt::c(host.muted));
-            g.setFont(kt::font(host, 11.f));
-            g.drawText("No friends online yet.", 12, 16, getWidth() - 24, 20, juce::Justification::left);
-            return;
-        }
-        int y = 8;
-        for (const auto& person : people)
-        {
-            const auto pal = kt::themeById(person.themeId.isEmpty() ? host.id : person.themeId);
-            auto card = juce::Rectangle<float>(8.f, (float) y, (float) getWidth() - 16.f, 40.f);
-            g.setColour(kt::c(pal.panel));
-            g.fillRoundedRectangle(card, 8.f);
-            g.setColour(person.online ? kt::c(pal.accent) : kt::c(pal.muted));
-            g.fillEllipse(card.getX() + 10, card.getY() + 14, 10, 10);
-            g.setColour(kt::c(pal.accent));
-            g.setFont(kt::font(pal, 11.f, true));
-            g.drawText(person.name, card.getX() + 28, card.getY() + 4, card.getWidth() - 36, 16, juce::Justification::left);
-            g.setColour(kt::c(pal.muted));
-            g.setFont(kt::font(pal, 9.f));
-            g.drawText(person.detail, card.getX() + 28, card.getY() + 20, card.getWidth() - 36, 14, juce::Justification::left);
-            y += 48;
-        }
+        drawHeader(y, "ALL ACTIVE");
+        bool saw = false;
+        for (const auto& person : people) if (person.kind == "active") { drawPerson(y, person, 44); saw = true; }
+        if (! saw) { g.setColour(kt::c(host.muted)); g.setFont(kt::font(host, 10.f)); g.drawText("Nobody else is active.", 12, y, getWidth() - 24, 16, juce::Justification::left); }
     }
+}
+
+void SocialRail::mouseDown(const juce::MouseEvent& e)
+{
+    auto hitBubble = [this](int y, Bubble& out) {
+        int row = 8;
+        for (const auto& m : bubbles)
+        {
+            if (y >= row && y < row + 66) { out = m; return true; }
+            row += 74;
+        }
+        return false;
+    };
+    auto hitPerson = [this](int y, Person& out) {
+        int row = 8;
+        auto section = [&](const juce::String& kind, int h, bool always) {
+            row += 20;
+            int n = 0;
+            for (const auto& person : people) if (person.kind == kind) ++n;
+            if (n == 0) { row += always ? 22 : 0; return false; }
+            for (const auto& person : people) if (person.kind == kind)
+            {
+                if (y >= row && y < row + h - 6) { out = person; return true; }
+                row += h;
+            }
+            return false;
+        };
+        if (section("invite", 48, true)) return true;
+        if (section("friend", 52, true)) return true;
+        if (showDirectory && section("active", 44, true)) return true;
+        return false;
+    };
+    if (mode == 0)
+    {
+        Bubble bubble;
+        if (! hitBubble(e.y, bubble)) return;
+        if (e.mods.isPopupMenu() && onBubbleMenu) onBubbleMenu(bubble, e.getScreenPosition());
+        return;
+    }
+    Person person;
+    if (! hitPerson(e.y, person)) return;
+    if (e.mods.isPopupMenu()) { if (onPersonMenu) onPersonMenu(person, e.getScreenPosition()); }
+    else if (onPersonClick) onPersonClick(person);
 }
 
 struct BoardCard : public juce::Component
 {
-    juce::String title, meta, body, themeId;
+    juce::String title, meta, body, themeId, status, tags;
     std::function<void()> onOpen;
+    std::function<void(juce::Point<int>)> onContextMenu;
     void paint(juce::Graphics& g) override
     {
         const auto pal = kt::themeById(themeId.isEmpty() ? "trippah" : themeId);
         auto r = getLocalBounds().toFloat().reduced(1.f);
         g.setColour(kt::c(pal.panel));
         g.fillRoundedRectangle(r, 10.f);
+        // Theme-aligned accent bar
         g.setColour(kt::c(pal.accent).withAlpha(0.9f));
         g.fillRoundedRectangle(r.getX(), r.getY(), 4.f, r.getHeight(), 2.f);
         g.setColour(kt::c(pal.accent).withAlpha(0.55f));
         g.drawRoundedRectangle(r, 10.f, 1.f);
+        // Status badge
+        if (status == "pending" || status == "denied")
+        {
+            const juce::String badge = status == "pending" ? "PENDING" : "DENIED";
+            const juce::Colour badgeCol = status == "pending" ? juce::Colour(0xffe0a020) : juce::Colour(0xffcc3030);
+            auto br = juce::Rectangle<float>(r.getRight() - 70.f, r.getY() + 4.f, 62.f, 14.f);
+            g.setColour(badgeCol.withAlpha(0.85f));
+            g.fillRoundedRectangle(br, 4.f);
+            g.setColour(juce::Colours::white);
+            g.setFont(juce::Font(8.f, juce::Font::bold));
+            g.drawText(badge, br, juce::Justification::centred);
+        }
         g.setColour(kt::c(pal.accent));
         g.setFont(kt::font(pal, 12.f, true));
-        g.drawText(title, 14, 8, getWidth() - 22, 18, juce::Justification::left);
+        g.drawText(title, 14, 8, getWidth() - (status.isNotEmpty() ? 80 : 22), 18, juce::Justification::left);
         g.setColour(kt::c(pal.muted));
         g.setFont(kt::font(pal, 9.f));
         g.drawText(meta, 14, 28, getWidth() - 22, 14, juce::Justification::left);
+        // Tags
+        if (tags.isNotEmpty())
+        {
+            g.setColour(kt::c(pal.accent).withAlpha(0.7f));
+            g.setFont(kt::font(pal, 8.f));
+            g.drawText("#" + tags.replace(",", " #"), 14, 42, getWidth() - 22, 12, juce::Justification::left);
+        }
         g.setColour(kt::c(pal.text));
         g.setFont(kt::font(pal, 10.f));
-        g.drawFittedText(body, juce::Rectangle<int>(14, 46, getWidth() - 24, getHeight() - 54), juce::Justification::topLeft, 2);
+        g.drawFittedText(body, juce::Rectangle<int>(14, tags.isNotEmpty() ? 54 : 46, getWidth() - 24, getHeight() - (tags.isNotEmpty() ? 62 : 54)), juce::Justification::topLeft, 2);
     }
     void mouseUp(const juce::MouseEvent& e) override
     {
-        if (onOpen && ! e.mouseWasDraggedSinceMouseDown()) onOpen();
+        if (e.mods.isPopupMenu() && onContextMenu)
+            onContextMenu(e.getScreenPosition());
+        else if (onOpen && ! e.mouseWasDraggedSinceMouseDown()) onOpen();
+    }
+    void mouseDown(const juce::MouseEvent& e) override
+    {
+        if (e.mods.isPopupMenu() && onContextMenu)
+            onContextMenu(e.getScreenPosition());
     }
 };
 
@@ -1188,7 +1297,7 @@ void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
         g.drawText("DREAMSHARE HOME", hero.getX()+18, hero.getY()+12, 300, 26, juce::Justification::left);
         g.setColour(kt::c(theme.text));
         g.setFont(kt::font(theme, 13.f, false));
-        g.drawFittedText("Catalog in the center. Threads on their own tab. Chat stays on the side rail.", juce::Rectangle<float>(hero.getX()+18, hero.getY()+42, juce::jmax(120.f, hero.getWidth()-250.f), 28.f).toNearestInt(), juce::Justification::topLeft, 2);
+        g.drawFittedText("Chat on the left. Community plugins and effects on the right. Search by tags.", juce::Rectangle<float>(hero.getX()+18, hero.getY()+42, juce::jmax(120.f, hero.getWidth()-250.f), 28.f).toNearestInt(), juce::Justification::topLeft, 2);
         g.setColour(kt::c(theme.accent));
         g.setFont(kt::font(theme, 12.f, true));
         g.drawText("LIVE  -  " + (account.isEmpty() ? juce::String("SIGNED IN") : account.toUpperCase()), hero.getRight()-220, hero.getY()+18, 200, 18, juce::Justification::right);
@@ -1206,8 +1315,9 @@ void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
         g.fillRoundedRectangle(catalogCard, 10.f);
         g.setColour(kt::c(theme.accent));
         g.setFont(kt::font(theme, 12.f, true));
-        g.drawText(railMode == 0 ? "SIDE CHAT" : "FRIENDS / ONLINE", chatCard.getX()+12, chatCard.getY()+6, 180, 18, juce::Justification::left);
-        g.drawText(centerMode == 0 ? "CATALOG BROWSER" : "THREADS", catalogCard.getX()+12, catalogCard.getY()+6, 200, 18, juce::Justification::left);
+        g.drawText(railMode == 0 ? "DREAM CHAT" : "FRIENDS / ONLINE", chatCard.getX()+12, chatCard.getY()+6, 180, 18, juce::Justification::left);
+        juce::String centerLabel = centerMode == 0 ? "COMMUNITY PLUGINS" : centerMode == 1 ? "COMMUNITY EFFECTS" : centerMode == 2 ? "MY PLUGINS" : centerMode == 4 ? "PENDING APPROVAL" : "THREADS";
+        g.drawText(centerLabel, catalogCard.getX()+12, catalogCard.getY()+6, 200, 18, juce::Justification::left);
     }
 
     if (tab == 1)
@@ -1327,21 +1437,29 @@ void KyotoAudioProcessorEditor::mouseDown(const juce::MouseEvent& e)
 
 void KyotoAudioProcessorEditor::showTab(int next)
 {
-    const bool openingChat = loggedIn && next == 0 && tab != 0 && railMode == 0;
-    if (openingChat) scrollChatOnRefresh = true;
+    const bool openingChat = false;
+    juce::ignoreUnused(openingChat);
     tab = loggedIn ? next : 0;
     const bool share = tab == 0;
     const bool chain = tab == 1;
     const bool fx = tab == 2;
 
     logBox.setVisible(false);
-    utilityBox.setVisible(share && loggedIn && (railMode == 1 || centerMode == 1));
-    utilityActionBox.setVisible(share && loggedIn && railMode == 1);
-    utilityGoBtn.setVisible(share && loggedIn && (railMode == 1 || centerMode == 1));
+    utilityBox.setVisible(share && loggedIn && threadOpen);
+    utilityActionBox.setVisible(false);
+    utilityGoBtn.setVisible(share && loggedIn && threadOpen);
+    threadBackBtn.setVisible(share && loggedIn && threadOpen);
+    threadReactBtn.setVisible(share && loggedIn && threadOpen);
+    threadShareFxBtn.setVisible(share && loggedIn && threadOpen);
+    threadSharePluginBtn.setVisible(share && loggedIn && threadOpen);
     chatRefreshBtn.setVisible(false); threadsBtn.setVisible(false); socialBtn.setVisible(false); dmBtn.setVisible(false);
-    catalogModeBtn.setVisible(share && loggedIn); threadsModeBtn.setVisible(share && loggedIn);
+    catalogModeBtn.setVisible(false); threadsModeBtn.setVisible(share && loggedIn);
+    pluginsTabBtn.setVisible(share && loggedIn); effectsTabBtn.setVisible(share && loggedIn); myPluginsBtn.setVisible(share && loggedIn);
+    pendingBtn.setVisible(share && loggedIn && isAdmin);
+    tagSearchBox.setVisible(share && loggedIn && (centerMode == 0 || centerMode == 1));
     railChatBtn.setVisible(share && loggedIn); railOnlineBtn.setVisible(share && loggedIn);
-    adminDeleteBtn.setVisible(share && loggedIn && isAdmin); msgBox.setVisible(share && loggedIn && railMode == 0); sendBtn.setVisible(share && loggedIn && railMode == 0); feedBtn.setVisible(share && loggedIn);
+    adminDeleteBtn.setVisible(false); // replaced by right-click context menu
+    msgBox.setVisible(share && loggedIn && railMode == 0); sendBtn.setVisible(share && loggedIn && railMode == 0); feedBtn.setVisible(share && loggedIn);
     themeBox.setVisible(share && loggedIn); // global UI theme only on DreamShare home
     const bool wizard = chain && builderWizardStep > 0;
     // Step 1 = shell template, Step 2 = playground theme; both stay available after the guide.
@@ -1366,17 +1484,19 @@ void KyotoAudioProcessorEditor::showTab(int next)
     wizardNextBtn.setButtonText(builderWizardStep == 4 ? "BUILD >" : builderWizardStep == 3 ? "PLACE A PART >" : "NEXT >");
     chainLevels.setVisible(builderReady && ! pluginView);
     addBtn.setVisible(builderReady); chainBreakBtn.setVisible(builderReady); chainMixBtn.setVisible(builderReady); chainRemoveBtn.setVisible(builderReady); chainUndoBtn.setVisible(builderReady); randomTemplateBtn.setVisible(builderReady);
-    nameBox.setVisible(builderReady); presetBox.setVisible(builderReady); saveBtn.setVisible(builderReady); upBtn.setVisible(builderReady); kindBox.setVisible(builderReady); paramBox.setVisible(builderReady); pieceBox.setVisible(builderReady); wavBtn.setVisible(builderReady);
+    nameBox.setVisible(builderReady); presetBox.setVisible(builderReady); saveBtn.setVisible(builderReady); upBtn.setVisible(false); kindBox.setVisible(builderReady); paramBox.setVisible(builderReady); pieceBox.setVisible(builderReady); wavBtn.setVisible(builderReady);
     gridStyleBox.setVisible(false); effectBox.setVisible(false);
     newMachineBtn.setVisible(share && loggedIn && !pluginView); randomMachineBtn.setVisible(share && loggedIn && !pluginView);
 
-    effectNameBox.setVisible(fx); fxAddBtn.setVisible(fx); fxSaveBtn.setVisible(fx); fxUpBtn.setVisible(fx); fxShareChatBtn.setVisible(fx); fxShareThreadBtn.setVisible(fx); fxRemoveBtn.setVisible(fx); fxUndoBtn.setVisible(fx);
+    effectNameBox.setVisible(fx); fxAddBtn.setVisible(fx); fxSaveBtn.setVisible(fx); fxUpBtn.setVisible(false); fxShareChatBtn.setVisible(fx); fxShareThreadBtn.setVisible(fx); fxRemoveBtn.setVisible(fx); fxUndoBtn.setVisible(fx);
     fxAmount.setVisible(fx); fxTone.setVisible(fx); fxMotion.setVisible(fx); fxMix.setVisible(fx); fxShape.setVisible(fx);
     fxAmountLabel.setVisible(fx); fxToneLabel.setVisible(fx); fxMotionLabel.setVisible(fx); fxMixLabel.setVisible(fx); fxShapeLabel.setVisible(fx);
     fxBreakBtn.setVisible(fx); fxMixBtn.setVisible(fx); fxRandomBtn.setVisible(fx); fxClearBtn.setVisible(fx); stackLabel.setVisible(fx);
 
     shareBtn.setToggleState(share, juce::dontSendNotification); chainBtn.setToggleState(chain, juce::dontSendNotification); fxBtn.setToggleState(fx, juce::dontSendNotification);
-    catalogModeBtn.setToggleState(centerMode == 0, juce::dontSendNotification); threadsModeBtn.setToggleState(centerMode == 1, juce::dontSendNotification);
+    catalogModeBtn.setToggleState(centerMode == 0, juce::dontSendNotification); threadsModeBtn.setToggleState(centerMode == 3, juce::dontSendNotification);
+    pluginsTabBtn.setToggleState(centerMode == 0, juce::dontSendNotification); effectsTabBtn.setToggleState(centerMode == 1, juce::dontSendNotification);
+    myPluginsBtn.setToggleState(centerMode == 2, juce::dontSendNotification); pendingBtn.setToggleState(centerMode == 4, juce::dontSendNotification);
     railChatBtn.setToggleState(railMode == 0, juce::dontSendNotification); railOnlineBtn.setToggleState(railMode == 1, juce::dontSendNotification);
     pluginViewBtn.setVisible(!pluginView && loggedIn); pluginBackBtn.setVisible(pluginView);
     if (! chain) { newMachineBtn.setVisible(false); randomMachineBtn.setVisible(false); }
@@ -1432,22 +1552,37 @@ void KyotoAudioProcessorEditor::resized()
         auto top = area.removeFromTop(36);
         themeBox.setBounds(top.removeFromLeft(150)); top.removeFromLeft(8);
         proToggleBtn.setBounds(top.removeFromLeft(110)); top.removeFromLeft(8);
-        catalogModeBtn.setBounds(top.removeFromLeft(92)); top.removeFromLeft(6);
-        threadsModeBtn.setBounds(top.removeFromLeft(92)); top.removeFromLeft(6);
-        feedBtn.setBounds(top.removeFromLeft(84));
-        if (isAdmin && top.getWidth() > 84) { top.removeFromLeft(6); adminDeleteBtn.setBounds(top.removeFromLeft(78)); }
+        pluginsTabBtn.setBounds(top.removeFromLeft(84)); top.removeFromLeft(6);
+        effectsTabBtn.setBounds(top.removeFromLeft(78)); top.removeFromLeft(6);
+        myPluginsBtn.setBounds(top.removeFromLeft(92)); top.removeFromLeft(6);
+        if (isAdmin && top.getWidth() > 84) { pendingBtn.setBounds(top.removeFromLeft(82)); top.removeFromLeft(6); }
+        threadsModeBtn.setBounds(top.removeFromLeft(78)); top.removeFromLeft(6);
+        feedBtn.setBounds(top.removeFromLeft(72));
         if (top.getWidth() > 116) { top.removeFromLeft(10); newMachineBtn.setBounds(top.removeFromLeft(106)); }
         if (top.getWidth() > 152) { top.removeFromLeft(8); randomMachineBtn.setBounds(top.removeFromLeft(136)); }
+        // Tag search row
+        if (centerMode == 0 || centerMode == 1)
+        {
+            auto tagRow = area.removeFromTop(30);
+            tagRow.removeFromTop(2);
+            tagSearchBox.setBounds(tagRow.removeFromLeft(juce::jmax(160, tagRow.getWidth() - 120)));
+            tagRow.removeFromLeft(8);
+        }
+        // Chat on the LEFT, catalog on the RIGHT
         const int railW = juce::jlimit(236, 286, getWidth() / 5);
-        auto rail = area.removeFromRight(railW);
-        area.removeFromRight(10);
-        if (centerMode == 1)
+        auto rail = area.removeFromLeft(railW);
+        area.removeFromLeft(10);
+        if (threadOpen)
         {
             auto reply = area.removeFromBottom(34);
-            utilityBox.setBounds(reply.removeFromLeft(juce::jmax(160, reply.getWidth() - 92)));
-            reply.removeFromLeft(8);
+            threadBackBtn.setBounds(reply.removeFromLeft(92)); reply.removeFromLeft(6);
+            threadReactBtn.setBounds(reply.removeFromLeft(72)); reply.removeFromLeft(6);
+            threadShareFxBtn.setBounds(reply.removeFromLeft(86)); reply.removeFromLeft(6);
+            threadSharePluginBtn.setBounds(reply.removeFromLeft(110)); reply.removeFromLeft(6);
+            utilityBox.setBounds(reply.removeFromLeft(juce::jmax(120, reply.getWidth() - 78)));
+            reply.removeFromLeft(6);
             utilityGoBtn.setBounds(reply);
-            utilityGoBtn.setButtonText("REPLY");
+            utilityGoBtn.setButtonText("COMMENT");
         }
         catalogView.setBounds(area.reduced(0, 6));
         auto railHead = rail.removeFromTop(28);
@@ -1464,17 +1599,16 @@ void KyotoAudioProcessorEditor::resized()
         }
         else
         {
-            auto util = rail.removeFromBottom(34);
-            utilityBox.setBounds(util.removeFromLeft(juce::jmax(80, util.getWidth() - 148)));
-            util.removeFromLeft(4);
-            utilityActionBox.setBounds(util.removeFromLeft(92));
-            util.removeFromLeft(4);
-            utilityGoBtn.setBounds(util);
-            utilityGoBtn.setButtonText("GO");
+            // Social actions live on the name: click = WAV request, right-click = DM / friend / admin.
         }
         chatView.setBounds(rail.reduced(0, 4));
+        const int savedChatY = chatView.getViewPositionY();
         socialRail.setBounds(0, 0, juce::jmax(200, chatView.getWidth() - 8), socialRail.contentHeight());
         chatView.setViewedComponent(&socialRail, false);
+        if (scrollChatOnRefresh && railMode == 0)
+            chatView.setViewPosition(0, socialRail.getHeight());
+        else
+            chatView.setViewPosition(0, savedChatY);
         const int catalogW = juce::jmax(220, catalogView.getWidth()-18);
         const int cols = catalogW >= 500 ? 2 : 1;
         const int gap = 8;
@@ -2038,7 +2172,7 @@ void KyotoAudioProcessorEditor::randomizeTemplate()
     {
         if (shell.slots[s].kind == pb::SlotKind::Board || shell.slots[s].w < 0.02f) continue;
         juce::String kind;
-        if (essentials.size() > 0) kind = essentials.removeAndReturn(0);
+        if (essentials.size() > 0) { kind = essentials[0]; essentials.remove(0); }
         else
         {
             const char* pool[] = { "dial", "slider", "button", "wave", "key" };
@@ -2131,8 +2265,9 @@ void KyotoAudioProcessorEditor::editEffectPopup(int widgetIndex)
             const double seconds = beats * 60.0 / juce::jmax(1.0, proc.hostBpm());
             setOver("mot", juce::jlimit(0.0, 1.0, seconds / 2.0));
             proc.setSlotOvermax(dsp, (float) juce::jlimit(0.25, 4.0, amount));
-            node.setProperty("beats", beats, nullptr);
-            node.setProperty("overmax", amount, nullptr);
+            auto nodeCopy = node;
+            nodeCopy.setProperty("beats", beats, nullptr);
+            nodeCopy.setProperty("overmax", amount, nullptr);
             status.setText("Effect edited. " + juce::String(beats, 2) + " beats at " + juce::String(proc.hostBpm(), 1) + " BPM.", juce::dontSendNotification);
         }
         delete win;
@@ -2141,6 +2276,7 @@ void KyotoAudioProcessorEditor::editEffectPopup(int widgetIndex)
 
 bool KyotoAudioProcessorEditor::isInterestedInFileDrag(const juce::StringArray& files)
 {
+    if (threadOpen) return files.size() > 0;
     for (auto& f : files)
     {
         const auto ext = f.fromLastOccurrenceOf(".", false, false).toLowerCase();
@@ -2151,6 +2287,12 @@ bool KyotoAudioProcessorEditor::isInterestedInFileDrag(const juce::StringArray& 
 
 void KyotoAudioProcessorEditor::filesDropped(const juce::StringArray& files, int, int)
 {
+    if (threadOpen)
+    {
+        for (auto& f : files) postThreadComment("file: " + juce::File(f).getFileName());
+        status.setText("File named in the thread. Audio still stays under  the worker tape limit.", juce::dontSendNotification);
+        return;
+    }
     for (auto& f : files)
     {
         juce::AudioFormatManager fm;
@@ -2352,6 +2494,7 @@ void KyotoAudioProcessorEditor::logout()
 
 void KyotoAudioProcessorEditor::sendChat()
 {
+    scrollChatOnRefresh = true;
     const auto text = msgBox.getText().trim(); const auto tokenCopy = token;
     if (text.isEmpty() || tokenCopy.isEmpty()) return;
     juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
@@ -2425,7 +2568,7 @@ void KyotoAudioProcessorEditor::chatUtility(const juce::String& selectedAction)
 
 void KyotoAudioProcessorEditor::deleteCatalogId(const juce::String& id)
 {
-    if (!isAdmin || id.isEmpty()) return;
+    if (id.isEmpty()) return;
     const auto tokenCopy = token; juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
     std::thread([safe, id, tokenCopy] { auto r=kt::deleteModule(tokenCopy,id); juce::MessageManager::callAsync([safe,r]{ if(safe==nullptr)return; safe->status.setText(r.ok?"CATALOG ITEM REMOVED":"REMOVE FAILED: "+r.error,juce::dontSendNotification); if(r.ok){safe->selectedCatalogId.clear();safe->refreshCatalog();} }); }).detach();
 }
@@ -2464,11 +2607,16 @@ void KyotoAudioProcessorEditor::renderEffectLinks(const juce::String& text)
 
 void KyotoAudioProcessorEditor::setCenterMode(int mode)
 {
-    centerMode = mode == 1 ? 1 : 0;
+    centerMode = juce::jlimit(0, 4, mode);
     catalogModeBtn.setToggleState(centerMode == 0, juce::dontSendNotification);
-    threadsModeBtn.setToggleState(centerMode == 1, juce::dontSendNotification);
-    catalogView.setViewedComponent(centerMode == 0 ? static_cast<juce::Component*>(&catalogHolder) : static_cast<juce::Component*>(&threadHolder), false);
-    if (centerMode == 1) rebuildThreadBoard();
+    threadsModeBtn.setToggleState(centerMode == 3, juce::dontSendNotification);
+    pluginsTabBtn.setToggleState(centerMode == 0, juce::dontSendNotification);
+    effectsTabBtn.setToggleState(centerMode == 1, juce::dontSendNotification);
+    myPluginsBtn.setToggleState(centerMode == 2, juce::dontSendNotification);
+    pendingBtn.setToggleState(centerMode == 4, juce::dontSendNotification);
+    const bool useThreads = centerMode == 3;
+    catalogView.setViewedComponent(useThreads ? static_cast<juce::Component*>(&threadHolder) : static_cast<juce::Component*>(&catalogHolder), false);
+    if (useThreads) rebuildThreadBoard();
     showTab(tab);
 }
 
@@ -2478,9 +2626,8 @@ void KyotoAudioProcessorEditor::setRailMode(int mode)
     railChatBtn.setToggleState(railMode == 0, juce::dontSendNotification);
     railOnlineBtn.setToggleState(railMode == 1, juce::dontSendNotification);
     socialRail.setMode(railMode);
-    scrollChatOnRefresh = railMode == 0;
+    socialRail.setShowDirectory(isAdmin);
     showTab(tab);
-    chatView.setViewPosition(0, railMode == 0 ? socialRail.getHeight() : 0);
 }
 
 void KyotoAudioProcessorEditor::rebuildCenter()
@@ -2490,7 +2637,7 @@ void KyotoAudioProcessorEditor::rebuildCenter()
     const int gap = 8;
     const int cardW = juce::jmax(160, (catalogW - gap * (cols + 1)) / cols);
     const int cardH = 96;
-    auto* holder = centerMode == 0 ? &catalogHolder : &threadHolder;
+    auto* holder = centerMode == 3 ? &threadHolder : &catalogHolder;
     holder->setSize(catalogW, juce::jmax(catalogView.getHeight(), ((holder->getNumChildComponents() + cols - 1) / juce::jmax(1, cols)) * (cardH + gap) + gap));
     for (int i = 0; i < holder->getNumChildComponents(); ++i)
     {
@@ -2511,12 +2658,268 @@ void KyotoAudioProcessorEditor::rebuildThreadBoard()
         card->body = t.text;
         card->themeId = t.themeId;
         const auto id = t.id;
-        card->onOpen = [this, id] { selectedThreadId = id; utilityBox.setText(id, juce::dontSendNotification); status.setText("Reply target " + id, juce::dontSendNotification); };
+        card->onOpen = [this, id] { openThread(id); };
         threadHolder.addAndMakeVisible(card);
         ++i;
     }
     juce::ignoreUnused(i);
     rebuildCenter();
+}
+
+
+void KyotoAudioProcessorEditor::refreshSocial()
+{
+    if (token.isEmpty()) return;
+    socialRail.setShowDirectory(isAdmin);
+    const auto tokenCopy = token;
+    const bool admin = isAdmin;
+    juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
+    std::thread([safe, tokenCopy, admin] {
+        auto social = kt::getSocial(tokenCopy);
+        auto presence = kt::postAction("presence", juce::var(new juce::DynamicObject()), tokenCopy);
+        juce::MessageManager::callAsync([safe, social, presence, admin] {
+            if (safe == nullptr) return;
+            juce::Array<SocialRail::Person> people;
+            auto* root = social.parsed.getDynamicObject();
+            auto addArr = [&](const char* key, const juce::String& kind, const juce::String& detail, bool online) {
+                if (root == nullptr) return;
+                if (auto* arr = root->getProperty(key).getArray())
+                    for (auto& item : *arr)
+                    {
+                        SocialRail::Person person;
+                        person.kind = kind;
+                        person.detail = detail;
+                        person.online = online;
+                        if (auto* o = item.getDynamicObject())
+                        {
+                            person.name = o->getProperty("name").toString();
+                            if (person.name.isEmpty()) person.name = o->getProperty("from").toString();
+                            person.themeId = o->getProperty("theme").toString();
+                            person.requestId = o->getProperty("id").toString();
+                            if (o->hasProperty("status")) person.detail = o->getProperty("status").toString();
+                        }
+                        else person.name = item.toString();
+                        if (person.name.isNotEmpty()) people.add(person);
+                    }
+            };
+            addArr("incoming", "invite", "friend invite", false);
+            addArr("friendsDetailed", "friend", "friend  -  click for WAV", true);
+            if (admin)
+            {
+                auto* online = presence.parsed.getDynamicObject() ? presence.parsed.getDynamicObject()->getProperty("onlineUsers").getArray() : nullptr;
+                if (online != nullptr)
+                    for (auto& item : *online)
+                    {
+                        SocialRail::Person person;
+                        person.kind = "active";
+                        person.online = true;
+                        person.detail = "active now";
+                        if (auto* o = item.getDynamicObject()) { person.name = o->getProperty("name").toString(); person.themeId = o->getProperty("theme").toString(); }
+                        else person.name = item.toString();
+                        if (person.name.isNotEmpty() && person.name != safe->account) people.add(person);
+                    }
+            }
+            safe->socialRail.setPeople(people);
+            safe->status.setText("Socials updated", juce::dontSendNotification);
+            safe->resized();
+        });
+    }).detach();
+}
+
+void KyotoAudioProcessorEditor::openWavRequest(const juce::String& name)
+{
+    if (name.isEmpty() || token.isEmpty()) return;
+    auto* win = new juce::AlertWindow("WAV request", "Ask " + name + " for a WAV.", juce::AlertWindow::NoIcon);
+    win->addTextEditor("note", "", "Note");
+    win->addButton("SEND", 1);
+    win->addButton("CANCEL", 0);
+    const auto tokenCopy = token;
+    juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
+    win->enterModalState(true, juce::ModalCallbackFunction::create([safe, tokenCopy, name, win](int result) {
+        if (result != 1 || safe == nullptr) return;
+        auto* o = new juce::DynamicObject();
+        o->setProperty("target", name);
+        o->setProperty("note", win->getTextEditorContents("note"));
+        std::thread([safe, tokenCopy, body = juce::var(o)] {
+            auto r = kt::postAction("wav_request", body, tokenCopy);
+            juce::MessageManager::callAsync([safe, r] {
+                if (safe == nullptr) return;
+                safe->status.setText(r.ok ? "WAV request sent" : "WAV request failed: " + r.error, juce::dontSendNotification);
+            });
+        }).detach();
+    }), true);
+}
+
+void KyotoAudioProcessorEditor::openDirectMessage(const juce::String& name)
+{
+    if (name.isEmpty() || token.isEmpty()) return;
+    auto* win = new juce::AlertWindow("DM " + name, "Private message", juce::AlertWindow::NoIcon);
+    win->addTextEditor("text", "", "Message");
+    win->addButton("SEND", 1);
+    win->addButton("CANCEL", 0);
+    const auto tokenCopy = token;
+    juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
+    win->enterModalState(true, juce::ModalCallbackFunction::create([safe, tokenCopy, name, win](int result) {
+        if (result != 1 || safe == nullptr) return;
+        const auto text = win->getTextEditorContents("text");
+        std::thread([safe, tokenCopy, name, text] {
+            auto r = kt::sendDM(tokenCopy, name, text);
+            juce::MessageManager::callAsync([safe, r, name] {
+                if (safe == nullptr) return;
+                safe->status.setText(r.ok ? "DM sent to " + name : "DM failed: " + r.error, juce::dontSendNotification);
+            });
+        }).detach();
+    }), true);
+}
+
+void KyotoAudioProcessorEditor::showPersonMenu(const SocialRail::Person& person, juce::Point<int> screenPos)
+{
+    juce::PopupMenu menu;
+    menu.addItem(1, "DM " + person.name);
+    if (person.kind == "invite") { menu.addItem(2, "Accept invite"); menu.addItem(3, "Decline invite"); }
+    else if (person.kind != "friend") menu.addItem(4, "Add friend");
+    if (person.kind == "friend") menu.addItem(5, "Remove friend");
+    if (isAdmin) { menu.addSeparator(); menu.addItem(6, "Promote mod"); menu.addItem(7, "Demote mod"); }
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1)),
+        [this, person](int choice) {
+            if (choice == 1) openDirectMessage(person.name);
+            else if (choice == 2) { auto* o = new juce::DynamicObject(); o->setProperty("id", person.requestId); auto rbody = juce::var(o); const auto tokenCopy = token; juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this); std::thread([safe, tokenCopy, rbody]{ auto r = kt::postAction("friend_accept", rbody, tokenCopy); juce::MessageManager::callAsync([safe, r]{ if (safe==nullptr) return; safe->status.setText(r.ok?"Invite accepted":r.error, juce::dontSendNotification); safe->refreshSocial(); }); }).detach(); }
+            else if (choice == 3) { auto* o = new juce::DynamicObject(); o->setProperty("id", person.requestId); auto rbody = juce::var(o); const auto tokenCopy = token; juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this); std::thread([safe, tokenCopy, rbody]{ auto r = kt::postAction("friend_decline", rbody, tokenCopy); juce::MessageManager::callAsync([safe, r]{ if (safe==nullptr) return; safe->status.setText(r.ok?"Invite declined":r.error, juce::dontSendNotification); safe->refreshSocial(); }); }).detach(); }
+            else if (choice == 4) { const auto tokenCopy = token; const auto name = person.name; juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this); std::thread([safe, tokenCopy, name]{ auto r = kt::friendRequest(tokenCopy, "friend_request", name); juce::MessageManager::callAsync([safe, r]{ if (safe==nullptr) return; safe->status.setText(r.ok?"Friend request sent":r.error, juce::dontSendNotification); }); }).detach(); }
+            else if (choice == 5) { const auto tokenCopy = token; const auto name = person.name; juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this); std::thread([safe, tokenCopy, name]{ auto r = kt::friendRequest(tokenCopy, "friend_remove", name); juce::MessageManager::callAsync([safe, r]{ if (safe==nullptr) return; safe->status.setText(r.ok?"Friend removed":r.error, juce::dontSendNotification); safe->refreshSocial(); }); }).detach(); }
+            else if (choice == 6 || choice == 7) { auto* o = new juce::DynamicObject(); o->setProperty("target", person.name); auto rbody = juce::var(o); const auto tokenCopy = token; const auto action = choice == 6 ? juce::String("promote_mod") : juce::String("demote_mod"); juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this); std::thread([safe, tokenCopy, rbody, action]{ auto r = kt::postAction(action, rbody, tokenCopy); juce::MessageManager::callAsync([safe, r]{ if (safe==nullptr) return; safe->status.setText(r.ok?"Role updated":r.error, juce::dontSendNotification); }); }).detach(); }
+        });
+}
+
+void KyotoAudioProcessorEditor::showBubbleMenu(const SocialRail::Bubble& bubble, juce::Point<int> screenPos)
+{
+    juce::PopupMenu menu;
+    menu.addItem(1, "Add friend");
+    juce::PopupMenu react;
+    react.addItem(10, "heart");
+    react.addItem(11, "fire");
+    react.addItem(12, "laugh");
+    react.addItem(13, "moon");
+    react.addItem(14, "100");
+    menu.addSubMenu("React", react);
+    if (isAdmin) { menu.addSeparator(); menu.addItem(20, "Delete message"); }
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1)),
+        [this, bubble](int choice) {
+            if (choice == 1)
+            {
+                const auto tokenCopy = token; const auto name = bubble.user;
+                juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
+                std::thread([safe, tokenCopy, name]{ auto r = kt::friendRequest(tokenCopy, "friend_request", name); juce::MessageManager::callAsync([safe, r]{ if (safe==nullptr) return; safe->status.setText(r.ok?"Friend request sent":r.error, juce::dontSendNotification); }); }).detach();
+            }
+            else if (choice >= 10 && choice <= 14)
+            {
+                const char* emoji[] = { "heart", "fire", "laugh", "moon", "100" };
+                reactTo("chat", bubble.id, emoji[choice - 10]);
+            }
+            else if (choice == 20)
+            {
+                auto* o = new juce::DynamicObject(); o->setProperty("id", bubble.id);
+                const auto tokenCopy = token; auto body = juce::var(o);
+                juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
+                std::thread([safe, tokenCopy, body]{ auto r = kt::postAction("chat_delete", body, tokenCopy); juce::MessageManager::callAsync([safe, r]{ if (safe==nullptr) return; safe->status.setText(r.ok?"Message removed":r.error, juce::dontSendNotification); safe->refreshFeed(); }); }).detach();
+            }
+        });
+}
+
+void KyotoAudioProcessorEditor::openThread(const juce::String& id)
+{
+    selectedThreadId = id;
+    threadOpen = true;
+    centerMode = 3;
+    utilityBox.clear();
+    utilityBox.setTextToShowWhenEmpty("Comment, drop a file, or share a plugin / effect", juce::Colour(0x80808080));
+    rebuildThreadDetail();
+    showTab(0);
+    status.setText("Thread open. Chat and Socials stay on the left.", juce::dontSendNotification);
+}
+
+void KyotoAudioProcessorEditor::closeThread()
+{
+    threadOpen = false;
+    selectedThreadId.clear();
+    setCenterMode(3);
+}
+
+void KyotoAudioProcessorEditor::postThreadComment(const juce::String& text)
+{
+    if (selectedThreadId.isEmpty() || text.trim().isEmpty() || token.isEmpty()) return;
+    auto* o = new juce::DynamicObject();
+    o->setProperty("threadId", selectedThreadId);
+    o->setProperty("text", text.trim());
+    const auto tokenCopy = token;
+    juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
+    std::thread([safe, tokenCopy, body = juce::var(o)] {
+        auto r = kt::postAction("comment", body, tokenCopy);
+        juce::MessageManager::callAsync([safe, r] {
+            if (safe == nullptr) return;
+            if (!r.ok) { safe->status.setText("Comment failed: " + r.error, juce::dontSendNotification); return; }
+            safe->utilityBox.clear();
+            safe->scrollChatOnRefresh = false;
+            safe->refreshFeed();
+            safe->status.setText("Comment posted", juce::dontSendNotification);
+        });
+    }).detach();
+}
+
+void KyotoAudioProcessorEditor::reactTo(const juce::String& kind, const juce::String& id, const juce::String& emoji)
+{
+    if (id.isEmpty() || token.isEmpty()) return;
+    const auto tokenCopy = token;
+    juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
+    std::thread([safe, tokenCopy, kind, id, emoji] {
+        auto r = kt::react(tokenCopy, kind, id, emoji);
+        juce::MessageManager::callAsync([safe, r, emoji] {
+            if (safe == nullptr) return;
+            safe->status.setText(r.ok ? "Reacted " + emoji : "React failed: " + r.error, juce::dontSendNotification);
+        });
+    }).detach();
+}
+
+void KyotoAudioProcessorEditor::rebuildThreadDetail()
+{
+    catalogHolder.removeAllChildren();
+    const ThreadItem* found = nullptr;
+    for (const auto& th : threads) if (th.id == selectedThreadId) { found = &th; break; }
+    if (found == nullptr)
+    {
+        auto* card = new BoardCard();
+        card->title = "Thread";
+        card->body = "This thread is not in the current feed yet.";
+        card->themeId = theme.id;
+        catalogHolder.addAndMakeVisible(card);
+        return;
+    }
+    auto* head = new BoardCard();
+    head->title = found->title.isEmpty() ? "Thread" : found->title;
+    head->meta = found->user + "  -  " + found->themeId;
+    head->body = found->text;
+    head->themeId = found->themeId.isEmpty() ? theme.id : found->themeId;
+    catalogHolder.addAndMakeVisible(head);
+    for (const auto& c : found->commentList)
+    {
+        auto* card = new BoardCard();
+        card->title = c.user;
+        card->meta = "comment";
+        card->body = c.text;
+        card->themeId = c.themeId.isEmpty() ? theme.id : c.themeId;
+        const auto cid = c.id;
+        card->onContextMenu = [this, cid](juce::Point<int> pos) {
+            juce::PopupMenu menu;
+            menu.addItem(1, "heart"); menu.addItem(2, "fire"); menu.addItem(3, "laugh"); menu.addItem(4, "moon");
+            menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(juce::Rectangle<int>(pos.x, pos.y, 1, 1)),
+                [this, cid](int choice) {
+                    const char* emoji[] = { "heart", "fire", "laugh", "moon" };
+                    if (choice >= 1 && choice <= 4) reactTo("comment", cid, emoji[choice - 1]);
+                });
+        };
+        catalogHolder.addAndMakeVisible(card);
+    }
+    resized();
 }
 
 void KyotoAudioProcessorEditor::refreshFeed()
@@ -2544,12 +2947,14 @@ void KyotoAudioProcessorEditor::refreshFeed()
                 }
             // Keep the newest messages in view on open, but preserve a reader's
             // position if they have deliberately scrolled into the history.
-            const bool followLatest = safe->scrollChatOnRefresh
-                || safe->chatView.getViewPositionY() + safe->chatView.getViewHeight()
-                    >= safe->socialRail.getHeight() - 24;
+            const int viewY = safe->chatView.getViewPositionY();
+            const bool nearBottom = safe->socialRail.getHeight() > safe->chatView.getViewHeight()
+                && viewY + safe->chatView.getViewHeight() >= safe->socialRail.getHeight() - 36;
             safe->socialRail.setBubbles(bubbles);
-            if (safe->railMode == 0 && followLatest)
+            if (safe->railMode == 0 && (safe->scrollChatOnRefresh || nearBottom))
                 safe->chatView.setViewPosition(0, safe->socialRail.getHeight());
+            else if (safe->railMode == 0)
+                safe->chatView.setViewPosition(0, viewY);
             if (safe->railMode == 0) safe->scrollChatOnRefresh = false;
             safe->threads.clear();
             if (auto* arr = r.parsed.getDynamicObject() ? r.parsed.getDynamicObject()->getProperty("threads").getArray() : nullptr)
@@ -2561,40 +2966,57 @@ void KyotoAudioProcessorEditor::refreshFeed()
                     th.title = t->getProperty("title").toString();
                     th.text = t->getProperty("text").toString();
                     th.themeId = t->getProperty("theme").toString();
-                    if (auto* comments = t->getProperty("comments").getArray()) th.comments = comments->size();
+                    if (auto* comments = t->getProperty("comments").getArray())
+                    {
+                        th.comments = comments->size();
+                        for (auto& citem : *comments) if (auto* c = citem.getDynamicObject())
+                        {
+                            ThreadComment tc;
+                            tc.id = c->getProperty("id").toString();
+                            tc.user = c->getProperty("user").toString();
+                            tc.text = c->getProperty("text").toString();
+                            tc.themeId = c->getProperty("theme").toString();
+                            th.commentList.add(tc);
+                        }
+                    }
                     safe->threads.add(th);
                 }
-            if (safe->railMode == 1)
-            {
-                juce::Array<SocialRail::Person> people;
-                auto* root = r.parsed.getDynamicObject();
-                auto* arr = root ? root->getProperty("onlineUsers").getArray() : nullptr;
-                if (arr == nullptr && root) arr = root->getProperty("online").getArray();
-                if (arr != nullptr)
-                    for (auto& item : *arr)
-                    {
-                        SocialRail::Person person;
-                        if (auto* o = item.getDynamicObject()) { person.name = o->getProperty("name").toString(); person.themeId = o->getProperty("theme").toString(); }
-                        else person.name = item.toString();
-                        person.detail = "online";
-                        person.online = true;
-                        if (person.name.isNotEmpty()) people.add(person);
-                    }
-                safe->socialRail.setPeople(people);
-            }
+            if (safe->railMode == 1) safe->refreshSocial();
+            if (safe->threadOpen) safe->rebuildThreadDetail();
             safe->rebuildThreadBoard();
-            safe->logBox.setText(log.isEmpty()?r.body:log); safe->renderEffectLinks(log); safe->status.setText(safe->centerMode==0?"Catalog browser":"Threads", juce::dontSendNotification);
+            safe->logBox.setText(log.isEmpty()?r.body:log); safe->renderEffectLinks(log);
         });
     }).detach();
+}
+
+
+namespace
+{
+juce::String tagsToText(const juce::var& tags)
+{
+    if (auto* arr = tags.getArray())
+    {
+        juce::StringArray parts;
+        for (const auto& item : *arr)
+        {
+            const auto part = item.toString().trim();
+            if (part.isNotEmpty()) parts.add(part);
+        }
+        return parts.joinIntoString(", ");
+    }
+    return tags.toString();
+}
 }
 
 void KyotoAudioProcessorEditor::refreshCatalog()
 {
     if (token.isEmpty()) return;
+    const auto tagText = tagSearchBox.getText().trim().toLowerCase();
+    const auto faceFilter = centerMode == 1 ? juce::String("fx") : juce::String("kyoto");
     const auto tokenCopy = token; juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
-    std::thread([safe, tokenCopy] {
-        auto r = kt::getCatalog(tokenCopy);
-        juce::MessageManager::callAsync([safe, r] {
+    std::thread([safe, tokenCopy, tagText, faceFilter] {
+        auto r = tagText.isNotEmpty() ? kt::getCatalogTagged(tokenCopy, tagText) : kt::getCatalog(tokenCopy);
+        juce::MessageManager::callAsync([safe, r, faceFilter, tagText] {
             if (safe == nullptr) return;
             safe->catalog.clear(); safe->catalogHolder.removeAllChildren();
             auto* mods = r.parsed.getDynamicObject() ? r.parsed.getDynamicObject()->getProperty("modules").getArray() : nullptr;
@@ -2603,13 +3025,165 @@ void KyotoAudioProcessorEditor::refreshCatalog()
             for (auto& item:*mods)
             {
                 auto* m=item.getDynamicObject(); if(!m) continue;
-                CatalogItem c{m->getProperty("id").toString(),m->getProperty("name").toString(),m->getProperty("face").toString(),m->getProperty("author").toString()}; safe->catalog.add(c);
-                auto* card=new BoardCard(); card->title=c.name; card->meta=c.face+"  -  "+c.author; card->body="Open in the builder"; card->themeId=safe->theme.id;
-                card->onOpen=[safe,id=c.id,name=c.name]{ if(safe!=nullptr){safe->selectedCatalogId=id;safe->loadCatalogId(id,name);} }; safe->catalogHolder.addAndMakeVisible(card); ++i;
+                const auto face = m->getProperty("face").toString();
+                // Filter by face (plugins vs effects)
+                if (faceFilter == "kyoto" && face != "kyoto") continue;
+                if (faceFilter == "fx" && face != "fx" && face != "effect") continue;
+                // Client-side tag filter as fallback
+                if (tagText.isNotEmpty())
+                {
+                    const auto modTags = m->getProperty("tags").toString().toLowerCase();
+                    if (!modTags.contains(tagText) && !m->getProperty("name").toString().toLowerCase().contains(tagText)) continue;
+                }
+                CatalogItem c;
+                c.id = m->getProperty("id").toString();
+                c.name = m->getProperty("name").toString();
+                c.face = face;
+                c.author = m->getProperty("author").toString();
+                c.status = m->getProperty("status").toString();
+                c.tags = tagsToText(m->getProperty("tags"));
+                safe->catalog.add(c);
+                auto* card=new BoardCard();
+                card->title=c.name;
+                card->meta=c.face+"  -  "+c.author;
+                card->body="Open in the builder";
+                card->themeId=safe->theme.id;
+                card->status=c.status;
+                card->tags=c.tags;
+                const auto id=c.id, name=c.name, author=c.author;
+                card->onOpen=[safe,id,name]{ if(safe!=nullptr){safe->selectedCatalogId=id;safe->loadCatalogId(id,name);} };
+                card->onContextMenu=[safe,id,name,author](juce::Point<int> pos){ if(safe!=nullptr) safe->showCatalogCardMenu(id,name,author,pos); };
+                safe->catalogHolder.addAndMakeVisible(card); ++i;
             }
             safe->catalogHolder.setSize(juce::jmax(220, safe->catalogView.getWidth()-18), juce::jmax(220, ((i+1)/2)*92)); safe->catalogView.setViewedComponent(&safe->catalogHolder,false); safe->resized(); safe->refreshEffectBox();
+            safe->status.setText(juce::String(i) + " items" + (tagText.isNotEmpty() ? "  -  tag: " + tagText : ""), juce::dontSendNotification);
         });
     }).detach();
+}
+
+void KyotoAudioProcessorEditor::refreshMyModules()
+{
+    if (token.isEmpty()) return;
+    const auto tokenCopy = token; juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
+    std::thread([safe, tokenCopy] {
+        auto r = kt::getMyModules(tokenCopy);
+        juce::MessageManager::callAsync([safe, r] {
+            if (safe == nullptr) return;
+            safe->catalog.clear(); safe->catalogHolder.removeAllChildren();
+            auto* mods = r.parsed.getDynamicObject() ? r.parsed.getDynamicObject()->getProperty("modules").getArray() : nullptr;
+            if (mods == nullptr) { safe->status.setText("No saved modules", juce::dontSendNotification); safe->refreshEffectBox(); return; }
+            int i=0;
+            for (auto& item:*mods)
+            {
+                auto* m=item.getDynamicObject(); if(!m) continue;
+                CatalogItem c;
+                c.id=m->getProperty("id").toString(); c.name=m->getProperty("name").toString();
+                c.face=m->getProperty("face").toString(); c.author=m->getProperty("author").toString();
+                c.status=m->getProperty("status").toString(); c.tags=tagsToText(m->getProperty("tags"));
+                safe->catalog.add(c);
+                auto* card=new BoardCard(); card->title=c.name; card->meta=c.face+"  -  "+c.author;
+                card->body="Open in the builder"; card->themeId=safe->theme.id; card->status=c.status; card->tags=c.tags;
+                const auto id=c.id, name=c.name, author=c.author;
+                card->onOpen=[safe,id,name]{ if(safe!=nullptr){safe->selectedCatalogId=id;safe->loadCatalogId(id,name);} };
+                card->onContextMenu=[safe,id,name,author](juce::Point<int> pos){ if(safe!=nullptr) safe->showCatalogCardMenu(id,name,author,pos); };
+                safe->catalogHolder.addAndMakeVisible(card); ++i;
+            }
+            safe->catalogHolder.setSize(juce::jmax(220, safe->catalogView.getWidth()-18), juce::jmax(220, ((i+1)/2)*92));
+            safe->catalogView.setViewedComponent(&safe->catalogHolder,false); safe->resized(); safe->refreshEffectBox();
+            safe->status.setText("My plugins: " + juce::String(i), juce::dontSendNotification);
+        });
+    }).detach();
+}
+
+void KyotoAudioProcessorEditor::refreshPending()
+{
+    if (token.isEmpty() || !isAdmin) return;
+    const auto tokenCopy = token; juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
+    std::thread([safe, tokenCopy] {
+        auto r = kt::getPendingModules(tokenCopy);
+        juce::MessageManager::callAsync([safe, r] {
+            if (safe == nullptr) return;
+            safe->catalog.clear(); safe->catalogHolder.removeAllChildren();
+            auto* mods = r.parsed.getDynamicObject() ? r.parsed.getDynamicObject()->getProperty("modules").getArray() : nullptr;
+            if (mods == nullptr) { safe->status.setText("No pending items", juce::dontSendNotification); safe->refreshEffectBox(); return; }
+            int i=0;
+            for (auto& item:*mods)
+            {
+                auto* m=item.getDynamicObject(); if(!m) continue;
+                CatalogItem c;
+                c.id=m->getProperty("id").toString(); c.name=m->getProperty("name").toString();
+                c.face=m->getProperty("face").toString(); c.author=m->getProperty("author").toString();
+                c.status="pending"; c.tags=tagsToText(m->getProperty("tags"));
+                safe->catalog.add(c);
+                auto* card=new BoardCard(); card->title=c.name; card->meta=c.face+"  -  "+c.author;
+                card->body="Right-click to approve or deny"; card->themeId=safe->theme.id; card->status="pending"; card->tags=c.tags;
+                const auto id=c.id, name=c.name, author=c.author;
+                card->onOpen=[safe,id,name]{ if(safe!=nullptr){safe->selectedCatalogId=id;safe->loadCatalogId(id,name);} };
+                card->onContextMenu=[safe,id,name,author](juce::Point<int> pos){ if(safe!=nullptr) safe->showCatalogCardMenu(id,name,author,pos); };
+                safe->catalogHolder.addAndMakeVisible(card); ++i;
+            }
+            safe->catalogHolder.setSize(juce::jmax(220, safe->catalogView.getWidth()-18), juce::jmax(220, ((i+1)/2)*92));
+            safe->catalogView.setViewedComponent(&safe->catalogHolder,false); safe->resized(); safe->refreshEffectBox();
+            safe->status.setText("Pending: " + juce::String(i), juce::dontSendNotification);
+        });
+    }).detach();
+}
+
+void KyotoAudioProcessorEditor::showCatalogCardMenu(const juce::String& id, const juce::String& name, const juce::String& author, juce::Point<int> screenPos)
+{
+    juce::PopupMenu menu;
+    menu.addItem("Open: " + name, [this, id, name] { selectedCatalogId = id; loadCatalogId(id, name); });
+    menu.addSeparator();
+    if (isAdmin)
+    {
+        menu.addItem("Approve", [this, id] { approveCatalogId(id); });
+        menu.addItem("Deny", [this, id] { denyCatalogId(id); });
+        menu.addSeparator();
+        menu.addItem("Add Tags...", [this, id] {
+            auto* win = new juce::AlertWindow("Add Tags", "Enter comma-separated tags for this module.", juce::AlertWindow::NoIcon);
+            win->addTextEditor("tags", "", "Tags");
+            win->addButton("OK", 1); win->addButton("Cancel", 0);
+            win->enterModalState(true, juce::ModalCallbackFunction::create([this, win, id](int code) {
+                if (code == 1) tagCatalogId(id, win->getTextEditorContents("tags"));
+                delete win;
+            }), true);
+        });
+        menu.addItem("Remove", [this, id] { deleteCatalogId(id); });
+    }
+    else
+    {
+        // Non-admin: can only delete their own
+        if (author.equalsIgnoreCase(account))
+            menu.addItem("Remove My Upload", [this, id] { deleteCatalogId(id); });
+    }
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({ screenPos.x, screenPos.y, 1, 1 }));
+}
+
+void KyotoAudioProcessorEditor::approveCatalogId(const juce::String& id)
+{
+    if (!isAdmin || id.isEmpty()) return;
+    const auto tokenCopy = token; juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
+    std::thread([safe, id, tokenCopy] { auto r=kt::approveModule(tokenCopy,id); juce::MessageManager::callAsync([safe,r]{ if(safe==nullptr)return; safe->status.setText(r.ok?"APPROVED":"Approve failed: "+r.error,juce::dontSendNotification); if(r.ok) safe->refreshCatalog(); }); }).detach();
+}
+
+void KyotoAudioProcessorEditor::denyCatalogId(const juce::String& id)
+{
+    if (!isAdmin || id.isEmpty()) return;
+    const auto tokenCopy = token; juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
+    std::thread([safe, id, tokenCopy] { auto r=kt::denyModule(tokenCopy,id); juce::MessageManager::callAsync([safe,r]{ if(safe==nullptr)return; safe->status.setText(r.ok?"DENIED":"Deny failed: "+r.error,juce::dontSendNotification); if(r.ok) safe->refreshCatalog(); }); }).detach();
+}
+
+void KyotoAudioProcessorEditor::tagCatalogId(const juce::String& id, const juce::String& tags)
+{
+    if (!isAdmin || id.isEmpty()) return;
+    const auto tokenCopy = token; juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
+    std::thread([safe, id, tags, tokenCopy] { auto r=kt::tagModule(tokenCopy,id,tags); juce::MessageManager::callAsync([safe,r]{ if(safe==nullptr)return; safe->status.setText(r.ok?"TAGS ADDED":"Tag failed: "+r.error,juce::dontSendNotification); if(r.ok) safe->refreshCatalog(); }); }).detach();
+}
+
+float KyotoAudioProcessorEditor::scaledFont(float baseSize) const
+{
+    const float scale = juce::jlimit(0.75f, 1.6f, (float)getWidth() / 900.0f);
+    return baseSize * scale;
 }
 
 void KyotoAudioProcessorEditor::loadCatalogId(const juce::String& id, const juce::String& name)
@@ -2929,7 +3503,7 @@ void KyotoAudioProcessorEditor::publishEffect()
     saveEffect();
     const auto name = effectNameBox.getText().trim().isEmpty() ? "untitled-fx" : effectNameBox.getText().trim();
     const auto body = effectDir().getChildFile(name + ".json").loadFileAsString(); const auto tokenCopy = token; juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
-    std::thread([safe,name,body,tokenCopy]{ auto r=kt::publishModule(tokenCopy,name,body); juce::MessageManager::callAsync([safe,r]{ if(safe==nullptr)return; if(r.ok){ if(auto* o=r.parsed.getDynamicObject()) safe->lastPublishedEffectId=o->getProperty("id").toString(); safe->status.setText(safe->lastPublishedEffectId.isNotEmpty()?"Published FX - "+safe->lastPublishedEffectId:"Effect catalogued",juce::dontSendNotification); safe->refreshCatalog(); } else safe->status.setText(r.error,juce::dontSendNotification); }); }).detach();
+    std::thread([safe,name,body,tokenCopy]{ auto r=kt::publishModule(tokenCopy,name,body); juce::MessageManager::callAsync([safe,r]{ if(safe==nullptr)return; if(r.ok){ if(auto* o=r.parsed.getDynamicObject()) safe->lastPublishedEffectId=o->getProperty("id").toString(); safe->status.setText(safe->lastPublishedEffectId.isNotEmpty()?"Auto-uploaded FX - "+safe->lastPublishedEffectId+" (pending approval)":"Effect auto-uploaded (pending approval)",juce::dontSendNotification); safe->refreshCatalog(); } else safe->status.setText(r.error,juce::dontSendNotification); }); }).detach();
 }
 
 juce::String KyotoAudioProcessorEditor::effectShareText() const
@@ -3176,5 +3750,5 @@ void KyotoAudioProcessorEditor::publish()
     saveLocal();
     const auto name = nameBox.getText().trim().isEmpty() ? "untitled" : nameBox.getText().trim();
     const auto body = moduleDir().getChildFile(name + ".json").loadFileAsString(); const auto tokenCopy = token; juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
-    std::thread([safe, name, body, tokenCopy] { auto r=kt::publishModule(tokenCopy,name,body); juce::MessageManager::callAsync([safe,r]{ if(safe==nullptr)return; safe->status.setText(r.ok?"Chain published to DreamShare":r.error,juce::dontSendNotification); if(r.ok)safe->refreshCatalog(); }); }).detach();
+    std::thread([safe, name, body, tokenCopy] { auto r=kt::publishModule(tokenCopy,name,body); juce::MessageManager::callAsync([safe,r]{ if(safe==nullptr)return; safe->status.setText(r.ok?"Auto-uploaded. Pending admin approval.":r.error,juce::dontSendNotification); if(r.ok)safe->refreshCatalog(); }); }).detach();
 }

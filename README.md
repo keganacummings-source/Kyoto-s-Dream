@@ -54,3 +54,12 @@ JUCE is AGPLv3 unless you hold a commercial licence.
 - Rebuilt the DreamShare home screen around a dashboard hero, responsive live-room/catalog split, cleaner utility controls, and a responsive catalog card grid.
 - Reflowed the Chain builder controls into two compact action rows so the UI remains usable at the minimum editor size.
 - Human-readable DreamShare utility labels replace raw API action names in the dropdown while preserving the same API actions internally.
+
+## Minimal launch finish (0.4.2)
+
+Base44's `minimal-launch` pass added catalog tabs (Plugins / Effects / My Plugins / Pending), admin approve-deny-tag, and pending uploads. It did not copy that worker surface into the compatibility files. This package finishes that:
+
+- `WORKER_DREAMSHARE.js`, `worker/WORKER_DREAMSHARE.js`, and `JV_WORKER.js` match `worker.js`.
+- `JV_MODULE_RULES.js` matches `module-rules.js`.
+- Catalog cards render tag arrays, not only string tags.
+- CMake project version is 0.4.2, matching this README.
