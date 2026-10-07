@@ -75,7 +75,7 @@ const STORAGE = 'durable-v4';
 // consume the same payload. The binary in the supplied ZIP does not contain
 // the source needed to add a native theme dropdown/effects renderer.
 const THEME_API_VERSION = 'v1';
-const VST_PATCH_VERSION = '0.5.1';
+const VST_PATCH_VERSION = '0.5.0';
 const KYOTO_MODULE_FORMAT = 'kyoteppah-module-1';
 const KYOTO_API_VERSION = '0.3.0';
 const VST_RELEASE = {

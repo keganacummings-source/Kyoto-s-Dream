@@ -21,7 +21,6 @@ struct CanvasWidget : public juce::Component
     void resized() override;
     void setTheme(const kt::ThemePalette& t);
     void mouseDown(const juce::MouseEvent& e) override;
-    void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
 
     KyotoAudioProcessor& proc;
@@ -32,10 +31,6 @@ struct CanvasWidget : public juce::Component
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
     std::unique_ptr<WaveDisplay> waveDisplay;
     std::function<void()> onSelect;
-    std::function<void(CanvasWidget*, int, int, int, int)> onGridEdit;
-    bool movingGrid = false;
-    bool resizingGrid = false;
-    int originGx = 0, originGy = 0, originGw = 3, originGh = 3;
     bool selected = false;
     kt::ThemePalette theme = kt::kThemes[0];
 };
@@ -83,15 +78,13 @@ private:
 class SocialRail : public juce::Component
 {
 public:
-    struct Reaction { juce::String name; int count = 0; bool mine = false; };
-    struct Bubble { juce::String id, user, text, themeId; juce::Array<Reaction> reactions; };
+    struct Bubble { juce::String id, user, text, themeId; };
     struct Person { juce::String name, detail, themeId, kind, requestId; bool online = false; };
 
     std::function<void(const Bubble&, juce::Point<int>)> onBubbleMenu;
     std::function<void(const Person&)> onPersonClick;
     std::function<void(const Person&, juce::Point<int>)> onPersonMenu;
     std::function<void(const kt::AttachRef&)> onFileClick;
-    std::function<void(const Bubble&, const juce::String&)> onReactionClick;
 
     void setBubbles(const juce::Array<Bubble>& next) { bubbles = next; syncSize(); }
     void setPeople(const juce::Array<Person>& next) { people = next; syncSize(); }
@@ -154,26 +147,9 @@ private:
     void addSeriesStep();
     void armPlacement();
     void placeInSlot(int slot);
-    void placeOnGrid(int gx, int gy);
-    void layThemeShell();
-    bool gridFree(int gx, int gy, int gw, int gh, const juce::ValueTree& skip) const;
-    void commitGrid(CanvasWidget* w, int gx, int gy, int gw, int gh);
-    void openBuilderBlankIfLegacy();
-    void composeThread();
-    void shareBoardPost(bool asPlugin);
     void ensureMotherboard();
     void syncPanelMouse();
     void applyShell(int index);
-    void designNewTemplate(bool askFirst);
-    void applyDesignedTemplate();
-    void loadShellFromUi();
-    void storeShellToUi();
-    void askNewBuild();
-    void startNewBuild(bool saveFirst);
-    void confirmAction(const juce::String& title, const juce::String& message, const juce::String& yes, std::function<void()> onYes);
-    int selectedPartIndex() const;
-    void selectPartIndex(int index);
-    void showEmojiPicker();
     bool slotOccupied(int slot) const;
     juce::Point<float> slotAnchor(int slot) const;
     void reflowSeries();
@@ -270,9 +246,6 @@ private:
     int geekHotPart = -1;
     bool proMode = false;
     int builderWizardStep = 0; // 0=builder, 1=shell, 2=theme, 3=pick/place FX, 4=controls
-    bool didBlankLegacy = false;
-    bool suppressLegacyWipe = false;
-    int pendingGridX = 0, pendingGridY = 0;
     kt::ThemePalette playgroundTheme = kt::kThemes[0];
     MachineDesign machineDesign;
     float animPhase = 0.f;
@@ -280,10 +253,9 @@ private:
     juce::String lastPublishedEffectId;
     kt::ThemePalette theme = kt::kThemes[0];
 
-    juce::TextButton shareBtn { "DREAMSHARE" }, chainBtn { "BUILD PLUGIN" }, fxBtn { "FX BUILDER" }, logoutBtn { "LOG OUT" };
+    juce::TextButton shareBtn { "DREAMSHARE" }, chainBtn { "PLUGIN BUILDER" }, fxBtn { "FX BUILDER" }, logoutBtn { "LOG OUT" };
     juce::TextButton pluginViewBtn { "PLUGIN VIEW" }, pluginBackBtn { "< BACK" }, newMachineBtn { "ASPECT RATIO" }, randomMachineBtn { "RANDOMIZE MACHINE" };
     juce::TextButton proToggleBtn { "PRO  -  OFF" }, wizardNextBtn { "NEXT >" }, wizardSkipBtn { "SKIP TO BUILDER" };
-    juce::TextButton designTemplateBtn { "SHELL SKIN" }, newBuildBtn { "BLANK CANVAS" }, emojiBtn { ":)" };
     juce::ComboBox shellBox, playgroundThemeBox;
     juce::Label shellLabel, playgroundThemeLabel;
     juce::TextButton chatRefreshBtn { "CHAT" }, threadsBtn { "THREADS" }, socialBtn { "FRIENDS" }, dmBtn { "DM" }, adminDeleteBtn { "REMOVE" }, utilityGoBtn { "GO" };
@@ -292,7 +264,7 @@ private:
     juce::Label status, whoLabel;
 
     juce::TextEditor userBox, passBox, msgBox, logBox;
-    juce::TextButton loginBtn { "LOG IN" }, guestBtn { "BUILD OFFLINE" }, sendBtn { "SEND" }, feedBtn { "REFRESH" };
+    juce::TextButton loginBtn { "LOG IN" }, sendBtn { "SEND" }, feedBtn { "REFRESH" };
     juce::ComboBox themeBox;
     juce::Viewport catalogView;
     juce::Component catalogHolder;
@@ -322,7 +294,7 @@ private:
     juce::ComboBox gridStyleBox, presetBox, kindBox, effectBox;
     juce::ComboBox paramBox, pieceBox;
     const kt::ModPiece* pendingPiece = nullptr;
-    juce::TextButton addBtn { "PLACE" }, saveBtn { "SAVE" }, upBtn { "PUBLISH" }, wavBtn { "WAV" }, chainBreakBtn { "BREAK" }, chainMixBtn { "MIX" }, chainRemoveBtn { "REMOVE" }, chainUndoBtn { "UNDO" }, randomTemplateBtn { "SKIN" };
+    juce::TextButton addBtn { "PLACE" }, saveBtn { "SAVE" }, upBtn { "PUBLISH" }, wavBtn { "WAV" }, chainBreakBtn { "BREAK" }, chainMixBtn { "MIX" }, chainRemoveBtn { "REMOVE" }, chainUndoBtn { "UNDO" }, randomTemplateBtn { "RANDOMIZE" };
     juce::TextButton fxAddBtn { "ADD FX" }, fxSaveBtn { "SAVE" }, fxUpBtn { "PUBLISH" }, fxShareChatBtn { "CHAT" }, fxShareThreadBtn { "THREAD" }, fxRemoveBtn { "REMOVE" }, fxUndoBtn { "UNDO" };
     juce::Slider fxAmount, fxTone, fxMotion, fxMix, fxShape;
     juce::Label fxAmountLabel, fxToneLabel, fxMotionLabel, fxMixLabel, fxShapeLabel, stackLabel;
@@ -332,7 +304,6 @@ private:
     bool placing = false;
     juce::String armedStyle { "dial" };
     int shellIndex = 0;
-    int designSerial = 0;
     int pendingFx = 0;
     bool pendingSpecial = false;
     int pendingSpecialType = 0;
