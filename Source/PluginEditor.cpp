@@ -888,7 +888,7 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     passBox.setPasswordCharacter((juce::juce_wchar) 0x2022);
     nameBox.setTextToShowWhenEmpty("Chain name", juce::Colours::grey);
     effectNameBox.setTextToShowWhenEmpty("Custom effect name", juce::Colours::grey);
-    msgBox.setTextToShowWhenEmpty("Message  -  shared FX links appear as clickable cards", juce::Colours::grey);
+    msgBox.setTextToShowWhenEmpty("Message #dreamshare  -  drop files to attach", juce::Colours::grey);
     utilityBox.setTextToShowWhenEmpty("Target / ID / thread ID", juce::Colours::grey);
 
     // QOL: Enter sends the chat message, Enter on the login card signs in.
@@ -1127,12 +1127,14 @@ void KyotoAudioProcessorEditor::timerCallback()
     animPhase += 0.035f;
     if (animPhase > juce::MathConstants<float>::twoPi) animPhase -= juce::MathConstants<float>::twoPi;
     chainLevels.refresh();
-    socialRail.setPhase(animPhase);
-    socialRail.setHostTheme(theme);
-    repaint();
+    // DreamShare chat/socials are static — do NOT repaint them at 30Hz.
+    // The previous setPhase/setHostTheme calls here caused the lag and chat bounce.
     for (auto* w : widgets)
         if (w->kind == CanvasWidget::Kind::Wave || w->kind == CanvasWidget::Kind::Stack || w->kind == CanvasWidget::Kind::Board)
             w->repaint();
+    // Only repaint the editor itself for the theme-field hero animation on the builder tab.
+    if (tab != 0)
+        repaint();
 }
 
 
@@ -1241,9 +1243,12 @@ void drawThemeField(juce::Graphics& g, const kt::ThemePalette& t, juce::Rectangl
 
 namespace
 {
-// ---- DreamShare chat bubble layout (shared by paint, hit-testing and height) ----------------
-constexpr float kBubblePad = 12.f;
-constexpr float kBubbleGap = 8.f;
+// ---- DreamShare Discord-style chat layout (shared by paint, hit-testing and height) -----------
+// Flat message rows: avatar circle + name/timestamp inline + body text + file chip.
+constexpr float kMsgPad = 10.f;
+constexpr float kMsgGap = 3.f;
+constexpr float kAvatarSize = 32.f;
+constexpr float kAvatarGap = 10.f;
 
 struct BubbleLayout
 {
@@ -1253,6 +1258,8 @@ struct BubbleLayout
     float nameH = 0.f;
     float chipH = 0.f;
     float h = 0.f;
+    float contentX = 0.f;
+    float contentW = 0.f;
 };
 
 BubbleLayout layoutBubble(const SocialRail::Bubble& b, const kt::ThemePalette& pal, float width)
@@ -1260,36 +1267,46 @@ BubbleLayout layoutBubble(const SocialRail::Bubble& b, const kt::ThemePalette& p
     BubbleLayout L;
     L.ref = kt::parseAttach(b.text, L.clean);
     const float s = kt::dsScale();
-    L.nameH = 16.f * s;
+    const float avatar = kAvatarSize * s;
+    L.contentX = avatar + kAvatarGap + kMsgPad;
+    L.contentW = juce::jmax(40.f, width - L.contentX - kMsgPad);
+    L.nameH = 15.f * s;
     if (L.clean.isNotEmpty())
     {
         juce::AttributedString as;
         as.append(L.clean, kt::dsFont(pal, 12.f), kt::c(pal.text));
         as.setWordWrap(juce::AttributedString::byWord);
         juce::TextLayout tl;
-        tl.createLayout(as, juce::jmax(40.f, width - 2.f * kBubblePad));
+        tl.createLayout(as, L.contentW);
         L.textH = tl.getHeight() + 2.f;
     }
-    L.chipH = L.ref.valid() ? 30.f : 0.f;
-    L.h = 8.f + L.nameH + (L.textH > 0.f ? 3.f + L.textH : 0.f) + (L.chipH > 0.f ? 6.f + L.chipH : 0.f) + 10.f;
+    L.chipH = L.ref.valid() ? 28.f * s : 0.f;
+    const float bodyH = (L.textH > 0.f ? 2.f + L.textH : 0.f) + (L.chipH > 0.f ? 4.f + L.chipH : 0.f);
+    const float minH = avatar + 4.f;
+    L.h = juce::jmax(minH, L.nameH + bodyH) + 2.f * kMsgPad;
     return L;
 }
 
-juce::Rectangle<float> bubbleChipRect(const juce::Rectangle<float>& card, const BubbleLayout& L)
+juce::Rectangle<float> bubbleChipRect(float rowX, float rowY, float rowW, const BubbleLayout& L)
 {
-    return { card.getX() + kBubblePad, card.getBottom() - 10.f - L.chipH, card.getWidth() - 2.f * kBubblePad, L.chipH };
+    return { rowX + L.contentX, rowY + L.h - kMsgPad - L.chipH, L.contentW, L.chipH };
 }
 
 void drawFileChip(juce::Graphics& g, const kt::ThemePalette& pal, juce::Rectangle<float> r, const kt::AttachRef& ref)
 {
-    g.setColour(kt::c(pal.accent).withAlpha(0.16f));
-    g.fillRoundedRectangle(r, 7.f);
-    g.setColour(kt::c(pal.accent).withAlpha(0.75f));
-    g.drawRoundedRectangle(r, 7.f, 1.f);
-    auto inner = r.reduced(9.f, 0.f);
-    g.setColour(kt::c(pal.accent));
+    const auto kind = kt::fileKindOf(ref.name);
+    auto accentCol = kt::c(pal.accent);
+    if (kind == "image") accentCol = juce::Colour(0xff4fa3ff);
+    else if (kind == "zip") accentCol = juce::Colour(0xffe0a020);
+    else if (kind == "audio") accentCol = juce::Colour(0xff40d090);
+    g.setColour(accentCol.withAlpha(0.14f));
+    g.fillRoundedRectangle(r, 6.f);
+    g.setColour(accentCol.withAlpha(0.7f));
+    g.drawRoundedRectangle(r, 6.f, 1.f);
+    auto inner = r.reduced(8.f, 0.f);
+    g.setColour(accentCol);
     g.setFont(kt::dsFont(pal, 9.f, true));
-    g.drawText("FILE", inner.removeFromLeft(34.f), juce::Justification::centredLeft);
+    g.drawText(kind.toUpperCase(), inner.removeFromLeft(38.f), juce::Justification::centredLeft);
     g.setColour(kt::c(pal.text));
     g.setFont(kt::dsFont(pal, 11.f, true));
     auto right = inner.removeFromRight(juce::jmin(120.f, inner.getWidth() * 0.45f));
@@ -1298,17 +1315,28 @@ void drawFileChip(juce::Graphics& g, const kt::ThemePalette& pal, juce::Rectangl
     g.setFont(kt::dsFont(pal, 10.f));
     g.drawText(kt::humanBytes(ref.bytes) + "  -  SAVE", right, juce::Justification::centredRight, true);
 }
+
+void drawAvatar(juce::Graphics& g, const kt::ThemePalette& pal, const juce::String& name, juce::Rectangle<float> r)
+{
+    g.setColour(kt::c(pal.accent).withAlpha(0.25f));
+    g.fillEllipse(r);
+    g.setColour(kt::c(pal.accent));
+    g.drawEllipse(r, 1.5f);
+    g.setColour(kt::c(pal.text));
+    g.setFont(kt::dsFont(pal, r.getWidth() * 0.42f, true));
+    g.drawText(name.substring(0, 1).toUpperCase(), r, juce::Justification::centred, true);
+}
 }
 
 int SocialRail::contentHeightFor(int width) const
 {
     if (mode == 0)
     {
-        float h = 12.f;
-        const float w = (float) juce::jmax(220, width) - 16.f;
+        float h = 6.f;
+        const float w = (float) juce::jmax(220, width);
         for (const auto& m : bubbles)
-            h += layoutBubble(m, kt::themeById(m.themeId.isEmpty() ? "trippah" : m.themeId), w).h + kBubbleGap;
-        return juce::jmax(140, (int) std::ceil(h) + 8);
+            h += layoutBubble(m, kt::themeById(m.themeId.isEmpty() ? "trippah" : m.themeId), w).h + kMsgGap;
+        return juce::jmax(140, (int) std::ceil(h) + 4);
     }
     int h = 12;
     auto count = [this](const juce::String& kind) {
@@ -1317,15 +1345,15 @@ int SocialRail::contentHeightFor(int width) const
     const int invites = count("invite");
     const int friends = count("friend");
     const int active = count("active");
-    if (invites > 0) h += 22 + invites * 48;
-    h += 22 + juce::jmax(1, friends) * 52;
-    if (showDirectory) h += 22 + juce::jmax(1, active) * 44;
+    if (invites > 0) h += 22 + invites * 44;
+    h += 22 + juce::jmax(1, friends) * 46;
+    if (showDirectory) h += 22 + juce::jmax(1, active) * 40;
     return juce::jmax(180, h);
 }
 
 void SocialRail::paint(juce::Graphics& g)
 {
-    g.fillAll(kt::c(host.bg).withAlpha(0.2f));
+    g.fillAll(kt::c(host.bg).withAlpha(0.15f));
     if (mode == 0)
     {
         if (bubbles.isEmpty())
@@ -1336,33 +1364,50 @@ void SocialRail::paint(juce::Graphics& g)
                              juce::Rectangle<int>(14, 18, getWidth() - 28, 60), juce::Justification::topLeft, 3);
             return;
         }
-        float y = 8.f;
-        const float w = (float) getWidth() - 16.f;
+        float y = 4.f;
+        const float w = (float) getWidth();
         for (const auto& m : bubbles)
         {
             const auto pal = kt::themeById(m.themeId.isEmpty() ? "trippah" : m.themeId);
             const auto L = layoutBubble(m, pal, w);
             const bool mine = selfUser.isNotEmpty() && m.user.equalsIgnoreCase(selfUser);
-            auto card = juce::Rectangle<float>(8.f, y, w, L.h);
-            g.setColour(mine ? kt::c(pal.panel).interpolatedWith(kt::c(pal.accent), 0.20f) : kt::c(pal.panel));
-            g.fillRoundedRectangle(card, 10.f);
-            g.setColour(kt::c(pal.accent).withAlpha(mine ? 0.9f : 0.55f));
-            g.fillRoundedRectangle(mine ? card.getRight() - 4.f : card.getX(), card.getY() + 3.f, 4.f, card.getHeight() - 6.f, 2.f);
-            g.setColour(kt::c(pal.border).withAlpha(0.8f));
-            g.drawRoundedRectangle(card, 10.f, 1.f);
+            const float s = kt::dsScale();
+            const float avatar = kAvatarSize * s;
 
-            const auto nameText = mine ? m.user + "  (you)" : m.user;
-            const auto nameFont = kt::dsFont(pal, 11.f, true);
+            // Discord-style flat row: subtle background, no rounded card.
+            auto row = juce::Rectangle<float>(0.f, y, w, L.h);
+            if (mine)
+            {
+                g.setColour(kt::c(pal.accent).withAlpha(0.06f));
+                g.fillRect(row);
+                g.setColour(kt::c(pal.accent).withAlpha(0.5f));
+                g.fillRect(0.f, y + 2.f, 3.f, L.h - 4.f);
+            }
+
+            // Avatar circle.
+            auto av = juce::Rectangle<float>(kMsgPad, y + kMsgPad, avatar, avatar);
+            drawAvatar(g, pal, m.user, av);
+
+            // Name + timestamp inline (Discord style).
+            const auto nameText = mine ? m.user + " (you)" : m.user;
+            const auto nameFont = kt::dsFont(pal, 11.5f, true);
+            const float nameY = y + kMsgPad;
+            const float nameW = (float) juce::GlyphArrangement::getStringWidthInt(nameFont, nameText);
             g.setColour(kt::c(pal.accent));
             g.setFont(nameFont);
-            g.drawText(nameText, (int) (card.getX() + kBubblePad), (int) (card.getY() + 8.f),
-                       (int) (card.getWidth() - 2.f * kBubblePad), (int) L.nameH, juce::Justification::centredLeft, true);
-            // Discord-relayed lines keep their DIS tag beside the DreamUser name.
+            g.drawText(nameText, (int) L.contentX, (int) nameY, (int) nameW + 4, (int) L.nameH, juce::Justification::centredLeft, true);
+
+            // Timestamp inline after name.
+            g.setColour(kt::c(pal.muted).withAlpha(0.7f));
+            g.setFont(kt::dsFont(pal, 9.5f));
+            g.drawText("Today", (int) (L.contentX + nameW + 8.f), (int) nameY,
+                       (int) juce::jmax(40.f, L.contentW - nameW - 8.f), (int) L.nameH, juce::Justification::centredLeft, true);
+
+            // DIS tag for Discord-relayed messages.
             if (m.dis)
             {
-                juce::Rectangle<float> chip(card.getX() + kBubblePad + (float) juce::GlyphArrangement::getStringWidthInt(nameFont, nameText) + 6.f,
-                                            card.getY() + 8.f + (L.nameH - 13.f) * 0.5f, 28.f, 13.f);
-                if (chip.getRight() < card.getRight() - 6.f)
+                juce::Rectangle<float> chip(L.contentX + nameW + 44.f, nameY + (L.nameH - 13.f) * 0.5f, 28.f, 13.f);
+                if (chip.getRight() < w - 6.f)
                 {
                     g.setColour(kt::c(pal.accent).withAlpha(0.18f));
                     g.fillRoundedRectangle(chip, 3.f);
@@ -1371,76 +1416,84 @@ void SocialRail::paint(juce::Graphics& g)
                     g.drawText("DIS", chip, juce::Justification::centred);
                 }
             }
-            float ty = card.getY() + 8.f + L.nameH + 3.f;
+
+            // Message body.
+            float ty = nameY + L.nameH + 2.f;
             if (L.clean.isNotEmpty())
             {
                 juce::AttributedString as;
                 as.append(L.clean, kt::dsFont(pal, 12.f), kt::c(pal.text));
                 as.setWordWrap(juce::AttributedString::byWord);
-                as.draw(g, juce::Rectangle<float>(card.getX() + kBubblePad, ty, card.getWidth() - 2.f * kBubblePad, L.textH + 2.f));
+                as.draw(g, juce::Rectangle<float>(L.contentX, ty, L.contentW, L.textH + 2.f));
             }
-            if (L.chipH > 0.f) drawFileChip(g, pal, bubbleChipRect(card, L), L.ref);
-            y += L.h + kBubbleGap;
+            if (L.chipH > 0.f) drawFileChip(g, pal, bubbleChipRect(0.f, y, w, L), L.ref);
+            y += L.h + kMsgGap;
         }
         return;
     }
-    auto drawHeader = [&](int& y, const juce::String& title) {
-        g.setColour(kt::c(host.accent));
+    // ---- Discord-style member sidebar ----
+    auto drawHeader = [&](int& yy, const juce::String& title) {
+        g.setColour(kt::c(host.muted));
         g.setFont(kt::dsFont(host, 10.f, true));
-        g.drawText(title, 12, y, getWidth() - 24, 16, juce::Justification::left);
-        y += 20;
+        g.drawText(title.toUpperCase(), 12, yy, getWidth() - 24, 14, juce::Justification::left);
+        yy += 18;
     };
-    auto drawPerson = [&](int& y, const Person& person, int h) {
+    auto drawPerson = [&](int& yy, const Person& person, int h) {
         const auto pal = kt::themeById(person.themeId.isEmpty() ? host.id : person.themeId);
-        auto card = juce::Rectangle<float>(8.f, (float) y, (float) getWidth() - 16.f, (float) h - 6.f);
-        g.setColour(kt::c(pal.panel));
-        g.fillRoundedRectangle(card, 8.f);
-        g.setColour(person.online ? kt::c(pal.accent) : kt::c(pal.muted));
-        g.fillEllipse(card.getX() + 10, card.getY() + 12, 10, 10);
-        g.setColour(kt::c(pal.accent));
-        g.setFont(kt::dsFont(pal, 11.f, true));
-        g.drawText(person.name, card.getX() + 28, card.getY() + 4, card.getWidth() - 36, 16, juce::Justification::left);
-        g.setColour(kt::c(pal.muted));
-        g.setFont(kt::dsFont(pal, 9.f));
-        g.drawText(person.detail, card.getX() + 28, card.getY() + 20, card.getWidth() - 36, 14, juce::Justification::left);
-        y += h;
+        const float s = kt::dsScale();
+        const float avSize = 28.f * s;
+        auto avRect = juce::Rectangle<float>(12.f, (float) yy + 4.f, avSize, avSize);
+        drawAvatar(g, pal, person.name, avRect);
+        // Status dot.
+        auto dot = juce::Rectangle<float>(avRect.getRight() - 8.f, avRect.getBottom() - 8.f, 9.f, 9.f);
+        g.setColour(kt::c(pal.bg));
+        g.fillEllipse(dot);
+        g.setColour(person.online ? juce::Colour(0xff43b581) : juce::Colour(0xff747f8d));
+        g.fillEllipse(dot.reduced(1.5f));
+        g.setColour(person.online ? kt::c(pal.text) : kt::c(pal.muted));
+        g.setFont(kt::dsFont(pal, 11.5f, true));
+        g.drawText(person.name, (int) avRect.getRight() + 8, (int) yy + 4, getWidth() - (int) avRect.getRight() - 20, 16, juce::Justification::left);
+        if (person.detail.isNotEmpty())
+        {
+            g.setColour(kt::c(pal.muted));
+            g.setFont(kt::dsFont(pal, 9.f));
+            g.drawText(person.detail, (int) avRect.getRight() + 8, (int) yy + 20, getWidth() - (int) avRect.getRight() - 20, 14, juce::Justification::left);
+        }
+        yy += h;
     };
-    int y = 8;
+    int yy = 8;
     bool any = false;
-    drawHeader(y, "INVITES");
-    for (const auto& person : people) if (person.kind == "invite") { drawPerson(y, person, 48); any = true; }
-    if (! any) { g.setColour(kt::c(host.muted)); g.setFont(kt::dsFont(host, 10.f)); g.drawText("No friend invites.", 12, y, getWidth() - 24, 16, juce::Justification::left); y += 22; }
+    drawHeader(yy, "Invites");
+    for (const auto& person : people) if (person.kind == "invite") { drawPerson(yy, person, 44); any = true; }
+    if (! any) { g.setColour(kt::c(host.muted)); g.setFont(kt::dsFont(host, 10.f)); g.drawText("No friend invites.", 12, yy, getWidth() - 24, 16, juce::Justification::left); yy += 22; }
     any = false;
-    drawHeader(y, "FRIENDS");
-    for (const auto& person : people) if (person.kind == "friend") { drawPerson(y, person, 52); any = true; }
-    if (! any) { g.setColour(kt::c(host.muted)); g.setFont(kt::dsFont(host, 10.f)); g.drawText("No friends yet. Right-click a name to add one.", 12, y, getWidth() - 24, 16, juce::Justification::left); y += 22; }
-    if (showDirectory)
-    {
-        drawHeader(y, "ALL ACTIVE");
-        bool saw = false;
-        for (const auto& person : people) if (person.kind == "active") { drawPerson(y, person, 44); saw = true; }
-        if (! saw) { g.setColour(kt::c(host.muted)); g.setFont(kt::dsFont(host, 10.f)); g.drawText("Nobody else is active.", 12, y, getWidth() - 24, 16, juce::Justification::left); }
-    }
+    drawHeader(yy, "Friends");
+    for (const auto& person : people) if (person.kind == "friend") { drawPerson(yy, person, 46); any = true; }
+    if (! any) { g.setColour(kt::c(host.muted)); g.setFont(kt::dsFont(host, 10.f)); g.drawText("No friends yet. Right-click a name to add one.", 12, yy, getWidth() - 24, 16, juce::Justification::left); yy += 22; }
+    any = false;
+    drawHeader(yy, "All Active");
+    for (const auto& person : people) if (person.kind == "active") { drawPerson(yy, person, 40); any = true; }
+    if (! any) { g.setColour(kt::c(host.muted)); g.setFont(kt::dsFont(host, 10.f)); g.drawText("Nobody else is active.", 12, yy, getWidth() - 24, 16, juce::Justification::left); }
 }
 
 void SocialRail::mouseDown(const juce::MouseEvent& e)
 {
     if (mode == 0)
     {
-        float y = 8.f;
-        const float w = (float) getWidth() - 16.f;
+        float y = 4.f;
+        const float w = (float) getWidth();
         for (const auto& m : bubbles)
         {
             const auto pal = kt::themeById(m.themeId.isEmpty() ? "trippah" : m.themeId);
             const auto L = layoutBubble(m, pal, w);
-            auto card = juce::Rectangle<float>(8.f, y, w, L.h);
-            if (card.contains(e.position))
+            auto row = juce::Rectangle<float>(0.f, y, w, L.h);
+            if (row.contains(e.position))
             {
                 if (e.mods.isPopupMenu()) { if (onBubbleMenu) onBubbleMenu(m, e.getScreenPosition()); }
-                else if (L.chipH > 0.f && bubbleChipRect(card, L).contains(e.position) && onFileClick) onFileClick(L.ref);
+                else if (L.chipH > 0.f && bubbleChipRect(0.f, y, w, L).contains(e.position) && onFileClick) onFileClick(L.ref);
                 return;
             }
-            y += L.h + kBubbleGap;
+            y += L.h + kMsgGap;
         }
         return;
     }
@@ -1458,9 +1511,9 @@ void SocialRail::mouseDown(const juce::MouseEvent& e)
             }
             return false;
         };
-        if (section("invite", 48, true)) return true;
-        if (section("friend", 52, true)) return true;
-        if (showDirectory && section("active", 44, true)) return true;
+        if (section("invite", 44, true)) return true;
+        if (section("friend", 46, true)) return true;
+        if (showDirectory && section("active", 40, true)) return true;
         return false;
     };
     Person person;
@@ -1519,15 +1572,15 @@ void SocialDirectory::setData(const juce::Array<Row>& rows, int total, int activ
 
 void SocialDirectory::paint(juce::Graphics& g)
 {
-    g.fillAll(kt::c(host.bg).withAlpha(0.2f));
+    g.fillAll(kt::c(host.bg).withAlpha(0.15f));
     for (const auto& it : items)
     {
         auto row = juce::Rectangle<int>(0, it.y, getWidth(), it.h);
         if (it.type == ItemType::Header)
         {
-            g.setColour(kt::c(host.accent));
+            g.setColour(kt::c(host.muted));
             g.setFont(kt::dsFont(host, 10.f, true));
-            g.drawText(it.text, kSdPad, row.getY() + 5, getWidth() - 2 * kSdPad, 16, juce::Justification::centredLeft);
+            g.drawText(it.text.toUpperCase(), kSdPad, row.getY() + 5, getWidth() - 2 * kSdPad, 14, juce::Justification::centredLeft);
         }
         else if (it.type == ItemType::Label)
         {
@@ -1538,23 +1591,34 @@ void SocialDirectory::paint(juce::Graphics& g)
         else if (it.type == ItemType::Person)
         {
             const auto pal = kt::themeById(it.row.themeId.isEmpty() ? host.id : it.row.themeId);
-            auto card = row.reduced(kSdPad, 3).toFloat();
-            g.setColour(it.row.self ? kt::c(pal.panel).interpolatedWith(kt::c(pal.accent), 0.18f) : kt::c(pal.panel));
-            g.fillRoundedRectangle(card, 8.f);
-            g.setColour(kt::c(pal.border).withAlpha(0.75f));
-            g.drawRoundedRectangle(card, 8.f, 1.f);
-            g.setColour(it.row.online ? kt::c(pal.accent) : kt::c(pal.muted));
-            g.fillEllipse(card.getX() + 10.f, card.getCentreY() - 5.f, 10.f, 10.f);
+            const float s = kt::dsScale();
+            const float avSize = 30.f * s;
+            auto avRect = juce::Rectangle<float>((float) kSdPad, (float) row.getY() + 6.f, avSize, avSize);
+            // Avatar circle with initial.
+            drawAvatar(g, pal, it.row.name, avRect);
+            // Status dot (Discord-style: green=online, grey=offline).
+            auto dot = juce::Rectangle<float>(avRect.getRight() - 8.f, avRect.getBottom() - 8.f, 10.f, 10.f);
+            g.setColour(kt::c(pal.bg));
+            g.fillEllipse(dot);
+            g.setColour(it.row.online ? juce::Colour(0xff43b581) : juce::Colour(0xff747f8d));
+            g.fillEllipse(dot.reduced(1.5f));
+            // Self highlight: subtle accent background.
+            if (it.row.self)
+            {
+                auto bg = row.reduced(2, 2).toFloat();
+                g.setColour(kt::c(pal.accent).withAlpha(0.08f));
+                g.fillRoundedRectangle(bg, 6.f);
+            }
             const auto rowName = it.row.name + (it.row.self ? "  (you)" : "");
             const auto rowFont = kt::dsFont(pal, 12.f, true);
-            g.setColour(kt::c(pal.accent));
+            g.setColour(it.row.online ? kt::c(pal.text) : kt::c(pal.muted));
             g.setFont(rowFont);
-            g.drawText(rowName, (int) card.getX() + 28, (int) card.getY() + 5, (int) card.getWidth() - 36, 16, juce::Justification::centredLeft, true);
+            g.drawText(rowName, (int) avRect.getRight() + 8, (int) row.getY() + 6, (int) (row.getWidth() - avRect.getRight() - 20), 16, juce::Justification::centredLeft, true);
             // Members online in Discord carry a DIS tag next to their name.
             if (it.row.dis)
             {
-                juce::Rectangle<float> chip(card.getX() + 28.f + (float) juce::GlyphArrangement::getStringWidthInt(rowFont, rowName) + 6.f, card.getY() + 6.f, 28.f, 13.f);
-                if (chip.getRight() < card.getRight() - 6.f)
+                juce::Rectangle<float> chip(avRect.getRight() + 8.f + (float) juce::GlyphArrangement::getStringWidthInt(rowFont, rowName) + 6.f, (float) row.getY() + 7.f, 28.f, 13.f);
+                if (chip.getRight() < (float) row.getRight() - 6.f)
                 {
                     g.setColour(kt::c(pal.accent).withAlpha(0.18f));
                     g.fillRoundedRectangle(chip, 3.f);
@@ -1565,7 +1629,7 @@ void SocialDirectory::paint(juce::Graphics& g)
             }
             g.setColour(kt::c(pal.muted));
             g.setFont(kt::dsFont(pal, 9.5f));
-            g.drawText(it.row.detail, (int) card.getX() + 28, (int) card.getY() + 22, (int) card.getWidth() - 36, 14, juce::Justification::centredLeft, true);
+            g.drawText(it.row.detail, (int) avRect.getRight() + 8, (int) row.getY() + 22, (int) (row.getWidth() - avRect.getRight() - 20), 14, juce::Justification::centredLeft, true);
         }
         else if (it.type == ItemType::Discord)
         {
@@ -1758,7 +1822,7 @@ void KyotoAudioProcessorEditor::paint(juce::Graphics& g)
         g.drawText("DREAMSHARE HOME", hero.getX()+18, hero.getY()+12, 300, 26, juce::Justification::left);
         g.setColour(kt::c(theme.text));
         g.setFont(kt::dsFont(theme, 13.f, false));
-        g.drawFittedText("Chat on the left. Community plugins and effects on the right. Search by tags.", juce::Rectangle<float>(hero.getX()+18, hero.getY()+42, juce::jmax(120.f, hero.getWidth()-250.f), 36.f).toNearestInt(), juce::Justification::topLeft, 2);
+        g.drawFittedText("Chat on the left. Community plugins and effects on the right. React with emoji, post files, share plugins.", juce::Rectangle<float>(hero.getX()+18, hero.getY()+42, juce::jmax(120.f, hero.getWidth()-250.f), 36.f).toNearestInt(), juce::Justification::topLeft, 2);
         g.setColour(kt::c(theme.accent));
         g.setFont(kt::dsFont(theme, 12.f, true));
         g.drawText("LIVE  -  " + (account.isEmpty() ? juce::String("SIGNED IN") : account.toUpperCase()), hero.getRight()-220, hero.getY()+18, 200, 18, juce::Justification::right);
@@ -3980,12 +4044,19 @@ void KyotoAudioProcessorEditor::showBubbleMenu(const SocialRail::Bubble& bubble,
     juce::PopupMenu menu;
     menu.addItem(1, "Add friend");
     juce::PopupMenu react;
-    react.addItem(10, "heart");
-    react.addItem(11, "fire");
-    react.addItem(12, "laugh");
-    react.addItem(13, "moon");
-    react.addItem(14, "100");
-    menu.addSubMenu("React", react);
+    react.addItem(10, "\xf0\x9f\x92\x9c  Heart");
+    react.addItem(11, "\xf0\x9f\x94\xa5  Fire");
+    react.addItem(12, "\xf0\x9f\x98\x82  Laugh");
+    react.addItem(13, "\xf0\x9f\x8c\x9f  Moon");
+    react.addItem(14, "\xf0\x9f\x92\xaf  100");
+    react.addItem(15, "\xf0\x9f\x91\x8d  Up");
+    react.addItem(16, "\xf0\x9f\x92\x80  Skull");
+    react.addItem(17, "\xf0\x9f\x91\x80  Eyes");
+    react.addItem(18, "\xe2\x9c\xa8  Sparkles");
+    react.addItem(19, "\xf0\x9f\x91\x8b  Wave");
+    menu.addSubMenu("React with emoji", react);
+    menu.addSeparator();
+    menu.addItem(2, "Reply");
     if (isAdmin) { menu.addSeparator(); menu.addItem(20, "Delete message"); }
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1)),
         [this, bubble](int choice) {
@@ -3995,10 +4066,15 @@ void KyotoAudioProcessorEditor::showBubbleMenu(const SocialRail::Bubble& bubble,
                 juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
                 std::thread([safe, tokenCopy, name]{ auto r = kt::friendRequest(tokenCopy, "friend_request", name); juce::MessageManager::callAsync([safe, r]{ if (safe==nullptr) return; safe->status.setText(r.ok?"Friend request sent":r.error, juce::dontSendNotification); }); }).detach();
             }
-            else if (choice >= 10 && choice <= 14)
+            else if (choice >= 10 && choice <= 19)
             {
-                const char* emoji[] = { "heart", "fire", "laugh", "moon", "100" };
+                const char* emoji[] = { "heart", "fire", "laugh", "moon", "100", "up", "skull", "eyes", "sparkles", "wave" };
                 reactTo("chat", bubble.id, emoji[choice - 10]);
+            }
+            else if (choice == 2)
+            {
+                msgBox.setText(">>" + bubble.id + " ", false);
+                msgBox.grabKeyboardFocus();
             }
             else if (choice == 20)
             {

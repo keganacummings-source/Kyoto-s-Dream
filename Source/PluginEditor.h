@@ -122,7 +122,13 @@ public:
     void mouseDown(const juce::MouseEvent& e) override;
 
 private:
-    void syncSize() { setSize(juce::jmax(220, getWidth()), contentHeight()); repaint(); }
+    void syncSize()
+    {
+        const int h = contentHeight();
+        if (h != getHeight())
+            setSize(juce::jmax(220, getWidth()), h);
+        repaint();
+    }
     int rowAt(juce::Point<int> pos, Bubble* bubble, Person* person) const;
     juce::Array<Bubble> bubbles;
     juce::Array<Person> people;
