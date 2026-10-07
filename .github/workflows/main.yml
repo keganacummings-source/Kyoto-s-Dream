@@ -1,42 +1,104 @@
 name: Build KYOTRIPPAH
+
 on:
   push:
   workflow_dispatch:
+
 jobs:
   windows:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
+
       - name: Configure
         run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+
       - name: Build
         run: cmake --build build --config Release --parallel
+
       - name: Stage bundles
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
           New-Item -ItemType Directory -Force -Path stage | Out-Null
-          Copy-Item -Recurse "build/KYOTO_artefacts/Release/VST3/KYOTO.vst3" stage
-          Copy-Item -Recurse "build/KYOTRIPPAHFX_artefacts/Release/VST3/KYOTRIPPAH FX.vst3" stage
+
+          $kyoto = Get-ChildItem -Path build -Recurse -Directory -Filter "KYOTO.vst3" -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match 'VST3' } |
+            Select-Object -First 1
+          $fx = Get-ChildItem -Path build -Recurse -Directory -Filter "KYOTRIPPAH FX.vst3" -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match 'VST3' } |
+            Select-Object -First 1
+
+          if (-not $kyoto) {
+            Write-Host "Build tree:"
+            Get-ChildItem -Path build -Recurse -Filter "*.vst3" -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+            throw "KYOTO.vst3 not found under build/"
+          }
+          if (-not $fx) {
+            Write-Host "Build tree:"
+            Get-ChildItem -Path build -Recurse -Filter "*.vst3" -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+            throw "KYOTRIPPAH FX.vst3 not found under build/"
+          }
+
+          Write-Host "Staging $($kyoto.FullName)"
+          Write-Host "Staging $($fx.FullName)"
+          Copy-Item -Recurse $kyoto.FullName stage
+          Copy-Item -Recurse $fx.FullName stage
+
           tar -a -c -f KYOTRIPPAH-Windows-VST3.zip -C stage "KYOTO.vst3" "KYOTRIPPAH FX.vst3"
+          Get-Item KYOTRIPPAH-Windows-VST3.zip | Format-List Name, Length
+
       - uses: actions/upload-artifact@v4
         with:
           name: KYOTRIPPAH-Windows-VST3
           path: KYOTRIPPAH-Windows-VST3.zip
+          if-no-files-found: error
+
   macos:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Configure
         run: cmake -S . -B build -G Xcode -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
+
       - name: Build
         run: cmake --build build --config Release --parallel
+
       - name: Stage bundles
         run: |
+          set -euo pipefail
           mkdir -p stage
-          cp -R "build/KYOTO_artefacts/Release/VST3/KYOTO.vst3" stage/
-          cp -R "build/KYOTRIPPAHFX_artefacts/Release/VST3/KYOTRIPPAH FX.vst3" stage/
-          ditto -c -k --keepParent stage KYOTRIPPAH-macOS-VST3.zip || tar -czf KYOTRIPPAH-macOS-VST3.zip -C stage .
+
+          KYOTO_BUNDLE=$(find build -type d -name 'KYOTO.vst3' | head -n 1 || true)
+          FX_BUNDLE=$(find build -type d -name 'KYOTRIPPAH FX.vst3' | head -n 1 || true)
+
+          if [ -z "$KYOTO_BUNDLE" ] || [ -z "$FX_BUNDLE" ]; then
+            echo "Looking for VST3 bundles under build/:"
+            find build -name '*.vst3' -print || true
+            echo "KYOTO_BUNDLE='$KYOTO_BUNDLE'"
+            echo "FX_BUNDLE='$FX_BUNDLE'"
+            exit 1
+          fi
+
+          echo "Staging $KYOTO_BUNDLE"
+          echo "Staging $FX_BUNDLE"
+          cp -R "$KYOTO_BUNDLE" stage/
+          cp -R "$FX_BUNDLE" stage/
+
+          # Prefer ditto for proper macOS zip; fall back to tar
+          if command -v ditto >/dev/null 2>&1; then
+            ditto -c -k --keepParent stage/KYOTO.vst3 KYOTO.vst3.zip
+            ditto -c -k --keepParent "stage/KYOTRIPPAH FX.vst3" KYOTRIPPAH-FX.vst3.zip
+            # Combined artifact zip
+            ditto -c -k --keepParent stage KYOTRIPPAH-macOS-VST3.zip
+          else
+            tar -czf KYOTRIPPAH-macOS-VST3.zip -C stage .
+          fi
+          ls -lh KYOTRIPPAH-macOS-VST3.zip
+
       - uses: actions/upload-artifact@v4
         with:
           name: KYOTRIPPAH-macOS-VST3
           path: KYOTRIPPAH-macOS-VST3.zip
+          if-no-files-found: error
