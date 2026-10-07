@@ -1099,8 +1099,8 @@ KyotoAudioProcessorEditor::~KyotoAudioProcessorEditor()
 
     if (viewScreen != nullptr)
     {
-        // PluginViewScreen runs its own 60Hz timer and holds a reference to *this.
-        viewScreen->stopTimer();
+        // Timer is a private base of PluginViewScreen — use public shutdownViewer().
+        viewScreen->shutdownViewer();
         removeChildComponent(viewScreen);
         delete viewScreen;
         viewScreen = nullptr;
@@ -3407,7 +3407,10 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
                 const int pieceIdx = result - 6000;
                 const auto& piece = kt::kModPieces[pieceIdx];
                 pendingPiece = &piece;
-                armedStyle = (piece.id == "flip" || piece.id == "lfo" || piece.id == "envelope") ? "fader" : "dial";
+                {
+                    const juce::String pid (piece.id);
+                    armedStyle = (pid == "flip" || pid == "lfo" || pid == "envelope") ? "fader" : "dial";
+                }
                 pendingFx = fxBrowser ? fxBrowser->getSelectedFx() : 0;
                 pendingLabel = piece.name;
                 pendingSpecial = false;
@@ -4528,14 +4531,15 @@ void KyotoAudioProcessorEditor::rebuildThreadDetail()
         card->onFile = [this](const kt::AttachRef& r) { saveAttachmentAs(r); };
         card->themeId = c.themeId.isEmpty() ? theme.id : c.themeId;
         const auto cid = c.id;
-        card->onContextMenu = [this, cid](juce::Point<int> pos) {
+        card->onContextMenu = [safeEd = juce::Component::SafePointer<KyotoAudioProcessorEditor>(this), cid](juce::Point<int> pos) {
+            if (safeEd == nullptr || safeEd->editorClosing) return;
             juce::PopupMenu menu;
             menu.addItem(1, "heart"); menu.addItem(2, "fire"); menu.addItem(3, "laugh"); menu.addItem(4, "moon");
             menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(juce::Rectangle<int>(pos.x, pos.y, 1, 1)),
-                [this, safeEd = juce::Component::SafePointer<KyotoAudioProcessorEditor>(this), cid](int choice) {
+                [safeEd, cid](int choice) {
                     if (safeEd == nullptr || safeEd->editorClosing) return;
                     const char* emoji[] = { "heart", "fire", "laugh", "moon" };
-                    if (choice >= 1 && choice <= 4) reactTo("comment", cid, emoji[choice - 1]);
+                    if (choice >= 1 && choice <= 4) safeEd->reactTo("comment", cid, emoji[choice - 1]);
                 });
         };
         catalogHolder.addAndMakeVisible(card);
