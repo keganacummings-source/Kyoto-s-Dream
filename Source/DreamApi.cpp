@@ -131,4 +131,16 @@ DreamResult react(const juce::String& token, const juce::String& kind, const juc
     auto* o = new juce::DynamicObject(); o->setProperty("kind", kind); o->setProperty("id", id); o->setProperty("emoji", emoji);
     return postAction("react", juce::var(o), token);
 }
+
+DreamResult getDiscordChannels(const juce::String& token)
+{
+    return postAction("discord_channels", juce::var(new juce::DynamicObject()), token);
+}
+
+DreamResult getDiscordMessages(const juce::String& token, const juce::String& channelId)
+{
+    auto* o = new juce::DynamicObject();
+    o->setProperty("channelId", channelId);
+    return postAction("discord_messages", juce::var(o), token);
+}
 }

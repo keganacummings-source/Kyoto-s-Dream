@@ -61,6 +61,8 @@ import { handleKyotoModule } from "./module-rules.js";
  *   set_role | clear_role
  *   set_custom_role | clear_custom_role   (Trippah/Goonr only — collective badge)
  *   presence|heartbeat
+ *   discord_channels       → {} → { channels: [{ id, name, topic, type }] }
+ *   discord_messages       → { channelId } → { messages: [{ id, user, text }] }
  *
  * Theme patch compatibility:
  *   set_theme/theme, session/whoami/me, login themePack/themes
@@ -170,6 +172,29 @@ function json(data, status) {
     status: status || 200,
     headers: Object.assign({ 'Content-Type': 'application/json; charset=utf-8' }, CORS)
   });
+}
+
+// ---- Discord relay (Discord Lite) ----
+// The worker proxies Discord's REST API with a bot token so the VST / web
+// client can browse the channels the bot can see without ever exposing the
+// token. Configure via DISCORD_BOT_TOKEN + DISCORD_GUILD_ID (.dev.vars for
+// local wrangler dev, worker secrets in production). Without the token the
+// discord_* actions return a clear "not configured" error.
+const DISCORD_API = 'https://discord.com/api/v10';
+
+async function discordApi(env, path) {
+  const token = String((env && env.DISCORD_BOT_TOKEN) || '');
+  if (!token) return { ok: false, error: 'Discord bot not configured. Set DISCORD_BOT_TOKEN + DISCORD_GUILD_ID.', code: 'no_token' };
+  try {
+    const res = await fetch(DISCORD_API + path, { headers: { Authorization: 'Bot ' + token } });
+    if (res.status === 401) return { ok: false, error: 'Discord bot token rejected (401).' };
+    if (res.status === 403) return { ok: false, error: 'Discord bot lacks access to that resource (403).' };
+    if (res.status === 429) return { ok: false, error: 'Discord rate limited. Try again in ' + (res.headers.get('Retry-After') || '1') + 's.' };
+    if (!res.ok) return { ok: false, error: 'Discord API error (' + res.status + ').' };
+    return { ok: true, data: await res.json() };
+  } catch (err) {
+    return { ok: false, error: 'Discord request failed: ' + String(err && err.message || err) };
+  }
 }
 
 function normUser(u) {
@@ -1360,6 +1385,28 @@ export default {
         catch (err) { return json({ ok:false, error:'store read failed' }, 502); }
         const threads = Array.isArray(threadFeed.threads) ? threadFeed.threads.slice(-80).reverse() : [];
         return json({ ok:true, storage:STORAGE, threads:threads, count:threads.length });
+      }
+
+      // ---- Discord Lite: list channels the bot can see in the configured guild ----
+      if (action === 'discord_channels') {
+        const guild = String((env && env.DISCORD_GUILD_ID) || '');
+        if (!guild) return json({ ok: false, error: 'Discord guild not configured. Set DISCORD_GUILD_ID.', code: 'no_guild' });
+        const r = await discordApi(env, '/guilds/' + guild + '/channels');
+        if (!r.ok) return json(r, 502);
+        const channels = (Array.isArray(r.data) ? r.data : []).filter(function (c) { return c && (c.type === 0 || c.type === 5); })
+          .map(function (c) { return { id: c.id, name: c.name, topic: c.topic || '', type: c.type }; });
+        return json({ ok: true, channels: channels, count: channels.length });
+      }
+      // ---- Discord Lite: recent messages in one channel ----
+      if (action === 'discord_messages') {
+        const channelId = String(body.channelId || body.channel || '');
+        if (!/^\d+$/.test(channelId)) return json({ ok: false, error: 'Missing or invalid channelId' }, 400);
+        const r = await discordApi(env, '/channels/' + channelId + '/messages?limit=50');
+        if (!r.ok) return json(r, 502);
+        const messages = (Array.isArray(r.data) ? r.data : []).reverse().map(function (m) {
+          return { id: m.id, user: (m.author && m.author.username) || '?', text: m.content || '' };
+        });
+        return json({ ok: true, messages: messages, count: messages.length });
       }
 
       // ---- Instrument presets (account-backed; safe to use from web instruments or VST WebView) ----

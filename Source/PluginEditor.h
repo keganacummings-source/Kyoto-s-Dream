@@ -159,6 +159,8 @@ private:
     void setRailMode(int mode);
     void rebuildCenter();
     void rebuildThreadBoard();
+    void refreshDiscord();
+    void openDiscordChannel(const juce::String& id, const juce::String& name);
     void addSpecialChainStep(int type, const juce::String& name);
     void refreshEffectBox();
     void updateFxControls();
@@ -231,9 +233,17 @@ private:
     juce::Viewport chatView;
     SocialRail socialRail;
     juce::TextButton catalogModeBtn { "CATALOG" }, threadsModeBtn { "THREADS" }, railChatBtn { "CHAT" }, railOnlineBtn { "ONLINE" };
+    juce::TextButton discordBtn { "DISCORD" }, discordBackBtn { "< CHANNELS" };
     int centerMode = 0;
     int railMode = 0;
     bool scrollChatOnRefresh = true;
+    bool discordMode = false;
+    int discordView = 0; // 0 = channel list, 1 = message view
+    juce::String selectedDiscordChannel, selectedDiscordName;
+    struct DiscordChannel { juce::String id, name, topic; };
+    juce::Array<DiscordChannel> discordChannels;
+    struct DiscordMessage { juce::String id, user, text; };
+    juce::Array<DiscordMessage> discordMessages;
     juce::String selectedThreadId;
     struct ThreadItem { juce::String id, user, title, text, themeId; int comments = 0; };
     juce::Array<ThreadItem> threads;
