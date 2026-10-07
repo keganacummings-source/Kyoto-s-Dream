@@ -92,8 +92,8 @@ public:
         g.drawRoundedRectangle(face, bodyRadius, 1.3f);
         if (geekOn) g.beginTransparencyLayer(juce::jmax(0.14f, cover));
         for (int i = 0; i < shell.slotCount; ++i)
-            if (shell.slots[i].kind == pb::SlotKind::Screen)
-                pb::paintScreenBezel(g, pb::slotRect(face, shell.slots[i]).reduced(3.f), shell.screenStyle, theme);
+            if (shell.slots[i].kind == pb::SlotKind::Board)
+                pb::paintScreenBezel(g, pb::slotRect(face, shell.slots[i]).reduced(3.f), pb::boardScreenTypeOf(editor.proc.uiState, shell.screenStyle), theme);
         drawBayWiring(g, face, shell);
         drawPlacedParts(g, face, shell);
         if (geekOn) g.endTransparencyLayer();
@@ -442,22 +442,10 @@ private:
 
             if (kind == "board")
             {
-                const int fxType = liveTypeValue(node);
-                g.setColour(accent.withAlpha(0.20f));
-                g.fillRoundedRectangle(r.reduced(8.f), 6.f);
-                g.setColour(accent);
-                g.setFont(kt::font(theme, 11.f, true));
-                g.drawText("MOTHERBOARD", r.reduced(10.f).removeFromTop(15.f), juce::Justification::left);
-                g.setColour(muted);
-                g.setFont(kt::font(theme, 9.f));
-                g.drawText("CHAIN START  -  " + fxNameFor(fxType), r.reduced(10.f).withTrimmedTop(18.f).removeFromTop(14.f), juce::Justification::left);
-                auto* mix = editor.proc.apvts.getParameter("s01mix");
-                auto bar = r.reduced(10.f).removeFromBottom(14.f);
-                g.setColour(kt::c(theme.bg));
-                g.fillRoundedRectangle(bar, 3.f);
-                bar.setWidth(bar.getWidth() * (mix != nullptr ? mix->getValue() : 0.f));
-                g.setColour(accent.withAlpha(0.85f));
-                g.fillRoundedRectangle(bar, 3.f);
+                float live[128] {};
+                editor.proc.copyScope(live, 128);
+                const int st = pb::boardScreenTypeOf(editor.proc.uiState, shell.screenStyle);
+                pb::paintScreenFace(g, r.reduced(5.f), st, theme, live, 128, juce::String("SCREEN  -  ") + pb::kScreenTypes[st]);
             }
             else if (kind == "dial")
             {

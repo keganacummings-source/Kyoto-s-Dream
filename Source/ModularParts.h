@@ -2,9 +2,9 @@
 #include "Themes.h"
 
 // ============================================================================
-//  MODULAR PARTS - PROTOTYPE (parts update, batch 1)
-//  Basis: every placed part can carry a SKIN (visual family) and a QUIRK
-//  (behaviour modifier). Data lives here; the editor stores "skin" + "quirk"
+//  MODULAR PARTS - COSMETIC ONLY
+//  Every placed part can carry a SKIN (visual family) and a LOOK note. Modules have NO effect on sound or
+//  control behaviour: only effects the user places affect audio. Data lives here; the editor stores "skin" + "quirk"
 //  on each placed widget ValueTree node, so skins/quirks serialize with builds
 //  for free. Future batches just add rows to the tables below.
 // ============================================================================
@@ -39,12 +39,12 @@ inline const PartSkin* partSkinById(const juce::String& id)
 struct ModPiece { const char* id; const char* name; const char* quirk; const char* skin; };
 
 inline constexpr ModPiece kModPieces[] = {
-    { "snap",  "Snap Dial",    "Quantizes its FX option to 8 repeatable steps",      "mint"   },
-    { "lens",  "Lens Knob",    "Fine trims - drags 4x slower for precision carving", "copper" },
-    { "flip",  "Invert Fader", "Mirrors the option range - pull down to push up",    "violet" },
-    { "warp",  "Warp Dial",    "Adds a bipolar bend to the option curve",            "amber"  },
-    { "pulse", "Pulse Key",    "Slams the option to max while held",                 "ice"    },
-    { "ghost", "Ghost Screen", "Reads the option value on the live output scope",    "stock"  }
+    { "snap",  "Snap Dial",    "Cosmetic: mint stepped-dial look",      "mint"   },
+    { "lens",  "Lens Knob",    "Cosmetic: copper precision-knob look", "copper" },
+    { "flip",  "Invert Fader", "Cosmetic: violet fader look",    "violet" },
+    { "warp",  "Warp Dial",    "Cosmetic: amber dial look",            "amber"  },
+    { "pulse", "Pulse Key",    "Cosmetic: ice key look",                 "ice"    },
+    { "ghost", "Ghost Screen", "Cosmetic: stock screen look",    "stock"  }
 };
 inline constexpr int kModPieceCount = 6;
 

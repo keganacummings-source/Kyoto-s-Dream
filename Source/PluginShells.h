@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include "Themes.h"
+#include "ThemeDecals.h"
 
 // Hardware shells for the Plugin Builder. Slots are normalised inside the face plate.
 // The motherboard bay is always occupied first and is the start of the signal chain.
@@ -35,11 +36,11 @@ struct Shell
 };
 
 // 30 templates. Every template has exactly one screen (each a different size/position/bezel),
-// 6-20 bays and its own case design. Generated and checked for overlaps; bay 0 is always the motherboard.
+// 6-20 bays and its own case design. Generated and checked for overlaps; bay 0 is always the motherboard AND the shell's screen (the old separate screen bay is retired).
 inline const Shell kShells[] = {
     { "console", "Console Deck", 21, 0.10f, "rounded", {
-        { SlotKind::Board, 0.030f, 0.580f, 0.300f, 0.340f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.040f, 0.080f, 0.460f, 0.340f, "SCREEN" },
+        { SlotKind::Board, 0.040f, 0.080f, 0.460f, 0.340f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Knob, 0.540f, 0.080f, 0.140f, 0.280f, "KNOB A" },
         { SlotKind::Knob, 0.700f, 0.080f, 0.140f, 0.280f, "KNOB B" },
         { SlotKind::Knob, 0.840f, 0.080f, 0.130f, 0.280f, "KNOB C" },
@@ -50,8 +51,8 @@ inline const Shell kShells[] = {
         { SlotKind::Cosmetic, 0.820f, 0.700f, 0.150f, 0.220f, "BADGE" }
     }, 10, 0, 1, 1, 2, 0.00f },
     { "tower", "Tower Rack", 48, 0.09f, "square", {
-        { SlotKind::Board, 0.080f, 0.080f, 0.840f, 0.160f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.100f, 0.280f, 0.800f, 0.160f, "SCREEN" },
+        { SlotKind::Board, 0.100f, 0.280f, 0.800f, 0.160f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Knob, 0.100f, 0.480f, 0.240f, 0.200f, "KNOB A" },
         { SlotKind::Knob, 0.380f, 0.480f, 0.240f, 0.200f, "KNOB B" },
         { SlotKind::Knob, 0.660f, 0.480f, 0.240f, 0.200f, "KNOB C" },
@@ -61,8 +62,8 @@ inline const Shell kShells[] = {
         { SlotKind::Cosmetic, 0.740f, 0.740f, 0.160f, 0.180f, "RAIL" }
     }, 9, 3, 1, 5, 0, 0.03f },
     { "desk", "Desk Wing", 53, 0.08f, "wedge", {
-        { SlotKind::Board, 0.380f, 0.380f, 0.240f, 0.280f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.340f, 0.060f, 0.320f, 0.260f, "SCREEN" },
+        { SlotKind::Board, 0.340f, 0.060f, 0.320f, 0.260f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Knob, 0.060f, 0.100f, 0.120f, 0.240f, "KNOB A" },
         { SlotKind::Knob, 0.200f, 0.100f, 0.120f, 0.240f, "KNOB B" },
         { SlotKind::Knob, 0.700f, 0.100f, 0.120f, 0.240f, "KNOB C" },
@@ -73,8 +74,8 @@ inline const Shell kShells[] = {
         { SlotKind::Cosmetic, 0.680f, 0.680f, 0.120f, 0.220f, "BADGE" }
     }, 10, 5, 2, 2, 1, -0.04f },
     { "pocket", "Pocket Unit", 15, 0.12f, "pill", {
-        { SlotKind::Board, 0.080f, 0.640f, 0.400f, 0.280f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.120f, 0.080f, 0.760f, 0.240f, "SCREEN" },
+        { SlotKind::Board, 0.120f, 0.080f, 0.760f, 0.240f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Knob, 0.100f, 0.380f, 0.220f, 0.200f, "KNOB A" },
         { SlotKind::Knob, 0.390f, 0.380f, 0.220f, 0.200f, "KNOB B" },
         { SlotKind::Fader, 0.680f, 0.360f, 0.200f, 0.220f, "FADER" },
@@ -82,8 +83,8 @@ inline const Shell kShells[] = {
         { SlotKind::Cosmetic, 0.740f, 0.640f, 0.180f, 0.280f, "BADGE" }
     }, 7, 2, 3, 4, 4, 0.06f },
     { "slabmixer", "Slab Mixer", 57, 0.13f, "notch", {
-        { SlotKind::Board, 0.006f, 0.481f, 0.236f, 0.513f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.006f, 0.006f, 0.236f, 0.463f, "SCREEN" },
+        { SlotKind::Board, 0.006f, 0.006f, 0.236f, 0.463f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Knob, 0.254f, 0.006f, 0.128f, 0.247f, "KNOB 1" },
         { SlotKind::Knob, 0.381f, 0.006f, 0.128f, 0.247f, "KNOB 2" },
         { SlotKind::Knob, 0.509f, 0.006f, 0.128f, 0.247f, "KNOB 3" },
@@ -100,8 +101,8 @@ inline const Shell kShells[] = {
         { SlotKind::Cosmetic, 0.649f, 0.672f, 0.345f, 0.322f, "VENT 1" }
     }, 16, 4, 3, 6, 1, 0.11f },
     { "rackblade", "Rack Blade", 70, 0.11f, "wedge", {
-        { SlotKind::Board, 0.006f, 0.774f, 0.336f, 0.220f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.006f, 0.436f, 0.336f, 0.326f, "SCREEN" },
+        { SlotKind::Board, 0.006f, 0.436f, 0.336f, 0.326f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Key, 0.006f, 0.006f, 0.168f, 0.209f, "KEY 1" },
         { SlotKind::Key, 0.174f, 0.006f, 0.168f, 0.209f, "KEY 2" },
         { SlotKind::Key, 0.006f, 0.215f, 0.168f, 0.209f, "KEY 3" },
@@ -110,8 +111,8 @@ inline const Shell kShells[] = {
         { SlotKind::Cosmetic, 0.354f, 0.560f, 0.640f, 0.434f, "VENT 1" }
     }, 8, 5, 2, 1, 2, -0.02f },
     { "orbitpad", "Orbit Pad", 83, 0.09f, "octagon", {
-        { SlotKind::Board, 0.006f, 0.429f, 0.259f, 0.304f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.277f, 0.006f, 0.388f, 0.385f, "SCREEN" },
+        { SlotKind::Board, 0.277f, 0.006f, 0.388f, 0.385f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Knob, 0.006f, 0.006f, 0.129f, 0.206f, "KNOB 1" },
         { SlotKind::Knob, 0.135f, 0.006f, 0.129f, 0.206f, "KNOB 2" },
         { SlotKind::Knob, 0.006f, 0.212f, 0.129f, 0.206f, "KNOB 3" },
@@ -124,16 +125,16 @@ inline const Shell kShells[] = {
         { SlotKind::Fader, 0.836f, 0.006f, 0.158f, 0.988f, "FADER 2" }
     }, 12, 6, 1, 4, 3, 0.10f },
     { "studiobrick", "Studio Brick", 96, 0.07f, "rounded", {
-        { SlotKind::Board, 0.544f, 0.678f, 0.450f, 0.316f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.006f, 0.622f, 0.526f, 0.372f, "SCREEN" },
+        { SlotKind::Board, 0.006f, 0.622f, 0.526f, 0.372f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Cosmetic, 0.006f, 0.006f, 0.526f, 0.604f, "VENT 1" },
         { SlotKind::Knob, 0.544f, 0.006f, 0.225f, 0.330f, "KNOB 1" },
         { SlotKind::Knob, 0.769f, 0.006f, 0.225f, 0.330f, "KNOB 2" },
         { SlotKind::Knob, 0.544f, 0.336f, 0.225f, 0.330f, "KNOB 3" }
     }, 6, 0, 0, 7, 4, -0.03f },
     { "stompbox", "Stomp Box", 9, 0.12f, "chamfer", {
-        { SlotKind::Board, 0.640f, 0.006f, 0.354f, 0.316f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.006f, 0.006f, 0.351f, 0.445f, "SCREEN" },
+        { SlotKind::Board, 0.006f, 0.006f, 0.351f, 0.445f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Cosmetic, 0.006f, 0.463f, 0.351f, 0.531f, "VENT 1" },
         { SlotKind::Key, 0.369f, 0.006f, 0.259f, 0.494f, "KEY 1" },
         { SlotKind::Knob, 0.640f, 0.334f, 0.118f, 0.330f, "KNOB 1" },
@@ -143,8 +144,8 @@ inline const Shell kShells[] = {
         { SlotKind::Knob, 0.758f, 0.664f, 0.118f, 0.330f, "KNOB 5" }
     }, 9, 1, 5, 2, 5, 0.09f },
     { "arcadecab", "Arcade Cab", 22, 0.10f, "pill", {
-        { SlotKind::Board, 0.704f, 0.463f, 0.290f, 0.531f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.704f, 0.006f, 0.290f, 0.445f, "SCREEN" },
+        { SlotKind::Board, 0.704f, 0.006f, 0.290f, 0.445f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Knob, 0.006f, 0.006f, 0.093f, 0.247f, "KNOB 1" },
         { SlotKind::Knob, 0.099f, 0.006f, 0.093f, 0.247f, "KNOB 2" },
         { SlotKind::Knob, 0.191f, 0.006f, 0.093f, 0.247f, "KNOB 3" },
@@ -165,8 +166,8 @@ inline const Shell kShells[] = {
         { SlotKind::Cosmetic, 0.540f, 0.500f, 0.152f, 0.494f, "VENT 2" }
     }, 20, 2, 4, 5, 0, -0.04f },
     { "cassettedeck", "Cassette Deck", 35, 0.08f, "square", {
-        { SlotKind::Board, 0.006f, 0.668f, 0.451f, 0.326f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.469f, 0.668f, 0.525f, 0.326f, "SCREEN" },
+        { SlotKind::Board, 0.469f, 0.668f, 0.525f, 0.326f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Fader, 0.006f, 0.006f, 0.988f, 0.225f, "FADER 1" },
         { SlotKind::Knob, 0.006f, 0.243f, 0.141f, 0.199f, "KNOB 1" },
         { SlotKind::Knob, 0.147f, 0.243f, 0.141f, 0.199f, "KNOB 2" },
@@ -178,8 +179,8 @@ inline const Shell kShells[] = {
         { SlotKind::Cosmetic, 0.006f, 0.454f, 0.988f, 0.202f, "VENT 1" }
     }, 11, 3, 3, 0, 1, 0.08f },
     { "radiowave", "Radio Wave", 48, 0.13f, "notch", {
-        { SlotKind::Board, 0.634f, 0.006f, 0.360f, 0.347f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.595f, 0.365f, 0.399f, 0.629f, "SCREEN" },
+        { SlotKind::Board, 0.595f, 0.365f, 0.399f, 0.629f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Key, 0.006f, 0.006f, 0.325f, 0.347f, "KEY 1" },
         { SlotKind::Cosmetic, 0.343f, 0.006f, 0.279f, 0.347f, "VENT 1" },
         { SlotKind::Knob, 0.006f, 0.365f, 0.192f, 0.629f, "KNOB 1" },
@@ -187,8 +188,8 @@ inline const Shell kShells[] = {
         { SlotKind::Knob, 0.391f, 0.365f, 0.192f, 0.629f, "KNOB 3" }
     }, 7, 4, 2, 3, 2, -0.05f },
     { "synthwedge", "Synth Wedge", 61, 0.11f, "wedge", {
-        { SlotKind::Board, 0.503f, 0.006f, 0.491f, 0.329f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.006f, 0.006f, 0.485f, 0.329f, "SCREEN" },
+        { SlotKind::Board, 0.006f, 0.006f, 0.485f, 0.329f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Knob, 0.006f, 0.347f, 0.110f, 0.371f, "KNOB 1" },
         { SlotKind::Knob, 0.116f, 0.347f, 0.110f, 0.371f, "KNOB 2" },
         { SlotKind::Knob, 0.226f, 0.347f, 0.110f, 0.371f, "KNOB 3" },
@@ -203,8 +204,8 @@ inline const Shell kShells[] = {
         { SlotKind::Fader, 0.655f, 0.730f, 0.339f, 0.264f, "FADER 2" }
     }, 14, 5, 1, 6, 3, 0.07f },
     { "pedalboard", "Pedal Board", 74, 0.09f, "octagon", {
-        { SlotKind::Board, 0.006f, 0.006f, 0.428f, 0.252f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.006f, 0.552f, 0.469f, 0.442f, "SCREEN" },
+        { SlotKind::Board, 0.006f, 0.552f, 0.469f, 0.442f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Key, 0.446f, 0.006f, 0.183f, 0.252f, "KEY 1" },
         { SlotKind::Key, 0.629f, 0.006f, 0.183f, 0.252f, "KEY 2" },
         { SlotKind::Key, 0.811f, 0.006f, 0.183f, 0.252f, "KEY 3" },
@@ -223,8 +224,8 @@ inline const Shell kShells[] = {
         { SlotKind::Cosmetic, 0.487f, 0.552f, 0.507f, 0.442f, "VENT 1" }
     }, 18, 6, 0, 1, 4, -0.06f },
     { "flightcase", "Flight Case", 87, 0.07f, "rounded", {
-        { SlotKind::Board, 0.006f, 0.548f, 0.245f, 0.446f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.263f, 0.548f, 0.212f, 0.446f, "SCREEN" },
+        { SlotKind::Board, 0.263f, 0.548f, 0.212f, 0.446f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Cosmetic, 0.006f, 0.006f, 0.988f, 0.530f, "VENT 1" },
         { SlotKind::Knob, 0.487f, 0.548f, 0.127f, 0.223f, "KNOB 1" },
         { SlotKind::Knob, 0.614f, 0.548f, 0.127f, 0.223f, "KNOB 2" },
@@ -235,8 +236,8 @@ inline const Shell kShells[] = {
         { SlotKind::Knob, 0.741f, 0.771f, 0.127f, 0.223f, "KNOB 7" }
     }, 10, 0, 5, 4, 5, 0.06f },
     { "labbench", "Lab Bench", 0, 0.12f, "chamfer", {
-        { SlotKind::Board, 0.430f, 0.793f, 0.290f, 0.201f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.732f, 0.006f, 0.262f, 0.410f, "SCREEN" },
+        { SlotKind::Board, 0.732f, 0.006f, 0.262f, 0.410f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Cosmetic, 0.006f, 0.006f, 0.412f, 0.988f, "VENT 1" },
         { SlotKind::Fader, 0.430f, 0.006f, 0.290f, 0.196f, "FADER 1" },
         { SlotKind::Knob, 0.430f, 0.214f, 0.097f, 0.283f, "KNOB 1" },
@@ -250,16 +251,16 @@ inline const Shell kShells[] = {
         { SlotKind::Key, 0.732f, 0.711f, 0.131f, 0.283f, "KEY 3" }
     }, 13, 1, 4, 7, 0, -0.07f },
     { "satellite", "Satellite", 13, 0.10f, "pill", {
-        { SlotKind::Board, 0.432f, 0.551f, 0.562f, 0.443f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.006f, 0.551f, 0.414f, 0.443f, "SCREEN" },
+        { SlotKind::Board, 0.006f, 0.551f, 0.414f, 0.443f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Knob, 0.006f, 0.006f, 0.203f, 0.533f, "KNOB 1" },
         { SlotKind::Knob, 0.209f, 0.006f, 0.203f, 0.533f, "KNOB 2" },
         { SlotKind::Knob, 0.413f, 0.006f, 0.203f, 0.533f, "KNOB 3" },
         { SlotKind::Cosmetic, 0.628f, 0.006f, 0.366f, 0.533f, "VENT 1" }
     }, 6, 2, 3, 2, 1, 0.05f },
     { "cockpit", "Cockpit", 26, 0.08f, "square", {
-        { SlotKind::Board, 0.507f, 0.464f, 0.487f, 0.530f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.006f, 0.464f, 0.489f, 0.530f, "SCREEN" },
+        { SlotKind::Board, 0.006f, 0.464f, 0.489f, 0.530f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Key, 0.006f, 0.006f, 0.186f, 0.223f, "KEY 1" },
         { SlotKind::Key, 0.006f, 0.229f, 0.186f, 0.223f, "KEY 2" },
         { SlotKind::Cosmetic, 0.204f, 0.006f, 0.212f, 0.223f, "VENT 1" },
@@ -277,8 +278,8 @@ inline const Shell kShells[] = {
         { SlotKind::Knob, 0.805f, 0.229f, 0.094f, 0.223f, "KNOB 11" }
     }, 17, 3, 2, 5, 2, -0.08f },
     { "vinyldeck", "Vinyl Deck", 39, 0.13f, "notch", {
-        { SlotKind::Board, 0.006f, 0.006f, 0.512f, 0.315f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.006f, 0.333f, 0.309f, 0.282f, "SCREEN" },
+        { SlotKind::Board, 0.006f, 0.333f, 0.309f, 0.282f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Cosmetic, 0.530f, 0.006f, 0.464f, 0.315f, "VENT 1" },
         { SlotKind::Knob, 0.327f, 0.333f, 0.111f, 0.282f, "KNOB 1" },
         { SlotKind::Knob, 0.438f, 0.333f, 0.111f, 0.282f, "KNOB 2" },
@@ -291,8 +292,8 @@ inline const Shell kShells[] = {
         { SlotKind::Key, 0.665f, 0.626f, 0.329f, 0.368f, "KEY 3" }
     }, 12, 4, 1, 0, 3, 0.04f },
     { "vaultdoor", "Vault Door", 52, 0.11f, "wedge", {
-        { SlotKind::Board, 0.320f, 0.548f, 0.394f, 0.446f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.006f, 0.548f, 0.302f, 0.446f, "SCREEN" },
+        { SlotKind::Board, 0.006f, 0.548f, 0.302f, 0.446f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Key, 0.006f, 0.006f, 0.255f, 0.265f, "KEY 1" },
         { SlotKind::Key, 0.261f, 0.006f, 0.255f, 0.265f, "KEY 2" },
         { SlotKind::Key, 0.006f, 0.271f, 0.255f, 0.265f, "KEY 3" },
@@ -301,8 +302,8 @@ inline const Shell kShells[] = {
         { SlotKind::Cosmetic, 0.726f, 0.548f, 0.268f, 0.446f, "VENT 1" }
     }, 8, 5, 0, 3, 4, -0.09f },
     { "samplergrid", "Sampler Grid", 65, 0.09f, "octagon", {
-        { SlotKind::Board, 0.535f, 0.535f, 0.459f, 0.459f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.006f, 0.006f, 0.305f, 0.257f, "SCREEN" },
+        { SlotKind::Board, 0.006f, 0.006f, 0.305f, 0.257f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Cosmetic, 0.323f, 0.006f, 0.224f, 0.257f, "VENT 1" },
         { SlotKind::Cosmetic, 0.547f, 0.006f, 0.224f, 0.257f, "BADGE 1" },
         { SlotKind::Cosmetic, 0.770f, 0.006f, 0.224f, 0.257f, "RAIL 1" },
@@ -322,8 +323,8 @@ inline const Shell kShells[] = {
         { SlotKind::Key, 0.351f, 0.535f, 0.172f, 0.459f, "KEY 3" }
     }, 19, 6, 5, 6, 5, 0.03f },
     { "monoslab", "Mono Slab", 78, 0.07f, "rounded", {
-        { SlotKind::Board, 0.340f, 0.006f, 0.293f, 0.404f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.006f, 0.422f, 0.343f, 0.572f, "SCREEN" },
+        { SlotKind::Board, 0.006f, 0.422f, 0.343f, 0.572f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Cosmetic, 0.006f, 0.006f, 0.322f, 0.404f, "VENT 1" },
         { SlotKind::Key, 0.646f, 0.006f, 0.348f, 0.404f, "KEY 1" },
         { SlotKind::Knob, 0.361f, 0.422f, 0.211f, 0.572f, "KNOB 1" },
@@ -331,8 +332,8 @@ inline const Shell kShells[] = {
         { SlotKind::Knob, 0.783f, 0.422f, 0.211f, 0.572f, "KNOB 3" }
     }, 7, 0, 4, 1, 0, -0.10f },
     { "twintower", "Twin Tower", 91, 0.12f, "chamfer", {
-        { SlotKind::Board, 0.520f, 0.006f, 0.474f, 0.503f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.006f, 0.006f, 0.502f, 0.503f, "SCREEN" },
+        { SlotKind::Board, 0.006f, 0.006f, 0.502f, 0.503f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Knob, 0.006f, 0.521f, 0.135f, 0.236f, "KNOB 1" },
         { SlotKind::Knob, 0.141f, 0.521f, 0.135f, 0.236f, "KNOB 2" },
         { SlotKind::Knob, 0.276f, 0.521f, 0.135f, 0.236f, "KNOB 3" },
@@ -348,8 +349,8 @@ inline const Shell kShells[] = {
         { SlotKind::Cosmetic, 0.798f, 0.758f, 0.196f, 0.236f, "BADGE 1" }
     }, 15, 1, 3, 4, 1, 0.02f },
     { "bridgeconsole", "Bridge Console", 4, 0.10f, "pill", {
-        { SlotKind::Board, 0.248f, 0.579f, 0.204f, 0.415f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.006f, 0.579f, 0.230f, 0.415f, "SCREEN" },
+        { SlotKind::Board, 0.006f, 0.579f, 0.230f, 0.415f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Cosmetic, 0.006f, 0.006f, 0.167f, 0.281f, "VENT 1" },
         { SlotKind::Cosmetic, 0.173f, 0.006f, 0.167f, 0.281f, "BADGE 1" },
         { SlotKind::Cosmetic, 0.006f, 0.287f, 0.167f, 0.281f, "RAIL 1" },
@@ -370,16 +371,16 @@ inline const Shell kShells[] = {
         { SlotKind::Knob, 0.861f, 0.787f, 0.133f, 0.207f, "KNOB 8" }
     }, 20, 2, 2, 7, 2, -0.11f },
     { "nanochip", "Nano Chip", 17, 0.08f, "square", {
-        { SlotKind::Board, 0.006f, 0.337f, 0.604f, 0.349f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.622f, 0.616f, 0.372f, 0.378f, "SCREEN" },
+        { SlotKind::Board, 0.622f, 0.616f, 0.372f, 0.378f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Cosmetic, 0.006f, 0.006f, 0.604f, 0.319f, "VENT 1" },
         { SlotKind::Fader, 0.006f, 0.698f, 0.604f, 0.296f, "FADER 1" },
         { SlotKind::Knob, 0.622f, 0.006f, 0.186f, 0.598f, "KNOB 1" },
         { SlotKind::Knob, 0.808f, 0.006f, 0.186f, 0.598f, "KNOB 2" }
     }, 6, 3, 1, 2, 3, 0.01f },
     { "megamatrix", "Mega Matrix", 30, 0.13f, "notch", {
-        { SlotKind::Board, 0.006f, 0.006f, 0.447f, 0.464f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.006f, 0.482f, 0.447f, 0.512f, "SCREEN" },
+        { SlotKind::Board, 0.006f, 0.482f, 0.447f, 0.512f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Key, 0.465f, 0.006f, 0.176f, 0.165f, "KEY 1" },
         { SlotKind::Key, 0.641f, 0.006f, 0.176f, 0.165f, "KEY 2" },
         { SlotKind::Key, 0.818f, 0.006f, 0.176f, 0.165f, "KEY 3" },
@@ -398,8 +399,8 @@ inline const Shell kShells[] = {
         { SlotKind::Cosmetic, 0.862f, 0.725f, 0.132f, 0.269f, "VENT 2" }
     }, 18, 4, 0, 5, 4, -0.12f },
     { "ribbondeck", "Ribbon Deck", 43, 0.11f, "wedge", {
-        { SlotKind::Board, 0.006f, 0.499f, 0.528f, 0.495f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.753f, 0.006f, 0.241f, 0.481f, "SCREEN" },
+        { SlotKind::Board, 0.753f, 0.006f, 0.241f, 0.481f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Knob, 0.006f, 0.006f, 0.177f, 0.240f, "KNOB 1" },
         { SlotKind::Knob, 0.183f, 0.006f, 0.177f, 0.240f, "KNOB 2" },
         { SlotKind::Knob, 0.006f, 0.246f, 0.177f, 0.240f, "KNOB 3" },
@@ -409,8 +410,8 @@ inline const Shell kShells[] = {
         { SlotKind::Cosmetic, 0.546f, 0.499f, 0.448f, 0.495f, "VENT 1" }
     }, 9, 5, 5, 0, 5, 0.00f },
     { "moonbase", "Moon Base", 56, 0.09f, "octagon", {
-        { SlotKind::Board, 0.610f, 0.006f, 0.384f, 0.353f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.006f, 0.006f, 0.592f, 0.353f, "SCREEN" },
+        { SlotKind::Board, 0.006f, 0.006f, 0.592f, 0.353f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Knob, 0.006f, 0.371f, 0.145f, 0.312f, "KNOB 1" },
         { SlotKind::Knob, 0.151f, 0.371f, 0.145f, 0.312f, "KNOB 2" },
         { SlotKind::Knob, 0.296f, 0.371f, 0.145f, 0.312f, "KNOB 3" },
@@ -425,8 +426,8 @@ inline const Shell kShells[] = {
         { SlotKind::Cosmetic, 0.742f, 0.682f, 0.252f, 0.312f, "BADGE 1" }
     }, 14, 6, 4, 3, 0, 0.12f },
     { "retrotube", "Retro Tube", 69, 0.07f, "rounded", {
-        { SlotKind::Board, 0.483f, 0.395f, 0.242f, 0.280f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.483f, 0.006f, 0.242f, 0.377f, "SCREEN" },
+        { SlotKind::Board, 0.483f, 0.006f, 0.242f, 0.377f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Fader, 0.006f, 0.006f, 0.232f, 0.988f, "FADER 1" },
         { SlotKind::Fader, 0.238f, 0.006f, 0.232f, 0.988f, "FADER 2" },
         { SlotKind::Cosmetic, 0.483f, 0.688f, 0.242f, 0.306f, "VENT 1" },
@@ -437,8 +438,8 @@ inline const Shell kShells[] = {
         { SlotKind::Knob, 0.736f, 0.665f, 0.129f, 0.329f, "KNOB 5" }
     }, 10, 0, 3, 6, 1, -0.01f },
     { "hexcore", "Hex Core", 82, 0.12f, "chamfer", {
-        { SlotKind::Board, 0.006f, 0.575f, 0.220f, 0.419f, "MOTHERBOARD" },
-        { SlotKind::Screen, 0.238f, 0.575f, 0.326f, 0.419f, "SCREEN" },
+        { SlotKind::Board, 0.238f, 0.575f, 0.326f, 0.419f, "SCREEN" },
+        { SlotKind::Screen, 0.000f, 0.000f, 0.000f, 0.000f, "-" },
         { SlotKind::Fader, 0.006f, 0.006f, 0.100f, 0.557f, "FADER 1" },
         { SlotKind::Fader, 0.106f, 0.006f, 0.100f, 0.557f, "FADER 2" },
         { SlotKind::Key, 0.218f, 0.006f, 0.154f, 0.278f, "KEY 1" },
@@ -655,7 +656,75 @@ inline void paintShellBody(juce::Graphics& g, juce::Rectangle<float> c, const Sh
             break;
         default: break;
     }
+    paintThemeDecals(g, c, theme, (int) (&shell - kShells));
     g.restoreState();
+}
+
+
+// ---- Screens: every motherboard IS the plugin's screen. Right-click it -> Change Screen. -----------------
+inline constexpr const char* kScreenTypes[] = { "Plain Glass", "Corner Brackets", "CRT Tube", "Notched Panel", "Scanline Monitor", "Round Porthole" };
+inline constexpr int kScreenTypeCount = 6;
+
+inline int boardScreenTypeOf(const juce::ValueTree& uiState, int fallback)
+{
+    for (int i = 0; i < uiState.getNumChildren(); ++i)
+    {
+        auto child = uiState.getChild(i);
+        if (child.hasType("w") && child.getProperty("kind").toString() == "board")
+            return juce::jlimit(0, kScreenTypeCount - 1, (int) child.getProperty("screenType", fallback));
+    }
+    return juce::jlimit(0, kScreenTypeCount - 1, fallback);
+}
+
+// Paints the live screen face (scope + type specific glass). Used by the builder widget and by Plugin View.
+inline void paintScreenFace(juce::Graphics& g, juce::Rectangle<float> r, int type, const kt::ThemePalette& theme,
+                            const float* scope, int n, const juce::String& caption)
+{
+    type = juce::jlimit(0, kScreenTypeCount - 1, type);
+    const auto accent = kt::c(theme.accent);
+    const float m = juce::jmin(r.getWidth(), r.getHeight());
+    juce::Path clip;
+    if (type == 5) clip.addRoundedRectangle(r, m * 0.5f); else clip.addRoundedRectangle(r, type == 2 ? m * 0.20f : 5.f);
+    g.saveState();
+    g.reduceClipRegion(clip);
+    g.setColour(kt::c(theme.bg).darker(0.55f));
+    g.fillRect(r);
+    g.setColour(accent.withAlpha(0.07f));
+    for (float x = r.getX() + r.getWidth() / 8.f; x < r.getRight(); x += r.getWidth() / 8.f) g.drawVerticalLine((int) x, r.getY(), r.getBottom());
+    for (float y = r.getY() + r.getHeight() / 4.f; y < r.getBottom(); y += r.getHeight() / 4.f) g.drawHorizontalLine((int) y, r.getX(), r.getRight());
+    if (scope != nullptr && n > 1)
+    {
+        juce::Path wave;
+        const float mid = r.getCentreY();
+        for (int i = 0; i < n; ++i)
+        {
+            const float x = r.getX() + 4.f + (r.getWidth() - 8.f) * (float) i / (float) (n - 1);
+            const float y = mid - juce::jlimit(-1.f, 1.f, scope[i]) * r.getHeight() * 0.40f;
+            if (i == 0) wave.startNewSubPath(x, y); else wave.lineTo(x, y);
+        }
+        g.setColour(accent.withAlpha(0.22f));
+        g.strokePath(wave, juce::PathStrokeType(4.f));
+        g.setColour(accent);
+        g.strokePath(wave, juce::PathStrokeType(1.6f));
+    }
+    if (type == 2)
+    {
+        juce::ColourGradient vg(juce::Colours::transparentBlack, r.getCentre(), juce::Colours::black.withAlpha(0.55f), r.getTopLeft(), true);
+        g.setGradientFill(vg);
+        g.fillRect(r);
+    }
+    if (type == 4)
+    {
+        g.setColour(juce::Colours::black.withAlpha(0.25f));
+        for (float y = r.getY(); y < r.getBottom(); y += 3.f) g.drawHorizontalLine((int) y, r.getX(), r.getRight());
+    }
+    g.restoreState();
+    if (caption.isNotEmpty() && m > 44.f)
+    {
+        g.setColour(kt::c(theme.muted));
+        g.setFont(kt::font(theme, 9.5f, true));
+        g.drawText(caption, r.reduced(type == 5 ? m * 0.18f : 8.f, 4.f).removeFromTop(13.f), juce::Justification::centredLeft, true);
+    }
 }
 
 // The one screen of every template gets its own bezel so no two screens look alike.
@@ -735,6 +804,7 @@ public:
     std::function<void()> onBackgroundClick; // plain click on empty case = deselect
     int selectedSlot = -1;
     int hoverSlot = -1;
+    int screenType = -1; // chosen screen for the motherboard (-1 = template default)
 
     void paint(juce::Graphics& g) override
     {
@@ -822,7 +892,7 @@ public:
             g.fillRoundedRectangle(r, 8.f);
             g.setColour(fits ? accent : kt::c(theme.border).withAlpha(taken ? 0.25f : 0.7f));
             g.drawRoundedRectangle(r, 8.f, fits ? (hovered ? 2.4f : 1.8f) : 1.f);
-            if (slot.kind == SlotKind::Screen) paintScreenBezel(g, r, shell.screenStyle, theme);
+            if (slot.kind == SlotKind::Board) paintScreenBezel(g, r, screenType >= 0 ? screenType : shell.screenStyle, theme);
 
             // Lego studs: pegs at the four corners click parts into the bay.
             const float pegR = juce::jmin(3.4f, r.getWidth() * 0.12f);

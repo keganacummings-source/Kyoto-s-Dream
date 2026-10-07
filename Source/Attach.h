@@ -62,3 +62,67 @@ inline AttachRef parseAttach(const juce::String& text, juce::String& cleaned)
     return a;
 }
 } // namespace kt
+
+// ---- Multi-attachment posts (DreamShare thread board) ---------------------------------------------
+// A post can carry several files plus one shared plugin:
+//     [[file:<id>:<parts>:<bytes>:<name>]]   (up to 4 per thread post, 3 per reply)
+//     [[mod:<moduleId>:<name>]]              (a plugin from the catalog / "My plugins")
+namespace kt
+{
+struct ParsedPost
+{
+    juce::String text, modId, modName;
+    juce::Array<AttachRef> files;
+};
+
+inline ParsedPost parsePost(const juce::String& raw)
+{
+    ParsedPost out;
+    juce::String rest = raw, clean;
+    for (;;)
+    {
+        const int s = rest.indexOf("[[");
+        if (s < 0) { clean += rest; break; }
+        const int e = rest.indexOf(s, "]]");
+        if (e < 0) { clean += rest; break; }
+        const auto inner = rest.substring(s + 2, e);
+        bool used = false;
+        if (inner.startsWith("file:"))
+        {
+            juce::StringArray p;
+            p.addTokens(inner.substring(5), ":", "");
+            if (p.size() >= 4)
+            {
+                AttachRef a;
+                a.upload = p[0]; a.parts = p[1].getIntValue(); a.bytes = p[2].getLargeIntValue(); a.name = p[3];
+                if (a.valid()) { out.files.add(a); used = true; }
+            }
+        }
+        else if (inner.startsWith("mod:"))
+        {
+            juce::StringArray p;
+            p.addTokens(inner.substring(4), ":", "");
+            if (p.size() >= 1 && p[0].isNotEmpty()) { out.modId = p[0]; out.modName = p.size() > 1 ? p[1] : p[0]; used = true; }
+        }
+        clean += rest.substring(0, s);
+        if (! used) clean += rest.substring(s, e + 2);
+        rest = rest.substring(e + 2);
+    }
+    out.text = clean.trim();
+    return out;
+}
+
+inline juce::String modToken(const juce::String& id, const juce::String& name)
+{
+    return "[[mod:" + id.replaceCharacters(":[]|", "____") + ":" + cleanAttachName(name) + "]]";
+}
+
+inline juce::String fileKindOf(const juce::String& name)
+{
+    const auto ext = name.fromLastOccurrenceOf(".", false, false).toLowerCase();
+    if (ext == "png" || ext == "jpg" || ext == "jpeg" || ext == "gif" || ext == "bmp") return "image";
+    if (ext == "zip" || ext == "7z" || ext == "rar") return "zip";
+    if (ext == "wav" || ext == "mp3" || ext == "flac" || ext == "ogg" || ext == "aif" || ext == "aiff") return "audio";
+    return "file";
+}
+} // namespace kt

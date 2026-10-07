@@ -179,11 +179,7 @@ CanvasWidget::CanvasWidget(KyotoAudioProcessor& p, juce::ValueTree n)
         addAndMakeVisible(slider);
         if (proc.apvts.getParameter(id) != nullptr)
             attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(proc.apvts, id, slider);
-        // Modular pieces: quirks bend how the bound option responds.
-        const auto quirk = node.getProperty("quirk").toString();
-        if (quirk == "snap") slider.setRange(0.0, 1.0, 0.125);                       // 8 repeatable steps
-        else if (quirk == "lens") slider.setRotaryParameters(juce::MathConstants<float>::pi * 0.7f,
-                                                             juce::MathConstants<float>::pi * 1.3f, false); // 4x finer drag
+        // Modular pieces are COSMETIC ONLY: skin + look. They never change how a knob responds or what you hear.
         slider.onDragStart = [this] { if (onSelect) onSelect(); };
     }
 }
@@ -230,14 +226,11 @@ void CanvasWidget::paint(juce::Graphics& g)
     }
     else if (kind == Kind::Board)
     {
-        g.setColour(kt::c(theme.accent).withAlpha(0.18f));
-        g.fillRoundedRectangle(bounds.reduced(5.f), 8.f);
-        g.setColour(kt::c(theme.accent));
-        g.setFont(kt::font(theme, 13.f, true));
-        g.drawText("MOTHERBOARD", bounds.reduced(8.f).removeFromTop(20.f), juce::Justification::left);
-        g.setColour(kt::c(theme.muted));
-        g.setFont(kt::font(theme, 11.f));
-        g.drawFittedText(node.getProperty("label").toString(), bounds.reduced(8.f).withTrimmedTop(20.f).toNearestInt(), juce::Justification::topLeft, 2);
+        // The motherboard IS the screen. Right-click -> Change Screen picks the glass.
+        float live[128] {};
+        proc.copyScope(live, 128);
+        const int st = juce::jlimit(0, pb::kScreenTypeCount - 1, (int) node.getProperty("screenType", 0));
+        pb::paintScreenFace(g, bounds.reduced(5.f), st, theme, live, 128, juce::String("SCREEN  -  ") + pb::kScreenTypes[st]);
     }
     else if (kind == Kind::Cosmetic)
     {
@@ -689,6 +682,8 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     attachChip.setTooltip("Click to remove the attached file");
     attachChip.onClick = [this] { clearAttachment(); status.setText("Attachment removed", juce::dontSendNotification); };
     addAndMakeVisible(catalogView);
+    addChildComponent(threadBoard);
+    wireThreadBoard();
     addAndMakeVisible(chatView);
     addAndMakeVisible(nameBox);
     addAndMakeVisible(effectNameBox);
@@ -791,7 +786,7 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     panel.onSlot = [this](int slot) { placeInSlot(slot); };
     panel.occupied = [this](int slot) { return slotOccupied(slot); };
     panel.anchor = [this](int slot) { return slotAnchor(slot); };
-    panel.theme = theme;
+    panel.theme = playgroundTheme;
     effectBox.setVisible(false);
     presetBox.onChange = [this] {
         auto display = presetBox.getText().trim();
@@ -864,7 +859,7 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
     }
     if (! loggedIn) setLoggedIn(false);
     if (proc.uiState.hasProperty("machineDesign")) machineDesign = MachineDesign::fromVar(juce::JSON::parse(proc.uiState.getProperty("machineDesign").toString()));
-    else { machineDesign.choosePlayground((MachineDesign::PlaygroundMode) juce::jlimit(0, 3, (int)proc.uiState.getProperty("playgroundMode"))); machineDesign.theme = proc.uiState.getProperty("theme").toString(); machineDesign.bodyDesign = proc.uiState.getProperty("bodyDesign").toString(); }
+    else { machineDesign.choosePlayground((MachineDesign::PlaygroundMode) juce::jlimit(0, 3, (int)proc.uiState.getProperty("playgroundMode"))); machineDesign.theme = proc.uiState.getProperty("playgroundTheme", proc.uiState.getProperty("theme")).toString(); machineDesign.bodyDesign = proc.uiState.getProperty("bodyDesign").toString(); }
     applyTheme(proc.uiState.getProperty("theme", juce::var("trippah")).toString());
     proMode = (bool) proc.uiState.getProperty("proMode", false);
     proToggleBtn.setButtonText(proMode ? "PRO  -  ON" : "PRO  -  OFF");
@@ -900,6 +895,7 @@ void KyotoAudioProcessorEditor::setLoggedIn(bool on)
     {
         userBox.clear();
         passBox.clear();
+        setCenterMode(3);
         showTab(0);
         refreshFeed();
         refreshCatalog();
@@ -915,13 +911,13 @@ void KyotoAudioProcessorEditor::syncMachineDesignToUi()
     proc.uiState.setProperty("playgroundHeight", machineDesign.playgroundHeight, nullptr);
     proc.uiState.setProperty("aspectRatio", machineDesign.aspectRatio, nullptr);
     proc.uiState.setProperty("bodyDesign", machineDesign.bodyDesign, nullptr);
-    proc.uiState.setProperty("theme", machineDesign.theme, nullptr);
+    proc.uiState.setProperty("playgroundTheme", machineDesign.theme, nullptr);
     proc.uiState.setProperty("machineDesign", juce::JSON::toString(machineDesign.toVar()), nullptr);
 }
 
 void KyotoAudioProcessorEditor::startNewMachine(int mode)
 {
-    machineDesign.theme = theme.id;
+    machineDesign.theme = playgroundTheme.id;
     machineDesign.choosePlayground((MachineDesign::PlaygroundMode) juce::jlimit(0, 3, mode));
     syncMachineDesignToUi();
     status.setText("Aspect ratio: " + machineDesign.aspectRatio + " playground", juce::dontSendNotification);
@@ -930,7 +926,7 @@ void KyotoAudioProcessorEditor::startNewMachine(int mode)
 
 void KyotoAudioProcessorEditor::randomizeMachine()
 {
-    machineDesign.theme = theme.id;
+    machineDesign.theme = playgroundTheme.id;
     juce::Random rng((juce::int64) juce::Time::getMillisecondCounterHiRes());
     machineDesign.randomize(rng);
     syncMachineDesignToUi();
@@ -1627,7 +1623,8 @@ void KyotoAudioProcessorEditor::showTab(int next)
     wizardNextBtn.setVisible(wizard);
     wizardSkipBtn.setVisible(wizard);
     proToggleBtn.setVisible(share && loggedIn);
-    catalogView.setVisible(share && loggedIn);
+    catalogView.setVisible(share && loggedIn && centerMode != 3);
+    threadBoard.setVisible(share && loggedIn && centerMode == 3);
     chatView.setVisible(share && loggedIn);
     for (auto* b : feedEffectButtons) b->setVisible(share && loggedIn);
 
@@ -1745,6 +1742,7 @@ void KyotoAudioProcessorEditor::resized()
             utilityGoBtn.setButtonText("COMMENT");
         }
         catalogView.setBounds(area.reduced(0, 6));
+        threadBoard.setBounds(catalogView.getBounds());
         auto railHead = rail.removeFromTop(28);
         railChatBtn.setBounds(railHead.removeFromLeft((railHead.getWidth() - 6) / 2));
         railHead.removeFromLeft(6);
@@ -1988,9 +1986,10 @@ void KyotoAudioProcessorEditor::reflowSeries()
         if (w->kind == CanvasWidget::Kind::Slider)
             w->node.setProperty("style", bf::sliderStyleFor(r), nullptr);
         w->setBounds(r);
-        w->setTheme(theme);
+        w->setTheme(playgroundTheme);
     }
-    panel.theme = theme;
+    panel.theme = playgroundTheme;
+    panel.screenType = pb::boardScreenTypeOf(proc.uiState, pb::kShells[shellIndex].screenStyle);
     panel.shellIndex = shellIndex;
     panel.placing = placing;
     panel.armedStyle = armedStyle;
@@ -2126,42 +2125,31 @@ void KyotoAudioProcessorEditor::ensureMotherboard()
         auto child = proc.uiState.getChild(i);
         if (child.hasType("w") && child.getProperty("kind").toString() == "board") board = child;
     }
-    const juce::String prefix = "s01";
-    if (auto* on = proc.apvts.getParameter(prefix + "on"))
-    {
-        // Only seed the motherboard bus the first time. Tab switches must not wipe a live effect.
-        if (on->getValue() < 0.5f)
-        {
-            on->setValueNotifyingHost(1.f);
-            if (auto* type = proc.apvts.getParameter(prefix + "type")) type->setValueNotifyingHost(type->convertTo0to1((float) shell.hiddenFx));
-            if (auto* mix = proc.apvts.getParameter(prefix + "mix")) mix->setValueNotifyingHost(mix->convertTo0to1(shell.hiddenMix));
-        }
-    }
+    // The motherboard is only the start of the chain and the mandatory screen. It owns DSP bay 1, which
+    // stays OFF: no hidden effect is ever seeded, so only effects the user places make sound.
+    if (auto* on = proc.apvts.getParameter("s01on"))
+        if (on->getValue() >= 0.5f) on->setValueNotifyingHost(0.f);
     if (! board.isValid())
     {
         auto node = juce::ValueTree("w");
         node.setProperty("slot", 0, nullptr);
         node.setProperty("shellSlot", 0, nullptr);
         node.setProperty("param", "mix", nullptr);
-        node.setProperty("label", juce::String(shell.name) + " bus", nullptr);
+        node.setProperty("label", juce::String(shell.name) + " screen", nullptr);
         node.setProperty("kind", "board", nullptr);
         node.setProperty("style", "board", nullptr);
+        node.setProperty("screenType", shell.screenStyle, nullptr);
         node.setProperty("series", 0, nullptr);
         proc.uiState.addChild(node, 0, nullptr);
         rebuildCanvas();
     }
     else
     {
-        board.setProperty("label", juce::String(shell.name) + " bus", nullptr);
+        board.setProperty("label", juce::String(shell.name) + " screen", nullptr);
         board.setProperty("shellSlot", 0, nullptr);
+        if (! board.hasProperty("screenType")) board.setProperty("screenType", shell.screenStyle, nullptr);
     }
-    float colour = shell.hiddenMix;
-    for (int i = 0; i < proc.uiState.getNumChildren(); ++i)
-    {
-        auto child = proc.uiState.getChild(i);
-        if (pb::cosmeticHiddenFx(child.getProperty("style").toString()) >= 0) colour += 0.035f;
-    }
-    proc.setHardwareColour(shell.hiddenFx, colour);
+    proc.setHardwareColour(-1, 0.f);
 }
 
 void KyotoAudioProcessorEditor::syncPanelMouse()
@@ -2187,7 +2175,7 @@ void KyotoAudioProcessorEditor::armPlacement()
     panel.armedStyle = armedStyle;
     syncPanelMouse();
     status.setText(pendingPiece != nullptr
-        ? juce::String(pendingPiece->name) + " armed: " + pendingPiece->quirk + ". Click a glowing bay."
+        ? juce::String(pendingPiece->name) + " armed (" + pendingPiece->quirk + "). Click a glowing bay."
         : "Theme is " + juce::String(theme.name) + ". Click a glowing " + kindBox.getText() + " bay.", juce::dontSendNotification);
     panel.repaint();
 }
@@ -2307,7 +2295,7 @@ void KyotoAudioProcessorEditor::rebuildCanvas()
         if (! child.hasType("w")) continue;
         const int widgetIndex = widgets.size();
         auto* w = widgets.add(new CanvasWidget(proc, child));
-        w->setTheme(theme);
+        w->setTheme(playgroundTheme);
         w->selected = (widgetIndex == selectedChainWidget);
         w->onSelect = [this, widgetIndex] { selectedChainWidget = widgetIndex; panel.selectedSlot = (widgetIndex >= 0 && widgetIndex < widgets.size()) ? (int) widgets[widgetIndex]->node.getProperty("shellSlot", -1) : -1; for (auto* item : widgets) { item->selected = false; item->repaint(); } if (widgetIndex >= 0 && widgetIndex < widgets.size()) { widgets[widgetIndex]->selected = true; widgets[widgetIndex]->repaint(); } repaint(); };
         w->onRightClick = [this, widgetIndex](CanvasWidget*, const juce::MouseEvent& e)
@@ -2487,12 +2475,19 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
         const auto target = (pi >= 0 && pi < widgets.size()) ? widgets[pi]->node.getProperty("label").toString() : juce::String("the motherboard");
         menu.addSectionHeader("Adds into: " + target);
     }
+    if (slot == 0)
+    {
+        juce::PopupMenu scr;
+        const int cur = pb::boardScreenTypeOf(proc.uiState, pb::kShells[shellIndex].screenStyle);
+        for (int i = 0; i < pb::kScreenTypeCount; ++i) scr.addItem(2000 + i, pb::kScreenTypes[i], true, i == cur);
+        menu.addSubMenu("Change Screen", scr);
+        menu.addSeparator();
+    }
     juce::PopupMenu add;
     juce::PopupMenu parts;
     parts.addItem(1, "Dial %");
     parts.addItem(2, "Slider (follows module ratio)");
     parts.addItem(3, "Button toggle");
-    parts.addItem(4, "Display");
     parts.addItem(5, "Key (MIDI)");
     parts.addItem(6, "Sound (one sample)");
     add.addSubMenu("Part", parts);
@@ -2514,6 +2509,20 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
         [this, slot, local](int result)
         {
             if (result == 0) return;
+            if (result >= 2000 && result < 2000 + pb::kScreenTypeCount)
+            {
+                for (int i = 0; i < proc.uiState.getNumChildren(); ++i)
+                {
+                    auto child = proc.uiState.getChild(i);
+                    if (child.hasType("w") && child.getProperty("kind").toString() == "board")
+                        child.setProperty("screenType", result - 2000, nullptr);
+                }
+                panel.screenType = result - 2000;
+                for (auto* w : widgets) w->repaint();
+                panel.repaint();
+                status.setText(juce::String("Screen changed to ") + pb::kScreenTypes[result - 2000], juce::dontSendNotification);
+                return;
+            }
             if (result == 7) { editEffectPopup(selectedChainWidget); return; }
             if (result == 8) { removeSelectedChainStep(); return; }
             const char* kinds[] = { "", "dial", "slider", "button", "wave", "key", "sound" };
@@ -2600,8 +2609,7 @@ void KyotoAudioProcessorEditor::filesDropped(const juce::StringArray& files, int
         const int target = dropTargetAt(x, y);
         if (target == 0)
         {
-            status.setText(centerMode == 3 && ! threadOpen ? "Open a thread first, then drop the file on it - or drop it on the chat to share it there."
-                                                           : "Drop files on the chat (left) or inside an open thread.", juce::dontSendNotification);
+            status.setText("Drop files on the thread board (images, .zip, audio) or on the chat on the left.", juce::dontSendNotification);
             return;
         }
         if (files.size() > 0) stageAttachment(juce::File(files[0]), target);
@@ -3153,22 +3161,22 @@ void KyotoAudioProcessorEditor::applyDsScale()
 
 void KyotoAudioProcessorEditor::rebuildThreadBoard()
 {
-    threadHolder.removeAllChildren();
-    int i = 0;
+    juce::Array<kt::BoardThread> out;
     for (const auto& t : threads)
     {
-        auto* card = new BoardCard();
-        card->title = t.title.isEmpty() ? "Thread" : t.title;
-        card->meta = t.user + "  -  " + juce::String(t.comments) + " replies  -  " + t.themeId;
-        card->body = t.text;
-        card->themeId = t.themeId;
-        const auto id = t.id;
-        card->onOpen = [this, id] { openThread(id); };
-        threadHolder.addAndMakeVisible(card);
-        ++i;
+        kt::BoardThread bt;
+        bt.id = t.id; bt.user = t.user; bt.title = t.title; bt.text = t.text; bt.themeId = t.themeId;
+        bt.at = t.at; bt.score = t.score;
+        for (const auto& cm : t.commentList)
+        {
+            kt::BoardComment bc;
+            bc.id = cm.id; bc.user = cm.user; bc.text = cm.text; bc.themeId = cm.themeId;
+            bt.comments.add(bc);
+        }
+        out.add(bt);
     }
-    juce::ignoreUnused(i);
-    rebuildCenter();
+    threadBoard.setTheme(theme);
+    threadBoard.setThreads(out);
 }
 
 
@@ -3333,23 +3341,14 @@ void KyotoAudioProcessorEditor::showBubbleMenu(const SocialRail::Bubble& bubble,
 
 void KyotoAudioProcessorEditor::openThread(const juce::String& id)
 {
-    selectedThreadId = id;
-    threadOpen = true;
-    centerMode = 3;
-    utilityBox.clear();
-    utilityBox.setTextToShowWhenEmpty("Comment, drop a file here, or share a plugin / effect", juce::Colour(0x80808080));
-    catalogView.setViewedComponent(&catalogHolder, false);
-    rebuildThreadDetail();
-    showTab(0);
-    status.setText("Thread open. Chat and Socials stay on the left.", juce::dontSendNotification);
+    if (centerMode != 3) setCenterMode(3);
+    threadBoard.openThreadById(id);
+    status.setText("Thread open. Drop files on it to attach them to your reply.", juce::dontSendNotification);
 }
 
 void KyotoAudioProcessorEditor::closeThread()
 {
-    threadOpen = false;
-    selectedThreadId.clear();
-    if (pendingAttachTarget == 2) clearAttachment();
-    setCenterMode(3);
+    threadBoard.closeThread();
 }
 
 void KyotoAudioProcessorEditor::postThreadComment(const juce::String& text)
@@ -3480,6 +3479,9 @@ void KyotoAudioProcessorEditor::refreshFeed()
                     th.title = t->getProperty("title").toString();
                     th.text = t->getProperty("text").toString();
                     th.themeId = t->getProperty("theme").toString();
+                    th.at = (juce::int64) t->getProperty("at");
+                    if (auto* rx = t->getProperty("reactions").getDynamicObject())
+                        for (auto& nv : rx->getProperties()) th.score += (int) nv.value;
                     if (auto* comments = t->getProperty("comments").getArray())
                     {
                         th.comments = comments->size();
@@ -3794,8 +3796,16 @@ void KyotoAudioProcessorEditor::loadCatalogId(const juce::String& id, const juce
                     w.setProperty("kind", wsrc->getProperty("kind").toString(), nullptr);
                     w.setProperty("slotCount", (int)propertyOr(wsrc, "slotCount", 1), nullptr);
                     w.setProperty("peaks", wsrc->getProperty("peaks").toString(), nullptr);
+                    if (wsrc->hasProperty("style")) w.setProperty("style", wsrc->getProperty("style").toString(), nullptr);
+                    if (wsrc->hasProperty("skin")) w.setProperty("skin", wsrc->getProperty("skin").toString(), nullptr);
+                    if (wsrc->hasProperty("screenType")) w.setProperty("screenType", (int) wsrc->getProperty("screenType"), nullptr);
                     proc.uiState.appendChild(w, nullptr);
                 }
+            }
+            {   // Theme law: a loaded plugin wears ITS OWN theme, never the signed-in user's.
+                auto pt = obj->getProperty("playgroundTheme").toString();
+                if (pt.isEmpty()) pt = obj->getProperty("theme").toString();
+                if (pt.isNotEmpty()) applyPlaygroundTheme(pt);
             }
             showTab(1);
         }
@@ -3841,10 +3851,9 @@ void KyotoAudioProcessorEditor::applyTheme(const juce::String& id)
             themeBox.setSelectedId(i + 1, juce::dontSendNotification);
             break;
         }
-    machineDesign.theme = theme.id;
-    machineDesign.normalizeThemeIds();
-    panel.theme = theme;
-    for (auto* w : widgets) w->setTheme(theme);
+    // The signed-in (VST) theme only styles the DreamShare UI. The plugin keeps its own theme law.
+    panel.theme = playgroundTheme;
+    for (auto* w : widgets) w->setTheme(playgroundTheme);
     panel.repaint();
     if (fxBrowser) fxBrowser->setTheme(theme);
     for (auto* e : { &logBox, &msgBox, &utilityBox, &userBox, &passBox, &nameBox, &effectNameBox })
@@ -3868,7 +3877,7 @@ void KyotoAudioProcessorEditor::applyTheme(const juce::String& id)
         l->setColour(juce::Label::textColourId, kt::c(theme.text));
         l->setFont(kt::font(theme, 12.f, true));
     }
-    for (auto* w : widgets) w->setTheme(theme);
+    for (auto* w : widgets) w->setTheme(playgroundTheme);
     kLookAndFeel.setTheme(theme);
     socialRail.setHostTheme(theme);
     kLookAndFeel.setColour(juce::PopupMenu::backgroundColourId, kt::c(theme.panel));
@@ -4176,7 +4185,7 @@ void KyotoAudioProcessorEditor::refreshEffectBox()
     {
         const auto dir = sessionFile().getParentDirectory().getChildFile("kyoto"); dir.createDirectory();
         const auto file = dir.getChildFile(name + ".json"); if (file.existsAsFile()) return;
-        auto* obj = new juce::DynamicObject(); obj->setProperty("format", "kyoteppah-module-1"); obj->setProperty("face", "chain"); obj->setProperty("name", name); obj->setProperty("grid", 0); obj->setProperty("theme", proc.uiState.getProperty("theme", juce::var("trippah")));
+        auto* obj = new juce::DynamicObject(); obj->setProperty("format", "kyoteppah-module-1"); obj->setProperty("face", "chain"); obj->setProperty("name", name); obj->setProperty("grid", 0); obj->setProperty("theme", playgroundTheme.id); obj->setProperty("playgroundTheme", playgroundTheme.id);
         juce::Array<juce::var> slots;
         for (const auto& row : rows) { auto* step = new juce::DynamicObject(); step->setProperty("on", true); step->setProperty("fx", (int)row[0]); step->setProperty("amount", row[1]); step->setProperty("tone", row[2]); step->setProperty("motion", row[3]); step->setProperty("mix", row[4]); step->setProperty("shape", row[5]); slots.add(juce::var(step)); }
         obj->setProperty("slots", slots); obj->setProperty("widgets", juce::var(juce::Array<juce::var>())); file.replaceWithText(juce::JSON::toString(juce::var(obj)));
@@ -4242,7 +4251,7 @@ void KyotoAudioProcessorEditor::saveLocal()
     const auto name = nameBox.getText().trim().isEmpty() ? "untitled" : nameBox.getText().trim();
     obj->setProperty("name", name);
     obj->setProperty("grid", 0);
-    obj->setProperty("theme", proc.uiState.getProperty("theme", juce::var("trippah")));
+    obj->setProperty("theme", playgroundTheme.id); obj->setProperty("playgroundTheme", playgroundTheme.id);
     obj->setProperty("machineDesign", machineDesign.toVar());
     juce::Array<juce::var> widgetsArr, slots, steps;
     for (int i = 0; i < proc.slotCount(); ++i)
@@ -4286,6 +4295,9 @@ void KyotoAudioProcessorEditor::saveLocal()
         o->setProperty("y", (int) w.getProperty("y"));
         o->setProperty("shellSlot", (int) w.getProperty("shellSlot", -1));
         o->setProperty("parent", (int) w.getProperty("parent", 0));
+        o->setProperty("style", w.getProperty("style").toString());
+        o->setProperty("skin", w.getProperty("skin").toString());
+        if (w.hasProperty("screenType")) o->setProperty("screenType", (int) w.getProperty("screenType"));
         widgetsArr.add(juce::var(o));
     }
     obj->setProperty("chainLevels", proc.exportChainLevels());
@@ -4303,4 +4315,186 @@ void KyotoAudioProcessorEditor::publish()
     const auto name = nameBox.getText().trim().isEmpty() ? "untitled" : nameBox.getText().trim();
     const auto body = moduleDir().getChildFile(name + ".json").loadFileAsString(); const auto tokenCopy = token; juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
     std::thread([safe, name, body, tokenCopy] { auto r=kt::publishModule(tokenCopy,name,body); juce::MessageManager::callAsync([safe,r]{ if(safe==nullptr)return; safe->status.setText(r.ok?"Auto-uploaded. Pending admin approval.":r.error,juce::dontSendNotification); if(r.ok)safe->refreshCatalog(); }); }).detach();
+}
+// ============================================================================
+//  DreamShare thread board glue (Reddit / 4chan style board)
+// ============================================================================
+void KyotoAudioProcessorEditor::wireThreadBoard()
+{
+    threadBoard.onStatus = [this](const juce::String& m) { status.setText(m, juce::dontSendNotification); };
+    threadBoard.onRefresh = [this] { refreshFeed(); };
+    threadBoard.onUpvote = [this](const juce::String& id) { reactTo("thread", id, "heart"); };
+    threadBoard.onOpenPlugin = [this](const juce::String& id, const juce::String& name) { selectedCatalogId = id; loadCatalogId(id, name); };
+    threadBoard.onFileClick = [this](const kt::AttachRef& ref, juce::Point<int> pos) { showBoardFileMenu(ref, pos); };
+
+    threadBoard.fetchImage = [this](const kt::AttachRef& ref, std::function<void(juce::Image)> done)
+    {
+        const auto tokenCopy = token;
+        juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
+        std::thread([safe, tokenCopy, ref, done] {
+            const auto ext = ref.name.fromLastOccurrenceOf(".", true, false);
+            auto tmp = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                           .getChildFile("ds_" + ref.upload.retainCharacters("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") + ext);
+            juce::String err;
+            juce::Image img;
+            if (kt::downloadAttachment(tokenCopy, ref, tmp, err))
+                img = juce::ImageFileFormat::loadFrom(tmp);
+            tmp.deleteFile();
+            juce::MessageManager::callAsync([safe, done, img] {
+                if (safe == nullptr) return;
+                done(img);
+            });
+        }).detach();
+    };
+
+    threadBoard.onPickPlugin = [this](std::function<void(juce::String, juce::String)> picked)
+    {
+        if (token.isEmpty()) return;
+        const auto tokenCopy = token;
+        juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
+        status.setText("Loading your plugins...", juce::dontSendNotification);
+        std::thread([safe, tokenCopy, picked] {
+            auto r = kt::getMyModules(tokenCopy);
+            juce::MessageManager::callAsync([safe, r, picked] {
+                if (safe == nullptr) return;
+                auto* mods = r.parsed.getDynamicObject() ? r.parsed.getDynamicObject()->getProperty("modules").getArray() : nullptr;
+                if (mods == nullptr || mods->isEmpty())
+                {
+                    safe->status.setText("You have no saved plugins yet - build and save one first.", juce::dontSendNotification);
+                    return;
+                }
+                auto ids = std::make_shared<juce::StringArray>();
+                auto names = std::make_shared<juce::StringArray>();
+                juce::PopupMenu menu;
+                menu.addSectionHeader("Attach one of your plugins");
+                for (auto& item : *mods)
+                {
+                    auto* m = item.getDynamicObject();
+                    if (m == nullptr) continue;
+                    ids->add(m->getProperty("id").toString());
+                    names->add(m->getProperty("name").toString());
+                    menu.addItem(ids->size(), (*names)[names->size() - 1] + "  (" + m->getProperty("face").toString() + ")");
+                }
+                safe->status.setText({}, juce::dontSendNotification);
+                menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&safe->threadBoard),
+                    [ids, names, picked](int choice) {
+                        if (choice >= 1 && choice <= ids->size()) picked((*ids)[choice - 1], (*names)[choice - 1]);
+                    });
+            });
+        }).detach();
+    };
+
+    threadBoard.onPost = [this](const juce::String& title, const juce::String& body, const juce::Array<juce::File>& files, const juce::String& mod)
+    {
+        submitBoardPost({}, title, body, files, mod);
+    };
+    threadBoard.onReply = [this](const juce::String& threadId, const juce::String& body, const juce::Array<juce::File>& files, const juce::String& mod)
+    {
+        submitBoardPost(threadId, {}, body, files, mod);
+    };
+}
+
+// Uploads every staged file (sequentially, 1.5 MB chunks), then creates the thread or reply with the tokens appended.
+void KyotoAudioProcessorEditor::submitBoardPost(const juce::String& threadId, const juce::String& title, const juce::String& body,
+                                                const juce::Array<juce::File>& files, const juce::String& modToken)
+{
+    if (token.isEmpty()) return;
+    const bool newThread = threadId.isEmpty();
+    const auto tokenCopy = token;
+    juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
+    threadBoard.setBusy(true, files.isEmpty() ? juce::String("Posting...") : "Uploading " + juce::String(files.size()) + " file(s)...");
+    std::thread([safe, tokenCopy, threadId, title, body, files, modToken, newThread] {
+        juce::String err, tokens;
+        bool ok = true;
+        for (const auto& f : files)
+        {
+            kt::AttachRef ref;
+            if (! kt::uploadAttachment(tokenCopy, f, ref, err)) { ok = false; break; }
+            tokens += " " + kt::attachToken(ref);
+        }
+        kt::DreamResult r;
+        if (ok)
+        {
+            tokens += (modToken.isNotEmpty() ? " " + modToken : juce::String());
+            const int limit = newThread ? 1000 : 500;
+            auto text = body.substring(0, juce::jmax(0, limit - tokens.length())) + tokens;
+            text = text.trim();
+            auto* o = new juce::DynamicObject();
+            if (newThread)
+            {
+                auto t = title.isNotEmpty() ? title : (body.isNotEmpty() ? body.substring(0, 60) : juce::String("Shared files"));
+                o->setProperty("title", t.substring(0, 120));
+                o->setProperty("text", text);
+                r = kt::postAction("create_thread", juce::var(o), tokenCopy);
+            }
+            else
+            {
+                o->setProperty("threadId", threadId);
+                o->setProperty("text", text);
+                r = kt::postAction("comment", juce::var(o), tokenCopy);
+            }
+        }
+        else r.error = err;
+        juce::MessageManager::callAsync([safe, r, newThread] {
+            if (safe == nullptr) return;
+            safe->threadBoard.setBusy(false);
+            if (! r.ok)
+            {
+                safe->status.setText("Post failed: " + (r.error.isEmpty() ? juce::String("unknown error") : r.error) + " (your files stay staged - press again to retry)", juce::dontSendNotification);
+                return;
+            }
+            safe->threadBoard.clearComposer();
+            if (! newThread) { /* stay in the thread */ }
+            safe->refreshFeed();
+            safe->status.setText(newThread ? "Thread posted" : "Reply posted", juce::dontSendNotification);
+        });
+    }).detach();
+}
+
+void KyotoAudioProcessorEditor::showBoardFileMenu(const kt::AttachRef& ref, juce::Point<int> pos)
+{
+    juce::PopupMenu menu;
+    menu.addItem(1, "Save " + ref.name + " as...");
+    const bool audio = kt::fileKindOf(ref.name) == "audio";
+    if (audio) menu.addItem(2, "Use as my Sound sample (loads into this plugin)");
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(juce::Rectangle<int>(pos.x, pos.y, 1, 1)),
+        [this, ref](int choice) {
+            if (choice == 1) saveAttachmentAs(ref);
+            else if (choice == 2) useAttachmentAsSample(ref);
+        });
+}
+
+void KyotoAudioProcessorEditor::useAttachmentAsSample(const kt::AttachRef& ref)
+{
+    const auto tokenCopy = token;
+    juce::Component::SafePointer<KyotoAudioProcessorEditor> safe(this);
+    status.setText("Downloading " + ref.name + "...", juce::dontSendNotification);
+    std::thread([safe, tokenCopy, ref] {
+        auto tmp = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("ds_sample_" + juce::String(juce::Time::currentTimeMillis()) + ref.name.fromLastOccurrenceOf(".", true, false));
+        juce::String err;
+        juce::AudioBuffer<float> buf;
+        double sr = 44100.0;
+        bool ok = kt::downloadAttachment(tokenCopy, ref, tmp, err);
+        if (ok)
+        {
+            juce::AudioFormatManager fm;
+            fm.registerBasicFormats();
+            std::unique_ptr<juce::AudioFormatReader> reader(fm.createReaderFor(tmp));
+            if (reader != nullptr)
+            {
+                const int n = (int) juce::jmin<juce::int64>(reader->lengthInSamples, 48000 * 30);
+                buf.setSize(1, n);
+                reader->read(&buf, 0, n, 0, true, true);
+                sr = reader->sampleRate;
+            }
+            else { ok = false; err = "format not readable here (use WAV / AIFF / FLAC / MP3 / OGG)"; }
+        }
+        tmp.deleteFile();
+        juce::MessageManager::callAsync([safe, ok, err, buf, sr, name = ref.name]() mutable {
+            if (safe == nullptr) return;
+            if (! ok) { safe->status.setText("Sample failed: " + err, juce::dontSendNotification); return; }
+            safe->proc.loadSample(buf, sr);
+            safe->status.setText("Sound sample loaded from thread: " + name, juce::dontSendNotification);
+        });
+    }).detach();
 }

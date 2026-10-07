@@ -3,6 +3,7 @@
 #include "ChainLevelControls.h"
 #include "Themes.h"
 #include "Attach.h"
+#include "DreamBoard.h"
 #include "MachineDesign.h"
 #include "ModularParts.h"
 #include "WaveDisplay.h"
@@ -200,6 +201,13 @@ private:
     void showPersonMenu(const SocialRail::Person& person, juce::Point<int> screenPos);
     void showBubbleMenu(const SocialRail::Bubble& bubble, juce::Point<int> screenPos);
     void openThread(const juce::String& id);
+    // DreamShare thread board (Reddit / 4chan style)
+    kt::ThreadBoard threadBoard;
+    void wireThreadBoard();
+    void submitBoardPost(const juce::String& threadId, const juce::String& title, const juce::String& body,
+                         const juce::Array<juce::File>& files, const juce::String& modToken);
+    void showBoardFileMenu(const kt::AttachRef& ref, juce::Point<int> pos);
+    void useAttachmentAsSample(const kt::AttachRef& ref);
     void closeThread();
     void postThreadComment(const juce::String& text);
     void reactTo(const juce::String& kind, const juce::String& id, const juce::String& emoji);
@@ -284,13 +292,13 @@ private:
     int pendingAttachTarget = 0; // 0 none, 1 live chat, 2 open thread
     int dragTarget = 0;
     int searchTick = 0, catalogSeq = 0;
-    int centerMode = 0; // 0=community plugins, 1=effects, 2=my plugins, 3=threads, 4=pending
+    int centerMode = 3; // 0=community plugins, 1=effects, 2=my plugins, 3=threads, 4=pending
     int railMode = 0;
     bool scrollChatOnRefresh = true;
     bool threadOpen = false;
     juce::String selectedThreadId;
     struct ThreadComment { juce::String id, user, text, themeId; };
-    struct ThreadItem { juce::String id, user, title, text, themeId; int comments = 0; juce::Array<ThreadComment> commentList; };
+    struct ThreadItem { juce::String id, user, title, text, themeId; juce::int64 at = 0; int score = 0; int comments = 0; juce::Array<ThreadComment> commentList; };
     juce::TextButton threadBackBtn { "< THREADS" }, threadReactBtn { "REACT" }, threadShareFxBtn { "SHARE FX" }, threadSharePluginBtn { "SHARE PLUGIN" };
     juce::Array<ThreadItem> threads;
     juce::OwnedArray<juce::TextButton> feedEffectButtons;
