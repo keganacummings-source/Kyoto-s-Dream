@@ -43,6 +43,55 @@ public:
         return kt::font(theme, 13.0f);
     }
 
+    void drawPopupMenuBackground(juce::Graphics& g, int width, int height) override
+    {
+        auto r = juce::Rectangle<float>(0.5f, 0.5f, (float) width - 1.f, (float) height - 1.f);
+        g.setColour(kt::c(theme.panel).brighter(0.04f));
+        g.fillRoundedRectangle(r, 8.f);
+        g.setColour(kt::c(theme.border));
+        g.drawRoundedRectangle(r, 8.f, 1.f);
+        g.setColour(kt::c(theme.accent).withAlpha(0.08f));
+        g.fillRoundedRectangle(r.withSizeKeepingCentre(r.getWidth() * 0.96f, r.getHeight() * 0.96f), 6.f);
+    }
+
+    void drawPopupMenuItem(juce::Graphics& g, int width, int height, bool isSeparator, bool isActive,
+                           bool isHighlighted, bool isTicked, bool hasSubMenu, const juce::String& text,
+                           const juce::String& shortcutKey)
+    {
+        auto r = juce::Rectangle<float>(1.f, 1.f, (float) width - 2.f, (float) height - 2.f);
+        if (isSeparator)
+        {
+            g.setColour(kt::c(theme.border).withAlpha(0.5f));
+            g.drawHorizontalLine((int) (r.getCentreY()), r.getX() + 8.f, r.getRight() - 8.f);
+            return;
+        }
+        if (isHighlighted && isActive)
+        {
+            g.setColour(kt::c(theme.accent).withAlpha(0.22f));
+            g.fillRoundedRectangle(r, 5.f);
+            g.setColour(kt::c(theme.accent).withAlpha(0.6f));
+            g.drawRoundedRectangle(r, 5.f, 1.f);
+        }
+        g.setColour(isActive ? kt::c(theme.text) : kt::c(theme.muted));
+        g.setFont(kt::font(theme, 13.f));
+        g.drawText(text, r.reduced(10.f, 0.f).toNearestInt(), juce::Justification::centredLeft);
+        if (isTicked)
+        {
+            g.setColour(kt::c(theme.accent));
+            g.fillEllipse(r.getRight() - 18.f, r.getCentreY() - 3.f, 6.f, 6.f);
+        }
+        if (hasSubMenu)
+        {
+            g.setColour(kt::c(theme.accent).withAlpha(0.7f));
+            juce::Path arrow;
+            arrow.startNewSubPath(r.getRight() - 14.f, r.getCentreY() - 4.f);
+            arrow.lineTo(r.getRight() - 8.f, r.getCentreY());
+            arrow.lineTo(r.getRight() - 14.f, r.getCentreY() + 4.f);
+            g.strokePath(arrow, juce::PathStrokeType(1.5f));
+        }
+        juce::ignoreUnused(shortcutKey);
+    }
+
     juce::Font getSliderPopupFont(juce::Slider&) override
     {
         return kt::font(theme, 12.0f);
@@ -281,17 +330,30 @@ void CanvasWidget::paint(juce::Graphics& g)
         g.drawText(kind == Kind::Stack ? "STACKED FX" : "WAV", bounds.removeFromBottom(16).toNearestInt(), juce::Justification::centred);
     }
 
-    // Corner grips: drag them to resize the part onto the builder's fine grid.
+    // Corner + edge grips: drag them to resize the part onto the builder's fine grid.
     if (selected || hovered)
     {
-        for (auto p : { juce::Point<int>(1, 1), juce::Point<int>(getWidth() - kHandlePx - 1, 1),
-                        juce::Point<int>(getWidth() - kHandlePx - 1, getHeight() - kHandlePx - 1), juce::Point<int>(1, getHeight() - kHandlePx - 1) })
+        auto drawGrip = [&](float x, float y, float w, float h)
         {
-            juce::Rectangle<float> h((float) p.x, (float) p.y, (float) kHandlePx, (float) kHandlePx);
+            juce::Rectangle<float> grip(x, y, w, h);
             g.setColour(kt::c(theme.accent).withAlpha(selected ? 1.f : 0.7f));
-            g.fillRoundedRectangle(h, 2.f);
+            g.fillRoundedRectangle(grip, 2.f);
             g.setColour(kt::c(theme.bg).withAlpha(0.85f));
-            g.fillRoundedRectangle(h.reduced(2.f), 1.f);
+            g.fillRoundedRectangle(grip.reduced(2.f), 1.f);
+        };
+        // Corners
+        drawGrip(1, 1, kHandlePx, kHandlePx);
+        drawGrip(getWidth() - kHandlePx - 1, 1, kHandlePx, kHandlePx);
+        drawGrip(getWidth() - kHandlePx - 1, getHeight() - kHandlePx - 1, kHandlePx, kHandlePx);
+        drawGrip(1, getHeight() - kHandlePx - 1, kHandlePx, kHandlePx);
+        // Edge midpoints (thinner bars for side-drag resize)
+        if (getWidth() > 40 && getHeight() > 40)
+        {
+            const float ew = kHandlePx, eh = 3.f;
+            drawGrip((float) getWidth() * 0.5f - ew * 0.5f, 1, ew, eh);                                    // top
+            drawGrip((float) getWidth() - kHandlePx, (float) getHeight() * 0.5f - eh * 0.5f, eh, ew);     // right
+            drawGrip((float) getWidth() * 0.5f - ew * 0.5f, (float) getHeight() - eh - 1, ew, eh);        // bottom
+            drawGrip(1, (float) getHeight() * 0.5f - eh * 0.5f, eh, ew);                                    // left
         }
     }
 }
@@ -343,10 +405,16 @@ int CanvasWidget::handleAt(juce::Point<int> pos) const
     if (w < 18 || h < 18) return -1;
     const bool left = pos.x <= kGrabPx, right = pos.x >= w - kGrabPx;
     const bool top = pos.y <= kGrabPx, bottom = pos.y >= h - kGrabPx;
+    // Corners (0-3)
     if (top && left) return 0;
     if (top && right) return 1;
     if (bottom && right) return 2;
     if (bottom && left) return 3;
+    // Edges (4-7) - allow resizing by dragging sides, not just corners
+    if (top) return 4;
+    if (right) return 5;
+    if (bottom) return 6;
+    if (left) return 7;
     return -1;
 }
 
@@ -356,6 +424,8 @@ void CanvasWidget::mouseMove(const juce::MouseEvent& e)
     const int h = handleAt(e.getPosition());
     setMouseCursor(h == 0 || h == 2 ? juce::MouseCursor::BottomRightCornerResizeCursor
                    : h == 1 || h == 3 ? juce::MouseCursor::BottomLeftCornerResizeCursor
+                   : h == 4 || h == 6 ? juce::MouseCursor::UpDownResizeCursor
+                   : h == 5 || h == 7 ? juce::MouseCursor::LeftRightResizeCursor
                                       : juce::MouseCursor::NormalCursor);
 }
 
@@ -428,10 +498,14 @@ void CanvasWidget::mouseDrag(const juce::MouseEvent& e)
         case 1: gw = startGw + dx; gy = startGy + dy; gh = startGh - dy; break;
         case 2: gw = startGw + dx; gh = startGh + dy; break;
         case 3: gx = startGx + dx; gw = startGw - dx; gh = startGh + dy; break;
+        case 4: gy = startGy + dy; gh = startGh - dy; break; // top edge
+        case 5: gw = startGw + dx; break;                     // right edge
+        case 6: gh = startGh + dy; break;                     // bottom edge
+        case 7: gx = startGx + dx; gw = startGw - dx; break;  // left edge
         default: return;
     }
-    if (gw < kMinCells) { if (resizeHandle == 0 || resizeHandle == 3) gx = startGx + startGw - kMinCells; gw = kMinCells; }
-    if (gh < kMinCells) { if (resizeHandle == 0 || resizeHandle == 1) gy = startGy + startGh - kMinCells; gh = kMinCells; }
+    if (gw < kMinCells) { if (resizeHandle == 0 || resizeHandle == 3 || resizeHandle == 7) gx = startGx + startGw - kMinCells; gw = kMinCells; }
+    if (gh < kMinCells) { if (resizeHandle == 0 || resizeHandle == 1 || resizeHandle == 4) gy = startGy + startGh - kMinCells; gh = kMinCells; }
     gw = juce::jmin(gw, gridCols);
     gh = juce::jmin(gh, gridRows);
     gx = juce::jlimit(0, juce::jmax(0, gridCols - gw), gx);
@@ -961,8 +1035,8 @@ KyotoAudioProcessorEditor::KyotoAudioProcessorEditor(KyotoAudioProcessor& p)
             if (savedShell == pb::kShells[i].id) { shellIndex = i; shellBox.setSelectedId(i + 1, juce::dontSendNotification); }
     }
     refreshEffectBox();
-    // 12 Hz is plenty for the live meters and keeps the UI (and its right-click menus) responsive.
-    startTimerHz(12);
+    // 30 Hz for smoother live screens and more reactive meters.
+    startTimerHz(30);
     restoreEditorSession();
     // A brand-new instance opens on a randomly generated template, ready to work with.
     rollNewInstanceTemplate();
@@ -1057,7 +1131,7 @@ void KyotoAudioProcessorEditor::timerCallback()
     socialRail.setHostTheme(theme);
     repaint();
     for (auto* w : widgets)
-        if (w->kind == CanvasWidget::Kind::Wave || w->kind == CanvasWidget::Kind::Stack)
+        if (w->kind == CanvasWidget::Kind::Wave || w->kind == CanvasWidget::Kind::Stack || w->kind == CanvasWidget::Kind::Board)
             w->repaint();
 }
 
@@ -1815,10 +1889,9 @@ void KyotoAudioProcessorEditor::showTab(int next)
     adminDeleteBtn.setVisible(false); // replaced by right-click context menu
     msgBox.setVisible(share && loggedIn && railMode == 0); sendBtn.setVisible(share && loggedIn && railMode == 0); feedBtn.setVisible(share && loggedIn);
     themeBox.setVisible(share && loggedIn); // global UI theme only on DreamShare home
-    shellBox.setVisible(chain && loggedIn);
-    playgroundThemeBox.setVisible(chain && loggedIn);
-    shellLabel.setVisible(shellBox.isVisible());
-    playgroundThemeLabel.setVisible(playgroundThemeBox.isVisible());
+    // Templates, themes, and builder action buttons are now in the right-click context menu.
+    shellBox.setVisible(false); playgroundThemeBox.setVisible(false);
+    shellLabel.setVisible(false); playgroundThemeLabel.setVisible(false);
     catalogView.setVisible(share && loggedIn && centerMode != 3);
     threadBoard.setVisible(share && loggedIn && centerMode == 3);
     chatView.setVisible(share && loggedIn);
@@ -1829,10 +1902,11 @@ void KyotoAudioProcessorEditor::showTab(int next)
     panel.setVisible(chain);
     if (fxBrowser) fxBrowser->setVisible(builderReady || fx);
     chainLevels.setVisible(builderReady && ! pluginView);
-    addBtn.setVisible(builderReady); chainBreakBtn.setVisible(builderReady); chainMixBtn.setVisible(builderReady); chainRemoveBtn.setVisible(builderReady); chainUndoBtn.setVisible(builderReady); randomTemplateBtn.setVisible(builderReady);
-    nameBox.setVisible(builderReady); presetBox.setVisible(builderReady); saveBtn.setVisible(builderReady); upBtn.setVisible(builderReady); kindBox.setVisible(builderReady); paramBox.setVisible(builderReady); pieceBox.setVisible(builderReady); wavBtn.setVisible(builderReady);
+    // Builder buttons moved to right-click context menu - keep only name/preset inputs.
+    addBtn.setVisible(false); chainBreakBtn.setVisible(false); chainMixBtn.setVisible(false); chainRemoveBtn.setVisible(false); chainUndoBtn.setVisible(false); randomTemplateBtn.setVisible(false);
+    nameBox.setVisible(builderReady); presetBox.setVisible(builderReady); saveBtn.setVisible(false); upBtn.setVisible(false); kindBox.setVisible(false); paramBox.setVisible(false); pieceBox.setVisible(false); wavBtn.setVisible(false);
     gridStyleBox.setVisible(false); effectBox.setVisible(false);
-    newMachineBtn.setVisible(share && loggedIn && !pluginView); randomMachineBtn.setVisible(share && loggedIn && !pluginView);
+    newMachineBtn.setVisible(false); randomMachineBtn.setVisible(false);
 
     effectNameBox.setVisible(fx); fxAddBtn.setVisible(fx); fxSaveBtn.setVisible(fx); fxUpBtn.setVisible(false); fxShareChatBtn.setVisible(fx); fxShareThreadBtn.setVisible(fx); fxRemoveBtn.setVisible(fx); fxUndoBtn.setVisible(fx);
     fxAmount.setVisible(fx); fxTone.setVisible(fx); fxMotion.setVisible(fx); fxMix.setVisible(fx); fxShape.setVisible(fx);
@@ -1844,7 +1918,8 @@ void KyotoAudioProcessorEditor::showTab(int next)
     pluginsTabBtn.setToggleState(centerMode == 0, juce::dontSendNotification); effectsTabBtn.setToggleState(centerMode == 1, juce::dontSendNotification);
     myPluginsBtn.setToggleState(centerMode == 2, juce::dontSendNotification); pendingBtn.setToggleState(centerMode == 4, juce::dontSendNotification);
     railChatBtn.setToggleState(railMode == 0, juce::dontSendNotification); railOnlineBtn.setToggleState(railMode == 1, juce::dontSendNotification);
-    pluginViewBtn.setVisible(!pluginView && loggedIn); pluginBackBtn.setVisible(pluginView);
+    // Plugin View is now in the right-click menu - hide the top button.
+    pluginViewBtn.setVisible(false); pluginBackBtn.setVisible(pluginView);
     if (! chain) { newMachineBtn.setVisible(false); randomMachineBtn.setVisible(false); }
     resized();
     if (openingChat) chatView.setViewPosition(0, socialRail.getHeight());
@@ -2647,14 +2722,29 @@ void KyotoAudioProcessorEditor::randomizeTemplate()
 
 void KyotoAudioProcessorEditor::rollNewInstanceTemplate()
 {
-    // A brand-new instance opens on a randomly generated template; a restored build is left alone.
+    // A brand-new instance opens on a BLANK playground: just the mandatory motherboard, no parts.
+    // A restored build is left alone. Right-click the empty playground to place a motherboard.
+    bool hasBoard = false;
     for (int i = 0; i < proc.uiState.getNumChildren(); ++i)
     {
         auto child = proc.uiState.getChild(i);
-        if (child.hasType("w") && child.getProperty("kind").toString() != "board")
-            return;
+        if (child.hasType("w"))
+        {
+            if (child.getProperty("kind").toString() == "board") hasBoard = true;
+            else return; // restored build with parts - leave it alone
+        }
     }
-    randomizeTemplate();
+    // Blank playground: ensure just the motherboard, no auto-filled parts.
+    if (! hasBoard)
+    {
+        shellIndex = 0;
+        shellBox.setSelectedId(1, juce::dontSendNotification);
+        proc.uiState.setProperty("shell", pb::kShells[0].id, nullptr);
+        panel.shellIndex = 0;
+        ensureMotherboard();
+        rebuildCanvas();
+        status.setText("Blank playground - right-click to place a motherboard, then add parts.", juce::dontSendNotification);
+    }
 }
 
 void KyotoAudioProcessorEditor::swapPartInBay(int bay, const juce::String& kind, int fxIndex, const juce::String& label)
@@ -2740,13 +2830,74 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
     const bool hasSelection = selectedChainWidget >= 0 && selectedChainWidget < widgets.size();
     const int selBay = hasSelection ? (int) widgets[selectedChainWidget]->node.getProperty("shellSlot", -1) : -1;
 
+    // Check if a motherboard exists
+    bool hasBoard = false;
+    for (int i = 0; i < proc.uiState.getNumChildren(); ++i)
+    {
+        auto child = proc.uiState.getChild(i);
+        if (child.hasType("w") && child.getProperty("kind").toString() == "board") { hasBoard = true; break; }
+    }
+
     juce::PopupMenu menu;
+
+    // ---- Empty playground: prompt to place a motherboard first ----
+    if (! hasBoard)
+    {
+        menu.addSectionHeader("BLANK PLAYGROUND");
+        menu.addItem(900, "Place Motherboard");
+        menu.addSeparator();
+        // Theme submenu still available
+        juce::PopupMenu themeMenu;
+        for (int i = 0; i < kt::kThemeCount; ++i)
+            themeMenu.addItem(5000 + i, kt::kThemes[i].name, true, playgroundTheme.id == kt::kThemes[i].id);
+        menu.addSubMenu("Theme", themeMenu);
+        // Aspect ratio
+        juce::PopupMenu arMenu;
+        arMenu.addItem(5101, "4:5 Portrait", true, machineDesign.playgroundMode == MachineDesign::PlaygroundMode::Portrait45);
+        arMenu.addItem(5102, "1:1 Square", true, machineDesign.playgroundMode == MachineDesign::PlaygroundMode::Square11);
+        arMenu.addItem(5103, "5:4 Landscape", true, machineDesign.playgroundMode == MachineDesign::PlaygroundMode::Landscape54);
+        arMenu.addItem(5104, "Freeform", true, machineDesign.playgroundMode == MachineDesign::PlaygroundMode::Freeform);
+        menu.addSubMenu("Aspect Ratio", arMenu);
+        menu.addSeparator();
+        menu.addItem(5200, "Randomize Machine");
+        menu.addItem(5201, "Load WAV");
+        menu.addItem(5202, "Save Build");
+        menu.addItem(5203, "Publish");
+        menu.addItem(5204, "Plugin View");
+        menu.addItem(5205, "Undo");
+        menu.addItem(5206, "Randomize Template");
+        stopTimer();
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({ screenPos.x, screenPos.y, 1, 1 }),
+            [this](int result)
+            {
+                startTimerHz(30);
+                if (result == 0) return;
+                if (result == 900) { ensureMotherboard(); rebuildCanvas(); status.setText("Motherboard placed. Right-click to add parts.", juce::dontSendNotification); return; }
+                if (result >= 5000 && result < 5000 + kt::kThemeCount) { applyPlaygroundTheme(kt::kThemes[result - 5000].id); return; }
+                if (result == 5101) { startNewMachine(0); return; }
+                if (result == 5102) { startNewMachine(1); return; }
+                if (result == 5103) { startNewMachine(2); return; }
+                if (result == 5104) { startNewMachine(3); return; }
+                if (result == 5200) { randomizeMachine(); return; }
+                if (result == 5201) { loadWav(); return; }
+                if (result == 5202) { saveLocal(); return; }
+                if (result == 5203) { if (token.isEmpty()) status.setText("Sign in to DreamShare first to publish.", juce::dontSendNotification); else publish(); return; }
+                if (result == 5204) { setPluginView(true); return; }
+                if (result == 5205) { undoLast(); return; }
+                if (result == 5206) { randomizeTemplate(); return; }
+            });
+        return;
+    }
+
+    // ---- Normal right-click menu with all features ----
     {
         const int pi = chainParentWidget();
         const auto target = (pi >= 0 && pi < widgets.size()) ? widgets[pi]->node.getProperty("label").toString() : juce::String("the motherboard");
         menu.addSectionHeader("Adds into: " + target);
     }
-    if (slot == 0)
+
+    // Change Screen (on motherboard)
+    if (slot == 0 || (slot < 0 && !hasSelection))
     {
         juce::PopupMenu scr;
         const int cur = pb::boardScreenTypeOf(proc.uiState, pb::kShells[shellIndex].screenStyle);
@@ -2754,6 +2905,8 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
         menu.addSubMenu("Change Screen", scr);
         menu.addSeparator();
     }
+
+    // Add parts submenu
     juce::PopupMenu add, parts;
     parts.addItem(1, "Dial %");
     parts.addItem(2, "Slider (follows module ratio)");
@@ -2761,6 +2914,14 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
     parts.addItem(5, "Key (MIDI)");
     parts.addItem(6, "Sound (one sample)");
     add.addSubMenu("Part", parts);
+
+    // Modular pieces submenu (Timer, Randomizer, etc.)
+    juce::PopupMenu modParts;
+    for (int i = 0; i < kt::kModPieceCount; ++i)
+        modParts.addItem(6000 + i, juce::String(kt::kModPieces[i].name) + "  -  " + kt::kModPieces[i].quirk);
+    add.addSubMenu("Modular Parts", modParts);
+
+    // FX by family
     for (int fam = 0; fam < kt::kFxFamilyCount; ++fam)
     {
         juce::PopupMenu famMenu;
@@ -2769,10 +2930,15 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
                 famMenu.addItem(1000 + i, kt::kFx[i].name);
         add.addSubMenu(kt::kFxFamilyNames[fam], famMenu);
     }
+    // Chain break and master mix
+    add.addSeparator();
+    add.addItem(1100, "Chain Break");
+    add.addItem(1101, "Master Mix");
     menu.addSubMenu("Add", add);
+
+    // Swap part (if selection)
     if (hasSelection)
     {
-        // Swap the part already sitting in this bay for a different part or effect.
         juce::PopupMenu swap, swapParts;
         swapParts.addItem(3001, "Dial %");
         swapParts.addItem(3002, "Slider (follows module ratio)");
@@ -2792,13 +2958,49 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
         menu.addItem(7, "FX EDIT");
         menu.addItem(8, "Remove");
     }
-    // Menus need an idle message thread: pause the animation timer so the popup appears instantly.
+
+    menu.addSeparator();
+
+    // Theme submenu
+    juce::PopupMenu themeMenu;
+    for (int i = 0; i < kt::kThemeCount; ++i)
+        themeMenu.addItem(5000 + i, kt::kThemes[i].name, true, playgroundTheme.id == kt::kThemes[i].id);
+    menu.addSubMenu("Theme", themeMenu);
+
+    // Aspect ratio submenu
+    juce::PopupMenu arMenu;
+    arMenu.addItem(5101, "4:5 Portrait", true, machineDesign.playgroundMode == MachineDesign::PlaygroundMode::Portrait45);
+    arMenu.addItem(5102, "1:1 Square", true, machineDesign.playgroundMode == MachineDesign::PlaygroundMode::Square11);
+    arMenu.addItem(5103, "5:4 Landscape", true, machineDesign.playgroundMode == MachineDesign::PlaygroundMode::Landscape54);
+    arMenu.addItem(5104, "Freeform", true, machineDesign.playgroundMode == MachineDesign::PlaygroundMode::Freeform);
+    menu.addSubMenu("Aspect Ratio", arMenu);
+
+    // Template/shell submenu
+    juce::PopupMenu shellMenu;
+    for (int i = 0; i < pb::kShellCount; ++i)
+        shellMenu.addItem(5300 + i, pb::kShells[i].name, true, shellIndex == i);
+    menu.addSubMenu("Template", shellMenu);
+
+    menu.addSeparator();
+
+    // Machine operations
+    menu.addItem(5200, "Randomize Machine");
+    menu.addItem(5206, "Randomize Template");
+    menu.addItem(5205, "Undo");
+    menu.addSeparator();
+    menu.addItem(5201, "Load WAV");
+    menu.addItem(5202, "Save Build");
+    menu.addItem(5203, "Publish");
+    menu.addSeparator();
+    menu.addItem(5204, "Plugin View");
+
     stopTimer();
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({ screenPos.x, screenPos.y, 1, 1 }),
         [this, slot, local, hasSelection, selBay](int result)
         {
-            startTimerHz(12);
+            startTimerHz(30);
             if (result == 0) return;
+            // Screen type change
             if (result >= 2000 && result < 2000 + pb::kScreenTypeCount)
             {
                 for (int i = 0; i < proc.uiState.getNumChildren(); ++i)
@@ -2811,6 +3013,44 @@ void KyotoAudioProcessorEditor::showSlotMenu(int slot, juce::Point<int> screenPo
                 for (auto* w : widgets) w->repaint();
                 panel.repaint();
                 status.setText(juce::String("Screen changed to ") + pb::kScreenTypes[result - 2000], juce::dontSendNotification);
+                return;
+            }
+            // Theme change
+            if (result >= 5000 && result < 5000 + kt::kThemeCount) { applyPlaygroundTheme(kt::kThemes[result - 5000].id); return; }
+            // Aspect ratio
+            if (result == 5101) { startNewMachine(0); return; }
+            if (result == 5102) { startNewMachine(1); return; }
+            if (result == 5103) { startNewMachine(2); return; }
+            if (result == 5104) { startNewMachine(3); return; }
+            // Template/shell
+            if (result >= 5300 && result < 5300 + pb::kShellCount) { applyShell(result - 5300); return; }
+            // Machine ops
+            if (result == 5200) { randomizeMachine(); return; }
+            if (result == 5201) { loadWav(); return; }
+            if (result == 5202) { saveLocal(); return; }
+            if (result == 5203) { if (token.isEmpty()) status.setText("Sign in to DreamShare first to publish.", juce::dontSendNotification); else publish(); return; }
+            if (result == 5204) { setPluginView(true); return; }
+            if (result == 5205) { undoLast(); return; }
+            if (result == 5206) { randomizeTemplate(); return; }
+            // Chain break / master mix
+            if (result == 1100) { pendingSpecial = true; pendingSpecialType = KyotoAudioProcessor::kBreakType; pendingLabel = "CHAIN BREAK"; armedStyle = "dial"; placing = true; status.setText("Break is a knob part - click a glowing knob bay.", juce::dontSendNotification); panel.placing = true; panel.armedStyle = armedStyle; syncPanelMouse(); panel.repaint(); return; }
+            if (result == 1101) { pendingSpecial = true; pendingSpecialType = KyotoAudioProcessor::kMixType; pendingLabel = "MASTER MIX"; armedStyle = "fader"; placing = true; status.setText("Mix is a fader part - click a glowing fader bay.", juce::dontSendNotification); panel.placing = true; panel.armedStyle = armedStyle; syncPanelMouse(); panel.repaint(); return; }
+            // Modular pieces
+            if (result >= 6000 && result < 6000 + kt::kModPieceCount)
+            {
+                const int pieceIdx = result - 6000;
+                const auto& piece = kt::kModPieces[pieceIdx];
+                pendingPiece = &piece;
+                armedStyle = (piece.id == "flip" || piece.id == "lfo" || piece.id == "envelope") ? "fader" : "dial";
+                pendingFx = fxBrowser ? fxBrowser->getSelectedFx() : 0;
+                pendingLabel = piece.name;
+                pendingSpecial = false;
+                placing = true;
+                panel.placing = true;
+                panel.armedStyle = armedStyle;
+                syncPanelMouse();
+                status.setText(juce::String(piece.name) + " armed (" + piece.quirk + "). Click a glowing bay.", juce::dontSendNotification);
+                panel.repaint();
                 return;
             }
             if (result == 7) { editEffectPopup(selectedChainWidget); return; }

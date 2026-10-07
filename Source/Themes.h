@@ -78,10 +78,30 @@ inline constexpr ThemePalette kThemes[] = {
     { "copper", "Copper", 0xff120c08, 0xff21150f, 0xffe19a63, 0xfffff0df, 0xff9b7659, 0xff3b281b, 0xffffbd8a, 0xff2d1d14, 0xff533d2d, "Tahoma", 1.0f, 8.0f },
     { "ghost", "Ghost", 0xff0b0d0f, 0xff171a1d, 0xffdbe4ea, 0xfff7fbff, 0xff85919a, 0xff2b3339, 0xffffffff, 0xff20262b, 0xff414a51, "Arial", 1.0f, 8.0f },
     { "arcade", "Arcade", 0xff0a0712, 0xff171024, 0xffff4dd8, 0xfff5e9ff, 0xffa45f98, 0xff321d42, 0xffff8ee6, 0xff21152d, 0xff4a2f58, "Trebuchet MS", 1.0f, 8.0f },
+    // Batch 2 - deeper, more in-depth themes
+    { "magma", "Magma", 0xff100404, 0xff1e0a08, 0xffff3010, 0xffffe8e0, 0xffa05040, 0xff3a1810, 0xffff7050, 0xff2a120e, 0xff4a2418, "Segoe UI", 1.0f, 8.0f },
+    { "aurora", "Aurora", 0xff040810, 0xff0a1420, 0xff40ffa0, 0xffe0fff0, 0xff50a080, 0xff1a3040, 0xff80ffc0, 0xff102030, 0xff2a4a50, "Trebuchet MS", 1.0f, 8.0f },
+    { "brass", "Brass", 0xff120c04, 0xff221808, 0xffd4a040, 0xfffff4d8, 0xffa08040, 0xff3a2810, 0xffffd070, 0xff2a1c0a, 0xff4a3818, "Tahoma", 1.0f, 8.0f },
+    { "toxic", "Toxic", 0xff080a04, 0xff101408, 0xff80ff20, 0xffe8ffe0, 0xff508040, 0xff1a2810, 0xffc0ff60, 0xff142010, 0xff2a4020, "Arial", 1.0f, 8.0f },
+    { "crimson", "Crimson", 0xff100406, 0xff1e0a0e, 0xffff2040, 0xffffe0e4, 0xffa04050, 0xff3a1018, 0xffff5070, 0xff2a0e12, 0xff4a1820, "Segoe UI", 1.0f, 8.0f },
+    { "jade", "Jade", 0xff040a08, 0xff0a1814, 0xff20c080, 0xffe0fff0, 0xff50a070, 0xff103020, 0xff50e0a0, 0xff0e2018, 0xff204030, "Verdana", 1.0f, 8.0f },
+    { "plasma", "Plasma", 0xff0a0410, 0xff14081e, 0xffff30c0, 0xffffe8f8, 0xffa05090, 0xff2a103a, 0xffff70d0, 0xff1e0a28, 0xff4a1850, "Trebuchet MS", 1.0f, 8.0f },
+    { "gold", "Gold", 0xff100a02, 0xff1e1408, 0xffffd030, 0xfffff8d8, 0xffa09030, 0xff3a2e10, 0xffffe060, 0xff2a200a, 0xff4a3818, "Segoe UI", 1.0f, 8.0f },
+    { "cobalt", "Cobalt2", 0xff040810, 0xff0a1422, 0xff3080ff, 0xffd0e8ff, 0xff5070a0, 0xff102040, 0xff60a0ff, 0xff0e1828, 0xff2a3a58, "Arial", 1.0f, 8.0f },
+    { "magma2", "Inferno", 0xff100200, 0xff1e0604, 0xffff2010, 0xffffe4d8, 0xffa04030, 0xff3a1008, 0xffff6040, 0xff2a0e0a, 0xff4a1810, "Tahoma", 1.0f, 8.0f },
+    { "cyber", "Cyber", 0xff040608, 0xff0a1018, 0xff00e0ff, 0xffe0f8ff, 0xff408090, 0xff102028, 0xff60e0ff, 0xff0e1820, 0xff2a3848, "Consolas", 1.0f, 8.0f },
+    { "lavender", "Lavender", 0xff0c0814, 0xff161020, 0xffb090ff, 0xfff4f0ff, 0xff8070b0, 0xff282038, 0xffd0b0ff, 0xff1c1428, 0xff3a2848, "Segoe UI", 1.0f, 8.0f },
+    { "sand", "Sand", 0xff100c08, 0xff1c1814, 0xffd0b080, 0xfff8f0e0, 0xffa09070, 0xff383020, 0xffe0c090, 0xff28201a, 0xff484030, "Verdana", 1.0f, 8.0f },
+    { "neon2", "Synthwave", 0xff0a0414, 0xff14082a, 0xffff40ff, 0xffffe0ff, 0xffa060a0, 0xff2a1040, 0xffff80ff, 0xff1e0a38, 0xff4a1858, "Trebuchet MS", 1.0f, 8.0f },
+    { "matrix", "Matrix", 0xff020a02, 0xff041404, 0xff20ff40, 0xffd0ffd0, 0xff40a050, 0xff103018, 0xff60ff80, 0xff082008, 0xff184028, "Consolas", 1.0f, 8.0f },
+    { "amber2", "Old Amber", 0xff100a04, 0xff1c1408, 0xffe0a020, 0xfffff0d0, 0xffa07030, 0xff3a2810, 0xffffc050, 0xff281c0a, 0xff483818, "Georgia", 1.0f, 8.0f },
+    { "frost", "Frost", 0xff040810, 0xff0a1420, 0xffa0d0ff, 0xfff0f8ff, 0xff6090b0, 0xff1a3040, 0xffc0e0ff, 0xff0e1c28, 0xff2a4050, "Arial", 1.0f, 8.0f },
+    { "moss2", "Deep Moss", 0xff040a06, 0xff0a1810, 0xff60c040, 0xffe0ffe0, 0xff508040, 0xff103018, 0xff90e060, 0xff0e2010, 0xff204028, "Verdana", 1.0f, 8.0f },
+    { "rose2", "Deep Rose", 0xff0c0608, 0xff1a0e14, 0xffff6090, 0xffffe8f0, 0xffa05070, 0xff301820, 0xffff90b0, 0xff24101a, 0xff482030, "Trebuchet MS", 1.0f, 8.0f },
 };
 
 inline constexpr int kThemeCount = sizeof(kThemes) / sizeof(kThemes[0]);
-static_assert(kThemeCount == 42, "KYOTRIPPAH theme registry must retain the 42 stable presets");
+static_assert(kThemeCount == 61, "KYOTRIPPAH theme registry must retain the 61 stable presets");
 
 inline const ThemePalette& themeById(const juce::String& id)
 {

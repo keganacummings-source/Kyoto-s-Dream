@@ -28,7 +28,7 @@ public:
             geekMode = geekBtn.getToggleState();
             if (! geekMode) geekHot = -1;
         };
-        startTimerHz(30);
+        startTimerHz(60);
     }
 
     void paint(juce::Graphics& g) override
@@ -80,7 +80,7 @@ public:
         const bool geekOn = geekReveal > 0.01f;
 
         // 1) Internal hardware underneath the top cover.
-        if (geekOn) drawInternals(g, interior);
+        if (geekOn) { drawInternals(g, interior); drawPartHardware(g, face, shell, interior); }
 
         // 2) The top cover: faceplate, bay wiring and the placed parts running live.
         //    Geek mode keeps the finished, textured shell dominant and lets the hidden hardware read
@@ -224,6 +224,66 @@ private:
         const auto& parts = hb::kInternals[shellIdx];
         for (int i = 0; i < parts.count; ++i)
             hb::drawHardwarePart(g, editor.machineDesign.palette(), parts.parts[i], internalRect(interior, i), animPhase, i == geekHot);
+    }
+
+    // Per-part hardware: draws a small PCB + chip beneath each placed part, wired to the motherboard.
+    void drawPartHardware(juce::Graphics& g, juce::Rectangle<float> face, const pb::Shell& shell, juce::Rectangle<float> interior) const
+    {
+        const auto& theme = editor.machineDesign.palette();
+        const auto accent = kt::c(theme.accent);
+        const auto peg = kt::c(theme.peg);
+        const auto muted = kt::c(theme.muted);
+        const auto ink = kt::c(theme.text);
+        const auto boardCentre = shell.slots[0].kind == pb::SlotKind::Board ? pb::slotRect(face, shell.slots[0]).getCentre() : face.getCentre();
+
+        for (int i = 0; i < editor.proc.uiState.getNumChildren(); ++i)
+        {
+            auto node = editor.proc.uiState.getChild(i);
+            if (! node.hasType("w")) continue;
+            const int bay = (int) node.getProperty("shellSlot", -1);
+            if (bay <= 0 || bay >= shell.slotCount) continue;
+            auto r = pb::slotRect(face, shell.slots[bay]);
+            if (r.getWidth() < 10.f || r.getHeight() < 10.f) continue;
+
+            // Small PCB beneath the part
+            auto pcb = r.reduced(4.f);
+            g.setColour(peg.darker(0.3f).withAlpha(0.6f * geekReveal));
+            g.fillRoundedRectangle(pcb, 3.f);
+            g.setColour(accent.withAlpha(0.3f * geekReveal));
+            g.drawRoundedRectangle(pcb, 3.f, 0.8f);
+
+            // Chip in the center of the PCB
+            auto chip = pcb.withSizeKeepingCentre(juce::jmin(pcb.getWidth() * 0.5f, 24.f), juce::jmin(pcb.getHeight() * 0.5f, 18.f));
+            g.setColour(accent.withAlpha(0.5f * geekReveal));
+            g.fillRoundedRectangle(chip, 2.f);
+            g.setColour(ink.withAlpha(0.6f * geekReveal));
+            g.setFont(kt::font(theme, 6.f, true));
+            g.drawText("IC", chip, juce::Justification::centred);
+
+            // Chip pins
+            const int pins = juce::jmax(3, (int) (chip.getWidth() / 4.f));
+            g.setColour(muted.withAlpha(0.4f * geekReveal));
+            for (int p = 0; p < pins; ++p)
+            {
+                const float px = chip.getX() + 2.f + (float) p * (chip.getWidth() - 4.f) / (float) juce::jmax(1, pins - 1);
+                g.fillRect(px - 0.5f, chip.getBottom(), 1.5f, 3.f);
+                g.fillRect(px - 0.5f, chip.getY() - 3.f, 1.5f, 3.f);
+            }
+
+            // Trace wire from this part's hardware to the motherboard
+            const auto partCentre = r.getCentre();
+            juce::Path trace;
+            trace.startNewSubPath(partCentre.x, partCentre.y);
+            const float midX = (partCentre.x + boardCentre.x) * 0.5f;
+            trace.cubicTo(midX, partCentre.y, midX, boardCentre.y, boardCentre.x, boardCentre.y);
+            g.setColour(accent.withAlpha(0.25f * geekReveal));
+            g.strokePath(trace, juce::PathStrokeType(1.2f));
+
+            // Solder dots at the trace endpoints
+            g.setColour(accent.withAlpha(0.5f * geekReveal));
+            g.fillEllipse(partCentre.x - 2.f, partCentre.y - 2.f, 4.f, 4.f);
+            g.fillEllipse(boardCentre.x - 2.f, boardCentre.y - 2.f, 4.f, 4.f);
+        }
     }
 
     void drawXrayOverlay(juce::Graphics& g, juce::Rectangle<float> interior, juce::Colour accent) const

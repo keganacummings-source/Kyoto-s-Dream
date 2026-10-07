@@ -10,7 +10,7 @@
 // The same data drives the builder preview and the Geek x-ray inside Plugin View.
 namespace hb
 {
-enum class PartKind { Board, Battery, Cap, Ribbon, Fan, Psu, Ram, Port, Antenna, Header, Drive };
+enum class PartKind { Board, Battery, Cap, Ribbon, Fan, Psu, Ram, Port, Antenna, Header, Drive, Heatsink, Crystal, Relay, Transistor };
 
 struct HardwarePart
 {
@@ -23,7 +23,7 @@ struct HardwarePart
 
 struct ShellInternals
 {
-    HardwarePart parts[7];
+    HardwarePart parts[9];
     int count;
 };
 
@@ -35,8 +35,10 @@ inline constexpr ShellInternals kInternals[30] = {
         { "BUS RIBBON", PartKind::Ribbon, 0.58f, 0.08f, 0.34f, 0.30f, "Carries audio between the bay and the board.", false },
         { "COOLING FAN", PartKind::Fan, 0.62f, 0.50f, 0.24f, 0.32f, "Spins faster when the chain gets hot.", false },
         { "I/O PORT", PartKind::Port, 0.88f, 0.10f, 0.08f, 0.26f, "Where your sound enters and leaves the box.", false },
-        { "EXPANSION HEADER", PartKind::Header, 0.84f, 0.58f, 0.12f, 0.18f, "Free pins for future bays.", false }
-    }, 7 },
+        { "EXPANSION HEADER", PartKind::Header, 0.84f, 0.58f, 0.12f, 0.18f, "Free pins for future bays.", false },
+        { "HEATSINK", PartKind::Heatsink, 0.36f, 0.88f, 0.20f, 0.08f, "Dissipates heat from the DSP under heavy load.", false },
+        { "OSCILLATOR", PartKind::Crystal, 0.58f, 0.40f, 0.08f, 0.06f, "Master clock crystal - keeps everything in sync.", true }
+    }, 9 },
     { { // Tower Rack - stacked server muscle
         { "TOWER BOARD", PartKind::Board, 0.06f, 0.06f, 0.88f, 0.28f, "Runs the whole rack. All bays report to it.", true },
         { "RAM STICKS", PartKind::Ram, 0.08f, 0.40f, 0.44f, 0.18f, "Scratch memory for the live previews.", false },
@@ -44,8 +46,10 @@ inline constexpr ShellInternals kInternals[30] = {
         { "DRIVE BAY", PartKind::Drive, 0.08f, 0.66f, 0.36f, 0.26f, "Stores your saved machines.", false },
         { "CAP ROW", PartKind::Cap, 0.50f, 0.70f, 0.14f, 0.20f, "Holds charge for the big transients.", false },
         { "CHASSIS FAN", PartKind::Fan, 0.70f, 0.64f, 0.26f, 0.30f, "Moves the heat out the back.", false },
-        { "CABLE BUS", PartKind::Ribbon, 0.86f, 0.42f, 0.08f, 0.46f, "Runs the signal down the rack spine.", false }
-    }, 7 },
+        { "CABLE BUS", PartKind::Ribbon, 0.86f, 0.42f, 0.08f, 0.46f, "Runs the signal down the rack spine.", false },
+        { "POWER TRANSISTOR", PartKind::Transistor, 0.46f, 0.40f, 0.10f, 0.14f, "Regulates the main power rail under load.", true },
+        { "HEATSINK", PartKind::Heatsink, 0.60f, 0.62f, 0.20f, 0.10f, "Dissipates heat from the PSU under heavy load.", false }
+    }, 9 },
     { { // Desk Wing - broad and battery-friendly
         { "WING BOARD", PartKind::Board, 0.05f, 0.08f, 0.44f, 0.34f, "The heart of the desk. Hosts the chain.", true },
         { "BATTERY BANK", PartKind::Battery, 0.05f, 0.52f, 0.34f, 0.36f, "Long-life bank for untethered jams.", true },
@@ -53,8 +57,10 @@ inline constexpr ShellInternals kInternals[30] = {
         { "DESK FAN", PartKind::Fan, 0.66f, 0.54f, 0.22f, 0.30f, "Whisper cooling for the wing.", false },
         { "PATCH PORT", PartKind::Port, 0.66f, 0.10f, 0.28f, 0.30f, "Patch your signal in and out.", false },
         { "BUS RIBBON", PartKind::Ribbon, 0.42f, 0.10f, 0.20f, 0.34f, "Ties the board to the patch bay.", false },
-        { "EXPANSION HEADER", PartKind::Header, 0.90f, 0.58f, 0.06f, 0.16f, "Room to grow.", false }
-    }, 7 },
+        { "EXPANSION HEADER", PartKind::Header, 0.90f, 0.58f, 0.06f, 0.16f, "Room to grow.", false },
+        { "SIGNAL RELAY", PartKind::Relay, 0.52f, 0.10f, 0.10f, 0.14f, "Switches the signal path automatically.", false },
+        { "OSCILLATOR", PartKind::Crystal, 0.66f, 0.88f, 0.08f, 0.06f, "Master clock for the desk's timing.", true }
+    }, 9 },
     { { // Pocket Unit - tiny but mighty
         { "MICRO BOARD", PartKind::Board, 0.06f, 0.06f, 0.66f, 0.40f, "The little board that runs the show.", true },
         { "LI-ION CELL", PartKind::Battery, 0.06f, 0.56f, 0.40f, 0.36f, "One cell, many jams.", true },
@@ -561,6 +567,73 @@ inline void drawHardwarePart(juce::Graphics& g, const kt::ThemePalette& t, const
             const float a = phase * 1.8f;
             g.drawLine(c.x, c.y, c.x + std::cos(a) * disc.getWidth() * 0.45f, c.y + std::sin(a) * disc.getWidth() * 0.45f, 1.4f);
             g.fillEllipse(c.x - 2.f, c.y - 2.f, 4.f, 4.f);
+            break;
+        }
+        case PartKind::Heatsink:
+        {
+            // Finned heatsink with thermal glow
+            g.setColour(hot ? accent.withAlpha(0.4f) : peg.withAlpha(0.6f));
+            g.fillRoundedRectangle(r.reduced(4.f), 3.f);
+            const int fins = juce::jmax(3, (int) (r.getWidth() / 8.f));
+            for (int i = 0; i < fins; ++i)
+            {
+                const float fx = r.getX() + 5.f + (float) i * (r.getWidth() - 10.f) / (float) juce::jmax(1, fins - 1);
+                g.setColour(accent.withAlpha(0.3f + glow * 0.3f));
+                g.fillRect(fx - 1.f, r.getY() + 5.f, 2.f, r.getHeight() - 10.f);
+            }
+            // Thermal glow at base
+            const float heat = 0.4f + 0.3f * std::sin(phase * 2.f);
+            g.setColour(juce::Colour(0xffff4030).withAlpha(heat * 0.3f * (0.5f + glow * 0.5f)));
+            g.fillRoundedRectangle(r.getX() + 4.f, r.getBottom() - 8.f, r.getWidth() - 8.f, 4.f, 2.f);
+            break;
+        }
+        case PartKind::Crystal:
+        {
+            // Oscillator crystal with pulsing glow
+            auto body = r.withSizeKeepingCentre(r.getWidth() * 0.6f, r.getHeight() * 0.7f);
+            g.setColour(hot ? accent.withAlpha(0.5f) : peg.withAlpha(0.7f));
+            g.fillRoundedRectangle(body, body.getHeight() * 0.3f);
+            g.setColour(accent.withAlpha(0.4f + 0.3f * std::sin(phase * 3.f)));
+            g.fillRoundedRectangle(body.reduced(2.f), body.getHeight() * 0.3f - 2.f);
+            // Pins
+            g.setColour(muted.withAlpha(0.6f));
+            g.fillRect(body.getX() + 3.f, body.getBottom(), 2.f, 4.f);
+            g.fillRect(body.getRight() - 5.f, body.getBottom(), 2.f, 4.f);
+            break;
+        }
+        case PartKind::Relay:
+        {
+            // Signal relay with switching animation
+            g.setColour(hot ? accent.withAlpha(0.35f) : peg.withAlpha(0.55f));
+            g.fillRoundedRectangle(r.reduced(4.f), 3.f);
+            // Coil
+            auto coil = r.reduced(8.f, 6.f).removeFromLeft(r.getWidth() * 0.35f);
+            g.setColour(accent.withAlpha(0.4f + glow * 0.3f));
+            for (int i = 0; i < 4; ++i)
+                g.drawHorizontalLine((int) (coil.getY() + 2.f + (float) i * (coil.getHeight() - 4.f) / 3.f), coil.getX(), coil.getRight());
+            // Switch arm
+            const float armAngle = std::sin(phase * 1.5f) * 0.5f;
+            const auto pivot = r.getCentre().translated(r.getWidth() * 0.1f, 0.f);
+            g.setColour(accent.withAlpha(0.6f + glow * 0.3f));
+            g.drawLine(pivot.x, pivot.y, pivot.x + std::cos(armAngle) * r.getWidth() * 0.2f, pivot.y + std::sin(armAngle) * r.getWidth() * 0.2f, 1.5f);
+            g.fillEllipse(pivot.x - 2.f, pivot.y - 2.f, 4.f, 4.f);
+            break;
+        }
+        case PartKind::Transistor:
+        {
+            // Power transistor with TO-220 package
+            auto body = r.withSizeKeepingCentre(r.getWidth() * 0.5f, r.getHeight() * 0.6f);
+            g.setColour(hot ? accent.withAlpha(0.4f) : peg.darker(0.2f).withAlpha(0.7f));
+            g.fillRoundedRectangle(body, 2.f);
+            g.setColour(kt::c(t.border).withAlpha(0.8f));
+            g.drawRoundedRectangle(body, 2.f, 1.f);
+            // Metal tab
+            g.setColour(accent.withAlpha(0.3f + 0.2f * std::sin(phase * 2.f)));
+            g.fillRoundedRectangle(body.withY(body.getY() - 4.f).withHeight(6.f), 2.f);
+            // Legs
+            g.setColour(muted.withAlpha(0.6f));
+            for (int i = 0; i < 3; ++i)
+                g.fillRect(body.getX() + 4.f + (float) i * (body.getWidth() - 8.f) / 2.f, body.getBottom(), 1.5f, 5.f);
             break;
         }
     }

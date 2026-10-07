@@ -10,7 +10,7 @@
 // ============================================================================
 namespace pb
 {
-enum DecalFamily { DStars, DFlames, DWaves, DPetals, DCircuit, DHazard, DLeaves, DSnow, DArcade, DBolts, DMoon, DPlates, DSunGrid, kDecalFamilies };
+enum DecalFamily { DStars, DFlames, DWaves, DPetals, DCircuit, DHazard, DLeaves, DSnow, DArcade, DBolts, DMoon, DPlates, DSunGrid, DGrid, DTopo, DGear, kDecalFamilies };
 
 inline int decalFamilyFor(const juce::String& id)
 {
@@ -24,7 +24,12 @@ inline int decalFamilyFor(const juce::String& id)
         { "vapor", DSunGrid }, { "arctic", DSnow }, { "sunset", DSunGrid }, { "ocean", DWaves }, { "carbon", DCircuit },
         { "rose", DPetals }, { "mono", DCircuit }, { "terminal", DCircuit }, { "candy", DArcade }, { "solar", DHazard },
         { "forest", DLeaves }, { "midnight", DStars }, { "orchid", DPetals }, { "copper", DPlates }, { "ghost", DSnow },
-        { "arcade", DArcade }
+        { "arcade", DArcade },
+        { "magma", DFlames }, { "aurora", DWaves }, { "brass", DPlates }, { "toxic", DCircuit },
+        { "crimson", DFlames }, { "jade", DLeaves }, { "plasma", DGrid }, { "gold", DPlates },
+        { "cobalt2", DWaves }, { "inferno", DFlames }, { "cyber", DGrid }, { "lavender", DPetals },
+        { "sand", DPlates }, { "synthwave", DGrid }, { "matrix", DCircuit }, { "old_amber", DHazard },
+        { "frost", DSnow }, { "deep_moss", DLeaves }, { "deep_rose", DPetals }
     };
     for (const auto& m : map) if (id.equalsIgnoreCase(m.id)) return m.fam;
     return (int) (std::abs(id.hashCode()) % kDecalFamilies);
@@ -32,7 +37,7 @@ inline int decalFamilyFor(const juce::String& id)
 
 inline const char* decalFamilyName(int f)
 {
-    static const char* n[] = { "STARFIELD", "FLAME WRAP", "TIDE LINES", "PETAL BLOOM", "CIRCUIT TRACE", "HAZARD STRIPE", "LEAF VINE", "SNOWFALL", "ARCADE PIXEL", "VOLT BOLTS", "MOON PHASE", "RIVET PLATE", "SUN GRID" };
+    static const char* n[] = { "STARFIELD", "FLAME WRAP", "TIDE LINES", "PETAL BLOOM", "CIRCUIT TRACE", "HAZARD STRIPE", "LEAF VINE", "SNOWFALL", "ARCADE PIXEL", "VOLT BOLTS", "MOON PHASE", "RIVET PLATE", "SUN GRID", "TECH GRID", "TOPO MAP", "GEAR WORKS" };
     return n[juce::jlimit(0, (int) kDecalFamilies - 1, f)];
 }
 
@@ -164,6 +169,73 @@ inline void paintThemeDecals(juce::Graphics& g, juce::Rectangle<float> r, const 
             g.setColour(kt::c(theme.panel)); for (int i = 0; i < 4; ++i) g.fillRect(cx - rad, cy - 8.f - (float) i * 9.f, rad * 2.f, 2.f + (float) i);
             g.restoreState();
             g.setColour(acc.withAlpha(0.14f)); for (float x = r.getX(); x < r.getRight(); x += 22.f) g.drawLine(x, r.getBottom() - 30.f, x + (x - r.getCentreX()) * 0.4f, r.getBottom(), 1.f);
+            break;
+        }
+        case DGrid:
+        {
+            // Tech grid with glowing nodes at intersections
+            const float step = 18.f;
+            g.setColour(acc.withAlpha(0.12f));
+            for (float x = r.getX() + 8.f; x < r.getRight() - 4.f; x += step)
+                g.drawVerticalLine((int) x, r.getY() + 8.f, r.getBottom() - 8.f);
+            for (float y = r.getY() + 8.f; y < r.getBottom() - 4.f; y += step)
+                g.drawHorizontalLine((int) y, r.getX() + 8.f, r.getRight() - 8.f);
+            // Glowing nodes at random intersections
+            for (int i = 0; i < 12; ++i)
+            {
+                const float x = r.getX() + 8.f + (float) (rng.nextInt((int) ((W - 16.f) / step))) * step;
+                const float y = r.getY() + 8.f + (float) (rng.nextInt((int) ((H - 16.f) / step))) * step;
+                g.setColour(hot.withAlpha(0.3f + rng.nextFloat() * 0.3f));
+                g.fillEllipse(x - 3.f, y - 3.f, 6.f, 6.f);
+                g.setColour(hot.withAlpha(0.12f));
+                g.drawEllipse(x - 6.f, y - 6.f, 12.f, 12.f, 1.f);
+            }
+            break;
+        }
+        case DTopo:
+        {
+            // Topographic contour lines
+            g.setColour(acc.withAlpha(0.15f));
+            const float cx = r.getCentreX(), cy = r.getCentreY();
+            for (int ring = 0; ring < 8; ++ring)
+            {
+                const float rad = 16.f + (float) ring * 18.f;
+                juce::Path contour;
+                for (int a = 0; a <= 64; ++a)
+                {
+                    const float ang = (float) a / 64.f * juce::MathConstants<float>::twoPi;
+                    const float wobble = 1.f + 0.12f * std::sin((float) ring * 2.f + ang * 3.f);
+                    const float x = cx + std::cos(ang) * rad * wobble;
+                    const float y = cy + std::sin(ang) * rad * wobble * 0.7f;
+                    if (a == 0) contour.startNewSubPath(x, y); else contour.lineTo(x, y);
+                }
+                contour.closeSubPath();
+                g.strokePath(contour, juce::PathStrokeType(1.2f));
+            }
+            break;
+        }
+        case DGear:
+        {
+            // Mechanical gear pattern
+            for (int i = 0; i < 4; ++i)
+            {
+                const float x = rx(), y = ry();
+                const float rad = 10.f + rng.nextFloat() * 14.f;
+                const int teeth = 8 + rng.nextInt(4);
+                g.setColour(acc.withAlpha(0.15f + rng.nextFloat() * 0.1f));
+                juce::Path gear;
+                for (int t = 0; t <= teeth * 2; ++t)
+                {
+                    const float ang = (float) t / (float) (teeth * 2) * juce::MathConstants<float>::twoPi;
+                    const float rr = (t % 2 == 0) ? rad : rad * 0.78f;
+                    const float px = x + std::cos(ang) * rr, py = y + std::sin(ang) * rr;
+                    if (t == 0) gear.startNewSubPath(px, py); else gear.lineTo(px, py);
+                }
+                gear.closeSubPath();
+                g.strokePath(gear, juce::PathStrokeType(1.3f));
+                g.setColour(hot.withAlpha(0.2f));
+                g.drawEllipse(x - rad * 0.3f, y - rad * 0.3f, rad * 0.6f, rad * 0.6f, 1.f);
+            }
             break;
         }
         default: break;

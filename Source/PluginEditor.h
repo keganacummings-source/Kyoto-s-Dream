@@ -38,6 +38,7 @@ struct CanvasWidget : public juce::Component
     int handleAt(juce::Point<int> pos) const;
     static constexpr int kHandlePx = 7;
     static constexpr int kGrabPx = 13;
+    static constexpr int kEdgeGrabPx = 8;
     static constexpr int kMinCells = 3;
 
     KyotoAudioProcessor& proc;
